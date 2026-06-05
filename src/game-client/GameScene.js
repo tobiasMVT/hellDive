@@ -85,6 +85,7 @@ const BACKGROUND_CLOUD_ATLAS_PAGE = "frameAndBackground_3.webp";
 const BONUS_FREESPIN_RING_SHEET_TEXTURE_KEY = "bonus_freespin_ring_sheet";
 const BONUS_FREESPIN_RING_ATLAS_PAGE = "frameAndBackground_4.webp";
 const BONUS_FREESPIN_RING_ORB_ANIM_KEY = "bonus_freespin_ring_orb_spin";
+const BONUS_FREESPIN_RING_VISUALS_ENABLED = false;
 const BONUS_FREESPIN_POWER_CIRCLE_TEXTURE_KEY = "bonus_freespin_power_circle";
 const BONUS_END_BALLOON_TEXTURE_FALLBACK = "yellow_ballon";
 const TROLL_SYMBOL_ID = resolveSymbolId(clientConfig.symbolsMapping?.banana3, 13);
@@ -625,9 +626,12 @@ export class GameScene extends Phaser.Scene {
     this._soundVolumeTrackedInstances = new Set();
     this.heavenHellLootSprites = [];
     this.heavenHellPortalAura = null;
-    this.heavenHellAbilityText = null;
+    this.heavenHellAbilityPanel = null;
+    this._heavenHellMeterUi = null;
+    this._heavenHellMeterDisplayKills = null;
+    this._heavenHellMeterRuntime = null;
+    this._heavenHellActiveGameState = null;
     this.heavenHellLastRewardFxKey = null;
-    this.heavenHellMeterBlinkKey = null;
     this.heavenHellMeterBlinkTween = null;
     this.heavenHellRippleFx = [];
     this.heavenHellDivineGroundFx = [];
@@ -1164,10 +1168,14 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  playHeavenHellDemonDeathFx(reel, row, { center = null, intensity = 1, destroySprite = true } = {}) {
+  playHeavenHellDemonDeathFx(reel, row, { center = null, intensity = 1, destroySprite = true, gameState = null } = {}) {
     const target = center || this.getGridCellCenter(reel, row);
     const sprite = this.reelSprites?.[reel]?.[row];
     const power = Math.max(0.7, Math.min(2.2, Number(intensity) || 1));
+    const resolvedGameState = gameState || this._heavenHellActiveGameState;
+    if (resolvedGameState?.heavenHell?.bonus && resolvedGameState?.isBonus === true) {
+      this.tickHeavenHellKillMeterOnKill(reel, row, resolvedGameState);
+    }
 
     const hitSound = `banana_hit_${Phaser.Math.Between(1, 4)}`;
     this.playSfx?.(hitSound, { volume: Math.min(0.58, 0.24 + power * 0.12) });
@@ -1358,26 +1366,12 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  async playHeavenHellDivineChargeSequence(gameState = {}) {
-    const procs = Array.isArray(gameState?.heavenHell?.bonus?.abilityProcsThisAction)
-      ? gameState.heavenHell.bonus.abilityProcsThisAction
-      : [];
-    const chargeProc = procs.find((entry) => entry?.type === "divineCharge");
-    if (!chargeProc) return;
+  async playHeavenHellDivineChargeWindup(step = {}, { stepQuickStop = false } = {}) {
+    if (stepQuickStop || step?.divineChargeProc !== true) return false;
+    if (!this.heroSprite || this.heroSprite.destroyed) return false;
 
-    const drops = Array.isArray(gameState?.heavenHell?.bonus?.lootGround)
-      ? gameState.heavenHell.bonus.lootGround
-      : [];
-    const chargeDrop = [...drops].reverse().find((entry) => entry?.source === "divineCharge");
-    if (!chargeDrop) return;
-
-    const reel = Math.floor(Number(chargeDrop.reel));
-    const row = Math.floor(Number(chargeDrop.row));
-    if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
-    const target = this.getGridCellCenter(reel, row);
-    const heroX = Number(this.heroSprite?.x || (GRID_OFFSET_X + 35));
-    const heroY = Number(this.heroSprite?.y || (GRID_OFFSET_Y + 35));
-
+    const heroX = Number(this.heroSprite.x);
+    const heroY = Number(this.heroSprite.y);
     const chargeText = this.add.text(heroX, heroY - 78, "DIVINE STRIKE", {
       fontSize: "20px",
       fontFamily: '"Cinzel", "Times New Roman", serif',
@@ -1386,87 +1380,93 @@ export class GameScene extends Phaser.Scene {
       stroke: "#210B00",
       strokeThickness: 5
     }).setOrigin(0.5).setDepth(DEPTH_HERO + 42).setAlpha(0);
-    this.tweens.add({ targets: chargeText, alpha: 1, y: heroY - 96, duration: 190, ease: "Sine.easeOut" });
+    this.tweens.add({ targets: chargeText, alpha: 1, y: heroY - 96, duration: 220, ease: "Sine.easeOut" });
 
     const chargeObjects = [];
-    for (let i = 0; i < 3; i++) {
-      const ring = this.add.circle(heroX, heroY, 22 + i * 10, 0xFFEAA0, 0.18 - i * 0.03)
-        .setDepth(DEPTH_HERO + 30 + i)
-        .setBlendMode(Phaser.BlendModes.ADD)
-        .setScale(0.65);
-      chargeObjects.push(ring);
-      this.tweens.add({
-        targets: ring,
-        scale: 2.5 + i * 0.35,
-        alpha: 0,
-        delay: i * 110,
-        duration: 560,
-        ease: "Cubic.easeOut"
-      });
+    for (let pulse = 0; pulse < 5; pulse++) {
+      for (let i = 0; i < 3; i++) {
+        const ring = this.add.circle(heroX, heroY, 22 + i * 10, 0xFFEAA0, 0.2 - i * 0.03)
+          .setDepth(DEPTH_HERO + 30 + i)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.55);
+        chargeObjects.push(ring);
+        this.tweens.add({
+          targets: ring,
+          scale: 2.4 + i * 0.35,
+          alpha: 0,
+          delay: pulse * 420 + i * 90,
+          duration: 520,
+          ease: "Cubic.easeOut"
+        });
+      }
     }
-    if (this.heroSprite && !this.heroSprite.destroyed) {
+
+    if (!this.heroSprite.destroyed) {
       this.tweens.add({
         targets: this.heroSprite,
-        scaleX: (this.heroSprite.scaleX || 1) * 1.12,
-        scaleY: (this.heroSprite.scaleY || 1) * 1.12,
-        duration: 160,
+        scaleX: (this.heroSprite.scaleX || 1) * 1.14,
+        scaleY: (this.heroSprite.scaleY || 1) * 1.14,
+        duration: 180,
         yoyo: true,
-        repeat: 2,
+        repeat: 6,
         ease: "Sine.easeInOut"
       });
     }
-    await new Promise((resolve) => this.time.delayedCall(520, resolve));
+
+    await this.waitForPresentation(2500, { skippable: true });
     chargeObjects.forEach((obj) => { if (obj && !obj.destroyed) obj.destroy(); });
 
-    this.playSfx?.("attack_swing", { volume: 0.42 });
-    const launchBurst = this.add.circle(heroX, heroY, 18, 0xDDF7FF, 0.62)
+    this.playSfx?.("attack_swing", { volume: 0.48 });
+    const launchBurst = this.add.circle(heroX, heroY, 18, 0xDDF7FF, 0.72)
       .setDepth(DEPTH_HERO + 44)
       .setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({
       targets: launchBurst,
-      scale: 3.4,
+      scale: 3.8,
       alpha: 0,
-      duration: 260,
+      duration: 280,
       ease: "Cubic.easeOut",
       onComplete: () => launchBurst.destroy()
     });
-    if (this.heroSprite && !this.heroSprite.destroyed) {
-      this.heroSprite.setAlpha?.(0.45);
-    }
+    this.tweens.add({
+      targets: chargeText,
+      alpha: 0,
+      y: chargeText.y - 20,
+      duration: 220,
+      ease: "Sine.easeOut",
+      onComplete: () => chargeText.destroy()
+    });
+    return true;
+  }
 
-    const angelTextureKey = this.getHeavenHellHeroTextureKey?.(HERO_STAGE_TEXTURE_KEYS.rush) || HERO_STAGE_TEXTURE_KEYS.base;
-    const angel = this.add.image(heroX, heroY, angelTextureKey)
-      .setDepth(DEPTH_HERO + 45)
-      .setScale((Number(this.heroSprite?.scaleX || 1)) * 0.98)
-      .setAlpha(0.98)
-      .setBlendMode(Phaser.BlendModes.ADD);
-
-    const dx = target.x - heroX;
-    const dy = target.y - heroY;
+  spawnHeavenHellChargeLaunchTrails(fromX, fromY, toX, toY, { heroScale = 1 } = {}) {
+    const dx = toX - fromX;
+    const dy = toY - fromY;
     const distance = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-    const trailCount = Math.min(9, Math.max(4, Math.floor(distance / 55)));
+    const trailCount = Math.min(12, Math.max(5, Math.floor(distance / 42)));
+    const angelTextureKey = this.getHeavenHellHeroTextureKey?.(HERO_STAGE_TEXTURE_KEYS.rush) || HERO_STAGE_TEXTURE_KEYS.base;
     for (let i = 1; i <= trailCount; i++) {
       const t = i / (trailCount + 1);
-      this.time.delayedCall(i * 18, () => {
+      this.time.delayedCall(i * 12, () => {
         const trail = this.textures?.exists?.("helldive_angel_trail")
-          ? this.add.image(heroX + dx * t - dx * 0.05, heroY + dy * t - dy * 0.05, "helldive_angel_trail")
+          ? this.add.image(fromX + dx * t - dx * 0.05, fromY + dy * t - dy * 0.05, "helldive_angel_trail")
               .setDepth(DEPTH_HERO + 39)
-              .setScale(0.52 + t * 0.28)
-              .setAlpha(0.42 * (1 - t * 0.35))
+              .setScale(0.56 + t * 0.34)
+              .setAlpha(0.5 * (1 - t * 0.3))
               .setBlendMode(Phaser.BlendModes.ADD)
           : null;
         if (trail) trail.setRotation(Math.atan2(dy, dx));
-        const ghost = this.add.image(heroX + dx * t, heroY + dy * t, angelTextureKey)
+        const ghost = this.add.image(fromX + dx * t, fromY + dy * t, angelTextureKey)
           .setDepth(DEPTH_HERO + 40)
-          .setScale((Number(this.heroSprite?.scaleX || 1)) * (1.04 - t * 0.28))
-          .setAlpha(0.42 * (1 - t * 0.45))
+          .setScale(heroScale * (1.06 - t * 0.3))
+          .setAlpha(0.48 * (1 - t * 0.42))
           .setTint(0xBFE9FF)
           .setBlendMode(Phaser.BlendModes.ADD);
         this.tweens.add({
           targets: ghost,
           alpha: 0,
-          scale: ghost.scaleX * 1.28,
-          duration: 260,
+          scale: ghost.scaleX * 1.32,
+          duration: 220,
           ease: "Sine.easeOut",
           onComplete: () => ghost.destroy()
         });
@@ -1474,63 +1474,79 @@ export class GameScene extends Phaser.Scene {
           this.tweens.add({
             targets: trail,
             alpha: 0,
-            scale: trail.scaleX * 1.35,
-            duration: 260,
+            scale: trail.scaleX * 1.4,
+            duration: 220,
             ease: "Sine.easeOut",
             onComplete: () => trail.destroy()
           });
         }
       });
     }
+  }
 
-    await new Promise((resolve) => {
-      this.tweens.add({
-        targets: angel,
-        x: target.x,
-        y: target.y,
-        duration: 190,
-        ease: "Cubic.easeIn",
-        onComplete: resolve
-      });
-    });
+  async playHeavenHellDivineChargeImpact(step = {}, gameState = {}, targetCenter = null) {
+    if (step?.divineChargeProc !== true) return;
+    const reel = Math.floor(Number(step?.reel));
+    const row = Math.floor(Number(step?.row));
+    if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
+    const target = targetCenter || this.getGridCellCenter(reel, row);
+    const heroX = Number(this.heroSprite?.x || target.x);
+    const heroY = Number(this.heroSprite?.y || target.y);
 
-    this.playSfx?.("lightning_thor_impact", { volume: 0.75 });
-    this.playSfx?.("finisher_sword", { volume: 0.42 });
-    this.playHeavenHellAngelStrikeSlash?.({ x: heroX, y: heroY }, target, { scale: 1.18 });
-    this.cameras?.main?.shake?.(250, 0.009);
+    this.playSfx?.("lightning_thor_impact", { volume: 0.78 });
+    this.playSfx?.("finisher_sword", { volume: 0.46 });
+    this.playHeavenHellAngelStrikeSlash?.({ x: heroX, y: heroY }, target, { scale: 1.22 });
+    this.cameras?.main?.shake?.(280, 0.011);
     const splash = this.textures?.exists?.("helldive_demon_splash")
-      ? this.add.image(target.x, target.y, "helldive_demon_splash").setScale(0.45).setAlpha(0.95).setDepth(DEPTH_HERO + 49).setBlendMode(Phaser.BlendModes.ADD)
+      ? this.add.image(target.x, target.y, "helldive_demon_splash").setScale(0.5).setAlpha(0.96).setDepth(DEPTH_HERO + 49).setBlendMode(Phaser.BlendModes.ADD)
       : null;
     const impact = this.add.circle(target.x, target.y, 20, 0xFFF1AD, 0.95)
       .setDepth(DEPTH_HERO + 48)
       .setBlendMode(Phaser.BlendModes.ADD);
-    const shock = this.add.circle(target.x, target.y, 34, 0xFF3A24, 0.22)
+    const shock = this.add.circle(target.x, target.y, 34, 0xFF3A24, 0.24)
       .setDepth(DEPTH_HERO + 47)
       .setBlendMode(Phaser.BlendModes.ADD);
-    if (splash) this.tweens.add({ targets: splash, scale: 1.35, angle: Phaser.Math.Between(-30, 30), alpha: 0, duration: 380, ease: "Cubic.easeOut", onComplete: () => splash.destroy() });
-    this.tweens.add({ targets: impact, scale: 4.4, alpha: 0, duration: 320, ease: "Cubic.easeOut", onComplete: () => impact.destroy() });
-    this.tweens.add({ targets: shock, scale: 3.2, alpha: 0, duration: 420, ease: "Cubic.easeOut", onComplete: () => shock.destroy() });
+    if (splash) this.tweens.add({ targets: splash, scale: 1.4, angle: Phaser.Math.Between(-30, 30), alpha: 0, duration: 380, ease: "Cubic.easeOut", onComplete: () => splash.destroy() });
+    this.tweens.add({ targets: impact, scale: 4.6, alpha: 0, duration: 320, ease: "Cubic.easeOut", onComplete: () => impact.destroy() });
+    this.tweens.add({ targets: shock, scale: 3.4, alpha: 0, duration: 420, ease: "Cubic.easeOut", onComplete: () => shock.destroy() });
 
-    this.playHeavenHellDemonDeathFx?.(reel, row, { center: target, intensity: 1.55, destroySprite: true });
-    angel.destroy();
-    if (this.heroSprite && !this.heroSprite.destroyed) {
-      this.heroSprite.setAlpha?.(1);
-    }
-    this.tweens.add({ targets: chargeText, alpha: 0, y: chargeText.y - 20, duration: 260, ease: "Sine.easeOut", onComplete: () => chargeText.destroy() });
+    void this.playMonkeyLevelUpRingBurst(
+      { reel, row, heroFootprintSize: this.currentHeroFootprintSize },
+      {
+        heroFootprintSize: this.currentHeroFootprintSize,
+        intensity: "medium",
+        preferHeroSprite: false,
+        durationMs: 560,
+        radialScale: 0.72
+      }
+    ).catch(() => {});
 
-    const lootMultiplier = Math.max(1, Math.floor(Number(chargeProc?.lootMultiplier ?? 1) || 1));
+    const lootMultiplier = Math.max(1, Math.floor(Number(step?.divineChargeLootMultiplier ?? 1) || 1));
     await this.playHeavenHellLootDropPattern(gameState, {
       source: "divineCharge",
       from: { x: target.x, y: target.y - 70 },
-      jitterStrength: lootMultiplier >= 10 ? 18 : 14
+      jitterStrength: lootMultiplier >= 10 ? 18 : 14,
+      filterCells: [{ reel, row }],
+      persistToGround: true
     });
   }
 
-  async playHeavenHellLootDropPattern(gameState = {}, { source = null, from = null, jitterStrength = 6 } = {}) {
+  /** @deprecated Use inline hunt charge wind-up + impact instead. */
+  async playHeavenHellDivineChargeSequence(gameState = {}) {
+    if (gameState?.heavenHell?.bonus && gameState?.isBonus === true) {
+      this._heavenHellActiveGameState = gameState;
+    }
+  }
+
+  async playHeavenHellLootDropPattern(gameState = {}, { source = null, from = null, jitterStrength = 6, filterCells = null, persistToGround = false } = {}) {
     const drops = Array.isArray(gameState?.heavenHell?.bonus?.lootGround)
       ? gameState.heavenHell.bonus.lootGround
       : [];
-    const scoped = source ? drops.filter((entry) => entry?.source === source) : drops;
+    let scoped = source ? drops.filter((entry) => entry?.source === source) : drops;
+    if (Array.isArray(filterCells) && filterCells.length > 0) {
+      const cellKeys = new Set(filterCells.map((cell) => `${Math.floor(Number(cell?.reel))},${Math.floor(Number(cell?.row))}`));
+      scoped = scoped.filter((entry) => cellKeys.has(`${Math.floor(Number(entry?.reel))},${Math.floor(Number(entry?.row))}`));
+    }
     if (scoped.length === 0) return;
 
     const startX = Number(from?.x || (GRID_OFFSET_X + (clientConfig.area.width * 70) * 0.5));
@@ -1627,6 +1643,18 @@ export class GameScene extends Phaser.Scene {
                 yoyo: true,
                 ease: "Back.easeOut",
                 onComplete: () => {
+                  if (persistToGround) {
+                    token.setPosition(landX, landY);
+                    token.setScale(launchScaleX * 0.34, launchScaleY * 0.34);
+                    token.setAlpha(0.96);
+                    token.setDepth(DEPTH_SYMBOLS + 9);
+                    if (!Array.isArray(this.heavenHellLootSprites)) {
+                      this.heavenHellLootSprites = [];
+                    }
+                    this.heavenHellLootSprites.push(token);
+                    resolve();
+                    return;
+                  }
                   this.tweens.add({
                     targets: token,
                     alpha: 0,
@@ -1652,13 +1680,15 @@ export class GameScene extends Phaser.Scene {
     await Promise.all(promises);
   }
 
-  async playHeavenHellDivineWrathAreaTelegraph(gameState = {}) {
-    const procs = Array.isArray(gameState?.heavenHell?.bonus?.abilityProcsThisAction)
-      ? gameState.heavenHell.bonus.abilityProcsThisAction
-      : [];
-    const wrathProc = procs.find((entry) => entry?.type === "divineWrath");
-    const cells = Array.isArray(wrathProc?.affectedCells) ? wrathProc.affectedCells : [];
-    if (cells.length === 0) return;
+  async playHeavenHellDivineWrathAtStep(step = {}, gameState = {}, { stepQuickStop = false } = {}) {
+    if (stepQuickStop || step?.divineWrathProc !== true) return;
+    if (gameState?.heavenHell?.bonus && gameState?.isBonus === true) {
+      this._heavenHellActiveGameState = gameState;
+    }
+
+    const affectedCells = Array.isArray(step?.divineWrathAffectedCells) ? step.divineWrathAffectedCells : [];
+    const killCells = Array.isArray(step?.divineWrathKillCells) ? step.divineWrathKillCells : [];
+    if (affectedCells.length === 0) return;
 
     this.clearHeavenHellDivineGroundFx?.({ fade: true });
 
@@ -1694,162 +1724,264 @@ export class GameScene extends Phaser.Scene {
         ease: "Sine.easeInOut"
       });
     }
-    await new Promise((resolve) => this.time.delayedCall(480, resolve));
+    await this.waitForPresentation(480, { skippable: true });
 
-    this.playSfx?.("lightning_thor", { volume: 0.65 });
-    this.cameras?.main?.shake?.(300, 0.008);
+    this.playSfx?.("lightning_thor", { volume: 0.68 });
+    this.cameras?.main?.shake?.(320, 0.009);
 
-    const overlays = [];
-    const sortedCells = [...cells].sort((a, b) => (Number(a.reel) + Number(a.row)) - (Number(b.reel) + Number(b.row)));
-    sortedCells.forEach((cell, index) => {
+    const sortedCells = [...affectedCells].sort((a, b) => (Number(a.reel) + Number(a.row)) - (Number(b.reel) + Number(b.row)));
+
+    sortedCells.forEach((cell) => {
       const reel = Math.floor(Number(cell?.reel));
       const row = Math.floor(Number(cell?.row));
       if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
       const center = this.getGridCellCenter(reel, row);
-      this.time.delayedCall(index * 16, () => {
-        const ground = this.textures?.exists?.("helldive_divine_ground")
-          ? this.add.image(center.x, center.y, "helldive_divine_ground").setScale(0.7).setAlpha(0.88)
-          : this.add.rectangle(center.x, center.y, 66, 66, 0xFFF1A8, 0.34);
-        ground.setDepth(DEPTH_SYMBOLS + 11).setBlendMode(Phaser.BlendModes.ADD);
-        const rune = this.add.rectangle(center.x, center.y, 60, 60)
-          .setStrokeStyle(3, 0xFFE07A, 0.94)
-          .setDepth(DEPTH_SYMBOLS + 12)
-          .setBlendMode(Phaser.BlendModes.ADD)
-          .setAngle(45)
-          .setScale(0.7);
-        const beam = this.textures?.exists?.("helldive_divine_wrath_beam")
-          ? this.add.image(center.x, center.y - 72, "helldive_divine_wrath_beam")
-              .setDepth(DEPTH_HERO + 51)
-              .setBlendMode(Phaser.BlendModes.ADD)
-              .setScale(0.18, 0.34)
-              .setAlpha(0.74)
-          : this.add.rectangle(center.x, center.y - 82, 12, 164, 0xFFFBE0, 0.62)
-              .setDepth(DEPTH_HERO + 51)
-              .setBlendMode(Phaser.BlendModes.ADD)
-              .setScale(0.22, 0.2);
-        overlays.push(ground, rune, beam);
-        this.heavenHellDivineGroundFx.push(ground, rune);
-        this.tweens.add({ targets: [ground, rune], scale: 1.08, duration: 120, yoyo: true, repeat: 1, ease: "Cubic.easeOut" });
-        this.tweens.add({ targets: beam, scaleX: (beam.scaleX || 1) * 3.2, scaleY: (beam.scaleY || 1) * 1.35, alpha: 0, duration: 300, ease: "Cubic.easeOut", onComplete: () => beam.destroy() });
-
-        const sprite = this.reelSprites?.[reel]?.[row];
-        if (sprite && !sprite.destroyed) {
-          const symbol = Number(sprite.symbolKey);
-          if (isBanana(symbol)) {
-            this.playHeavenHellDemonDeathFx?.(reel, row, { center, intensity: 1.2, destroySprite: true });
-          } else {
-            this.tweens.add({ targets: sprite, alpha: 0.86, duration: 90, yoyo: true, repeat: 1, ease: "Sine.easeInOut" });
-          }
-        }
+      const ground = this.textures?.exists?.("helldive_divine_ground")
+        ? this.add.image(center.x, center.y, "helldive_divine_ground").setScale(0.7).setAlpha(0.9)
+        : this.add.rectangle(center.x, center.y, 66, 66, 0xFFF1A8, 0.36);
+      ground.setDepth(DEPTH_SYMBOLS + 11).setBlendMode(Phaser.BlendModes.ADD);
+      const rune = this.add.rectangle(center.x, center.y, 60, 60)
+        .setStrokeStyle(3, 0xFFE07A, 0.96)
+        .setDepth(DEPTH_SYMBOLS + 12)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setAngle(45)
+        .setScale(0.72);
+      const beam = this.textures?.exists?.("helldive_divine_wrath_beam")
+        ? this.add.image(center.x, center.y - 72, "helldive_divine_wrath_beam")
+            .setDepth(DEPTH_HERO + 51)
+            .setBlendMode(Phaser.BlendModes.ADD)
+            .setScale(0.2, 0.38)
+            .setAlpha(0.78)
+        : this.add.rectangle(center.x, center.y - 82, 12, 164, 0xFFFBE0, 0.66)
+            .setDepth(DEPTH_HERO + 51)
+            .setBlendMode(Phaser.BlendModes.ADD)
+            .setScale(0.24, 0.22);
+      this.heavenHellDivineGroundFx.push(ground, rune);
+      this.tweens.add({ targets: [ground, rune], scale: 1.1, duration: 130, yoyo: true, repeat: 1, ease: "Cubic.easeOut" });
+      this.tweens.add({
+        targets: beam,
+        scaleX: (beam.scaleX || 1) * 3.4,
+        scaleY: (beam.scaleY || 1) * 1.4,
+        alpha: 0,
+        duration: 320,
+        ease: "Cubic.easeOut",
+        onComplete: () => beam.destroy()
       });
     });
 
-    await new Promise((resolve) => this.time.delayedCall(620 + sortedCells.length * 12, resolve));
+    killCells.forEach((cell) => {
+      const reel = Math.floor(Number(cell?.reel));
+      const row = Math.floor(Number(cell?.row));
+      if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
+      const center = this.getGridCellCenter(reel, row);
+      const sprite = this.reelSprites?.[reel]?.[row];
+      if (sprite && !sprite.destroyed) {
+        this.playHeavenHellDemonDeathFx?.(reel, row, { center, intensity: 1.28, destroySprite: true });
+      }
+      if (this.reelSprites?.[reel]) {
+        this.reelSprites[reel][row] = null;
+      }
+    });
+
+    await this.waitForPresentation(520, { skippable: true });
     if (chargeOrb && !chargeOrb.destroyed) chargeOrb.destroy();
     if (halo && !halo.destroyed) halo.destroy();
     this.tweens.add({ targets: title, alpha: 0, y: title.y - 18, duration: 260, ease: "Sine.easeOut", onComplete: () => title.destroy() });
 
-    await this.playHeavenHellLootDropPattern(gameState, {
-      source: "divineWrath",
-      from: { x: heroX, y: heroY - 105 },
-      jitterStrength: 16
-    });
+    if (killCells.length > 0) {
+      await this.playHeavenHellLootDropPattern(gameState, {
+        source: "divineWrath",
+        from: { x: heroX, y: heroY - 105 },
+        jitterStrength: 16,
+        filterCells: killCells,
+        persistToGround: true
+      });
+    }
 
     this.time.delayedCall(1450, () => this.clearHeavenHellDivineGroundFx?.({ fade: true }));
   }
 
-  updateHeavenHellAbilityText(gameState = {}, { allowRewardFx = true } = {}) {
-    const heavenHell = gameState?.heavenHell;
-    const isBonus = gameState?.isBonus === true;
-    if (!heavenHell || !isBonus) {
-      if (this.heavenHellAbilityText && !this.heavenHellAbilityText.destroyed) {
-        this.heavenHellAbilityText.setVisible(false);
-      }
-      if (this.heavenHellKillMeterBg && !this.heavenHellKillMeterBg.destroyed) {
-        this.heavenHellKillMeterBg.setVisible(false);
-      }
-      if (this.heavenHellKillMeterFill && !this.heavenHellKillMeterFill.destroyed) {
-        this.heavenHellKillMeterFill.setVisible(false);
-      }
-      if (this.heavenHellKillMeterLabel && !this.heavenHellKillMeterLabel.destroyed) {
-        this.heavenHellKillMeterLabel.setVisible(false);
-      }
-      if (this.heavenHellMeterBlinkTween) {
-        this.heavenHellMeterBlinkTween.stop();
-        this.heavenHellMeterBlinkTween = null;
-      }
-      return;
+  /** @deprecated Use playHeavenHellDivineWrathAtStep during hunt instead. */
+  async playHeavenHellDivineWrathAreaTelegraph(gameState = {}) {
+    if (gameState?.heavenHell?.bonus && gameState?.isBonus === true) {
+      this._heavenHellActiveGameState = gameState;
     }
+  }
 
-    const bonus = heavenHell?.bonus || {};
-    const abilities = bonus?.abilities || {};
-    const portal = Math.max(0, Math.floor(Number(abilities?.portal || 0)));
-    const divineWrath = Math.max(0, Math.floor(Number(abilities?.divineWrath || 0)));
-    const divineCharge = Math.max(0, Math.floor(Number(abilities?.divineCharge || 0)));
-    const panelX = GRID_OFFSET_X + 8;
-    const panelY = GRID_OFFSET_Y + (clientConfig.area.height * 70) + 10;
-    const killsTotal = Math.max(0, Number(bonus?.killsTotal || 0));
-    const killsTowardsUnlock = Math.max(0, Number(bonus?.killsTowardsUnlock ?? 0));
-    const nextUnlock = Math.max(1, Number(bonus?.nextAbilityKillThreshold || 20));
-    const progress = Math.max(0, Math.min(1, killsTowardsUnlock / nextUnlock));
-    const text = [
-      `Portal: ${portal}`,
-      `Divine Wrath: ${divineWrath}`,
-      `Divine Charge: ${divineCharge}`
-    ].join("   ");
-    const meterY = panelY - 12;
-    const meterWidth = 430;
-    const meterHeight = 12;
-    const fillWidth = Math.max(2, Math.floor((meterWidth - 2) * progress));
+  getHeavenHellMeterPanelPosition() {
+    const cellSize = 70;
+    const gridWidth = clientConfig.area.width * cellSize;
+    const gridHeight = clientConfig.area.height * cellSize;
+    return {
+      centerX: GRID_OFFSET_X + gridWidth / 2,
+      centerY: GRID_OFFSET_Y + gridHeight + 52
+    };
+  }
 
-    if (!this.heavenHellAbilityText || this.heavenHellAbilityText.destroyed) {
-      this.heavenHellAbilityText = this.add.text(panelX, panelY, text, {
-        fontFamily: "Arial",
-        fontSize: "22px",
-        color: "#F6F7FB",
-        stroke: "#111111",
-        strokeThickness: 4
-      }).setOrigin(0, 0).setDepth(DEPTH_HERO + 20);
-    } else {
-      this.heavenHellAbilityText.setText(text);
+  getHeavenHellBossKillWeight() {
+    return 9;
+  }
+
+  getHeavenHellMeterUnlockCount(gameState = {}) {
+    const procs = Array.isArray(gameState?.heavenHell?.bonus?.abilityProcsThisAction)
+      ? gameState.heavenHell.bonus.abilityProcsThisAction
+      : [];
+    return procs.filter((entry) => entry?.type === "abilityUnlock" || entry?.type === "abilityReward").length;
+  }
+
+  getHeavenHellMeterActionPlan(gameState = {}) {
+    const bonus = gameState?.heavenHell?.bonus;
+    if (!bonus || gameState?.isBonus !== true) {
+      return null;
     }
-    this.heavenHellAbilityText.setVisible(true);
+    const nextUnlock = Math.max(1, Math.floor(Number(bonus?.nextAbilityKillThreshold || 20)));
+    const hasActionStart = Number.isFinite(Number(bonus?.killsTowardsUnlockAtActionStart));
+    const hasPersistedStart = Number.isFinite(Number(this._heavenHellMeterDisplayKills));
+    const startKills = hasActionStart
+      ? Math.max(0, Math.floor(Number(bonus.killsTowardsUnlockAtActionStart)))
+      : (hasPersistedStart
+        ? Math.max(0, Math.floor(Number(this._heavenHellMeterDisplayKills)))
+        : 0);
+    const endKills = Math.max(
+      0,
+      Math.floor(
+        Number(
+          bonus?.killsTowardsUnlockBeforeSettlement ??
+          bonus?.killsTowardsUnlock ??
+          startKills
+        )
+      )
+    );
+    const weightedBudget = Math.max(0, endKills - startKills);
+    return {
+      startKills,
+      endKills,
+      nextUnlock,
+      unlocks: 0,
+      weightedBudget
+    };
+  }
 
-    if (!this.heavenHellKillMeterBg || this.heavenHellKillMeterBg.destroyed) {
-      this.heavenHellKillMeterBg = this.add.rectangle(panelX, meterY, meterWidth, meterHeight, 0x111111, 0.75)
-        .setOrigin(0, 0)
-        .setDepth(DEPTH_HERO + 20);
+  getHeavenHellKillWeightForCell(reel, row, gameState = {}) {
+    const bossId = Number(clientConfig.symbolsMapping?.banana3 || TROLL_SYMBOL_ID || 13);
+    const sprite = this.reelSprites?.[reel]?.[row];
+    const spriteSymbol = Number(sprite?.symbolKey);
+    if (Number.isFinite(spriteSymbol) && spriteSymbol > 0) {
+      return spriteSymbol === bossId ? this.getHeavenHellBossKillWeight() : 1;
     }
-    if (!this.heavenHellKillMeterFill || this.heavenHellKillMeterFill.destroyed) {
-      this.heavenHellKillMeterFill = this.add.rectangle(panelX + 1, meterY + 1, fillWidth, meterHeight - 2, 0xFFB84D, 0.95)
-        .setOrigin(0, 0)
-        .setDepth(DEPTH_HERO + 21);
+    const affected = Array.isArray(gameState?.affectedPositions) ? gameState.affectedPositions : [];
+    const match = affected.find((pos) => Number(pos?.reel) === reel && Number(pos?.row) === row);
+    const wasSymbol = Number(match?.wasSymbol);
+    if (Number.isFinite(wasSymbol) && wasSymbol > 0) {
+      return wasSymbol === bossId ? this.getHeavenHellBossKillWeight() : 1;
     }
-    if (!this.heavenHellKillMeterLabel || this.heavenHellKillMeterLabel.destroyed) {
-      this.heavenHellKillMeterLabel = this.add.text(panelX, meterY - 18, "", {
-        fontFamily: "Arial",
-        fontSize: "14px",
-        color: "#FFEEC4",
-        stroke: "#111111",
-        strokeThickness: 3
-      }).setOrigin(0, 0).setDepth(DEPTH_HERO + 22);
-    }
+    return 1;
+  }
 
-    this.heavenHellKillMeterBg.setVisible(true);
-    this.heavenHellKillMeterBg.setPosition(panelX, meterY);
-    this.heavenHellKillMeterFill.setVisible(true);
-    this.heavenHellKillMeterFill.setPosition(panelX + 1, meterY + 1);
-    this.heavenHellKillMeterFill.displayWidth = fillWidth;
-    this.heavenHellKillMeterLabel.setVisible(true);
-    this.heavenHellKillMeterLabel.setPosition(panelX, meterY - 18);
-    this.heavenHellKillMeterLabel.setText(`Kills: ${Math.floor(killsTowardsUnlock)} / ${Math.floor(nextUnlock)} (boss = +9)`);
+  prepareHeavenHellKillMeterForAction(gameState = {}) {
+    const bonus = gameState?.heavenHell?.bonus;
+    if (!bonus || gameState?.isBonus !== true) return;
+    const plan = this.getHeavenHellMeterActionPlan(gameState);
+    if (!plan) return;
 
-    const procs = Array.isArray(bonus?.abilityProcsThisAction) ? bonus.abilityProcsThisAction : [];
-    const awardedFreespins = this.getHeavenHellAwardedFreespinsThisAction(procs);
-    const actionCount = Math.max(0, Math.floor(Number(bonus?.actionCount || 0)));
-    if (killsTowardsUnlock >= nextUnlock && !this.heavenHellMeterBlinkTween) {
+    this._heavenHellActiveGameState = gameState;
+    this._heavenHellMeterRuntime = {
+      nextUnlock: plan.nextUnlock,
+      endKills: plan.endKills,
+      displayKills: plan.startKills,
+      killBudgetRemaining: plan.weightedBudget
+    };
+    const ui = this._heavenHellMeterUi;
+    const prevProgress = ui
+      ? Number(ui.lastProgress) || 0
+      : Math.max(0, Math.min(1, plan.startKills / plan.nextUnlock));
+    this.renderHeavenHellKillMeterDisplay({
+      displayKills: plan.startKills,
+      nextUnlock: plan.nextUnlock,
+      abilities: bonus?.abilities || {},
+      prevProgress,
+      allowRewardFx: false,
+      skipUnlockBlink: true,
+      skipMilestones: true
+    });
+  }
+
+  tickHeavenHellKillMeterOnKill(reel, row, gameState = {}, { allowRewardFx = false } = {}) {
+    const bonus = gameState?.heavenHell?.bonus;
+    if (!bonus || gameState?.isBonus !== true) return;
+    if (!this._heavenHellMeterRuntime) {
+      this.prepareHeavenHellKillMeterForAction(gameState);
+    }
+    const runtime = this._heavenHellMeterRuntime;
+    if (!runtime || runtime.killBudgetRemaining <= 0) return;
+
+    const ui = this._heavenHellMeterUi;
+    const prevProgress = ui
+      ? Number(ui.lastProgress) || 0
+      : Math.max(0, Math.min(1, runtime.displayKills / runtime.nextUnlock));
+    const killWeight = this.getHeavenHellKillWeightForCell(reel, row, gameState);
+    const appliedWeight = Math.min(killWeight, runtime.killBudgetRemaining);
+    if (appliedWeight <= 0) return;
+
+    runtime.killBudgetRemaining -= appliedWeight;
+    const previousDisplayKills = runtime.displayKills;
+    runtime.displayKills = Math.max(0, runtime.displayKills + appliedWeight);
+    if (previousDisplayKills < runtime.nextUnlock && runtime.displayKills >= runtime.nextUnlock) {
+      this.playHeavenHellMeterMilestoneFx("ready");
+    }
+    this.renderHeavenHellKillMeterDisplay({
+      displayKills: runtime.displayKills,
+      nextUnlock: runtime.nextUnlock,
+      abilities: bonus?.abilities || {},
+      prevProgress,
+      allowRewardFx,
+      skipUnlockBlink: true
+    });
+  }
+
+  renderHeavenHellKillMeterDisplay({
+    displayKills = 0,
+    nextUnlock = 20,
+    abilities = {},
+    prevProgress = 0,
+    allowRewardFx = false,
+    skipUnlockBlink = false,
+    skipMilestones = false,
+    killsTotal = 0,
+    actionCount = 0,
+    procs = []
+  } = {}) {
+    const resolvedKills = Math.max(0, Math.floor(Number(displayKills) || 0));
+    const resolvedUnlock = Math.max(1, Math.floor(Number(nextUnlock) || 20));
+    const progress = Math.max(0, Math.min(1, resolvedKills / resolvedUnlock));
+    const displayTextKills = resolvedKills;
+    const ui = this.ensureHeavenHellAbilityPanel();
+    const { centerX, centerY } = this.getHeavenHellMeterPanelPosition();
+
+    ui.container.setPosition(centerX, centerY);
+    ui.container.setVisible(true);
+    ui.killCountText.setText(`⚔ ${displayTextKills} / ${resolvedUnlock}`);
+    this.redrawHeavenHellMeterFill(ui, progress);
+    this.refreshHeavenHellAbilitySlots(ui, abilities);
+
+    if (!skipMilestones) {
+      if (prevProgress < 0.5 && progress >= 0.5) {
+        this.playHeavenHellMeterMilestoneFx("half");
+      }
+      if (prevProgress < 0.75 && progress >= 0.75) {
+        this.playHeavenHellMeterMilestoneFx("threeQuarter");
+      }
+      if (!skipUnlockBlink && prevProgress < 1 && progress >= 1) {
+        this.playHeavenHellMeterMilestoneFx("ready");
+      }
+    }
+    ui.lastProgress = progress;
+    this._heavenHellMeterDisplayKills = resolvedKills;
+
+    if (!skipUnlockBlink && resolvedKills >= resolvedUnlock && !this.heavenHellMeterBlinkTween) {
       this.playHeavenHellMeterBlink(2);
     }
+    const awardedFreespins = this.getHeavenHellAwardedFreespinsThisAction(procs);
     if (allowRewardFx && awardedFreespins > 0) {
       const rewardFxKey = `reward:${actionCount}:${awardedFreespins}:${Math.floor(killsTotal)}`;
       if (this.heavenHellLastRewardFxKey !== rewardFxKey) {
@@ -1858,6 +1990,364 @@ export class GameScene extends Phaser.Scene {
         this.playHeavenHellFreespinAwardPopup(awardedFreespins);
       }
     }
+  }
+
+  getHeavenHellAbilitySlotPalette(abilityKey = "portal") {
+    const palettes = {
+      portal: { fill: 0x7B4DFF, glow: 0xD8B8FF, empty: 0x171126 },
+      divineWrath: { fill: 0xD94A2B, glow: 0xFFB48A, empty: 0x24140F },
+      divineCharge: { fill: 0x3FA8FF, glow: 0xB8E8FF, empty: 0x0F1A28 }
+    };
+    return palettes[abilityKey] || palettes.portal;
+  }
+
+  destroyHeavenHellAbilityPanel() {
+    const ui = this._heavenHellMeterUi;
+    if (!ui) return;
+    if (ui.shimmerTween) {
+      ui.shimmerTween.stop();
+      ui.shimmerTween = null;
+    }
+    if (ui.container && !ui.container.destroyed) {
+      ui.container.destroy();
+    }
+    this._heavenHellMeterUi = null;
+    this.heavenHellAbilityPanel = null;
+  }
+
+  hideHeavenHellAbilityPanel() {
+    if (this.heavenHellAbilityPanel && !this.heavenHellAbilityPanel.destroyed) {
+      this.heavenHellAbilityPanel.setVisible(false);
+    }
+    if (this.heavenHellMeterBlinkTween) {
+      this.heavenHellMeterBlinkTween.stop();
+      this.heavenHellMeterBlinkTween = null;
+    }
+  }
+
+  createHeavenHellAbilitySlot(x, y, filled, abilityKey = "portal") {
+    const palette = this.getHeavenHellAbilitySlotPalette(abilityKey);
+    const size = 14;
+    const slotBg = this.add.rectangle(x, y, size, size, filled ? palette.fill : palette.empty, filled ? 0.96 : 0.72)
+      .setStrokeStyle(2, filled ? 0xFFE87A : 0x5E4A24, filled ? 1 : 0.8);
+    const children = [slotBg];
+    if (filled) {
+      const gem = this.add.rectangle(x, y, size * 0.42, size * 0.42, palette.glow, 0.92)
+        .setRotation(Math.PI / 4);
+      const spark = this.add.circle(x, y, size * 0.16, 0xFFF8D6, 0.85);
+      children.push(gem, spark);
+    } else {
+      children.push(
+        this.add.rectangle(x, y, size * 0.3, size * 0.3, 0x000000, 0.42)
+      );
+    }
+    return children;
+  }
+
+  ensureHeavenHellAbilityPanel() {
+    const HEAVEN_HELL_METER_PANEL_HEIGHT = 74;
+    if (
+      this.heavenHellAbilityPanel &&
+      !this.heavenHellAbilityPanel.destroyed &&
+      this._heavenHellMeterUi?.panelHeight === HEAVEN_HELL_METER_PANEL_HEIGHT
+    ) {
+      return this._heavenHellMeterUi;
+    }
+    if (this.heavenHellAbilityPanel && !this.heavenHellAbilityPanel.destroyed) {
+      this.destroyHeavenHellAbilityPanel();
+    }
+
+    const panelWidth = 380;
+    const panelHeight = HEAVEN_HELL_METER_PANEL_HEIGHT;
+    const meterWidth = 320;
+    const meterHeight = 9;
+    const meterX = -meterWidth / 2;
+    const meterY = -2;
+    const { centerX, centerY } = this.getHeavenHellMeterPanelPosition();
+    const children = [];
+
+    const outerGlow = this.add.rectangle(0, 0, panelWidth + 18, panelHeight + 18, 0xFFE87A, 0.08)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    const panelBg = this.add.rectangle(0, 0, panelWidth, panelHeight, 0x14100C, 0.94);
+    const innerShadow = this.add.rectangle(0, 1, panelWidth - 8, panelHeight - 8, 0x000000, 0.28);
+    const goldBorder = this.add.rectangle(0, 0, panelWidth, panelHeight)
+      .setStrokeStyle(2, 0xD4AF37, 0.95)
+      .setFillStyle(0x000000, 0);
+    const innerBorder = this.add.rectangle(0, 0, panelWidth - 6, panelHeight - 6)
+      .setStrokeStyle(1, 0x8A6A1E, 0.55)
+      .setFillStyle(0x000000, 0);
+    const titleText = this.add.text(-panelWidth / 2 + 18, -panelHeight / 2 + 12, "ABILITY CHARGE", {
+      fontFamily: '"Cinzel", "Trajan Pro", "Times New Roman", serif',
+      fontSize: "10px",
+      fontStyle: "bold",
+      color: "#F8E7B0",
+      stroke: "#2A1A05",
+      strokeThickness: 3
+    }).setOrigin(0, 0.5);
+    const killCountText = this.add.text(panelWidth / 2 - 18, -panelHeight / 2 + 12, "⚔ 0 / 20", {
+      fontFamily: '"Cinzel", "Trajan Pro", "Times New Roman", serif',
+      fontSize: "18px",
+      fontStyle: "bold",
+      color: "#FFF4C8",
+      stroke: "#2A1400",
+      strokeThickness: 4
+    }).setOrigin(1, 0.5);
+    const trackBg = this.add.rectangle(meterX, meterY, meterWidth, meterHeight, 0x090706, 0.95)
+      .setOrigin(0, 0.5)
+      .setStrokeStyle(1, 0x3A2D18, 0.95);
+    const trackInner = this.add.rectangle(meterX + 1, meterY, meterWidth - 2, meterHeight - 2, 0x000000, 0.35)
+      .setOrigin(0, 0.5);
+    const fillGfx = this.add.graphics();
+    const shimmer = this.add.rectangle(meterX - 28, meterY, 22, meterHeight - 2, 0xFFF4C8, 0.42)
+      .setOrigin(0, 0.5)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setVisible(false);
+
+    children.push(
+      outerGlow,
+      panelBg,
+      innerShadow,
+      goldBorder,
+      innerBorder,
+      titleText,
+      killCountText,
+      trackBg,
+      trackInner,
+      fillGfx,
+      shimmer
+    );
+
+    const abilityRows = [];
+    const abilityDefs = [
+      { key: "portal", label: "Portal", maxSlots: 2 },
+      { key: "divineWrath", label: "Wrath", maxSlots: 1 },
+      { key: "divineCharge", label: "Charge", maxSlots: 2 }
+    ];
+    const abilityRowY = panelHeight / 2 - 14;
+    let abilityCursorX = -panelWidth / 2 + 16;
+    abilityDefs.forEach((def) => {
+      const label = this.add.text(abilityCursorX, abilityRowY, def.label, {
+        fontFamily: '"Cinzel", "Times New Roman", serif',
+        fontSize: "10px",
+        fontStyle: "bold",
+        color: "#D8C79A",
+        stroke: "#1A1208",
+        strokeThickness: 2
+      }).setOrigin(0, 0.5);
+      children.push(label);
+      abilityCursorX += label.width + 6;
+      const slots = [];
+      for (let slotIndex = 0; slotIndex < def.maxSlots; slotIndex++) {
+        const slotX = abilityCursorX + slotIndex * 18 + 7;
+        const slotChildren = this.createHeavenHellAbilitySlot(slotX, abilityRowY, false, def.key);
+        slotChildren.forEach((child) => children.push(child));
+        slots.push({ slotChildren, slotX, rowY: abilityRowY });
+      }
+      abilityCursorX += def.maxSlots * 18 + 14;
+      abilityRows.push({ ...def, label, slots });
+    });
+
+    const container = this.add.container(centerX, centerY, children)
+      .setDepth(DEPTH_HERO + 24);
+
+    const ui = {
+      container,
+      outerGlow,
+      panelBg,
+      goldBorder,
+      titleText,
+      killCountText,
+      trackBg,
+      fillGfx,
+      shimmer,
+      abilityRows,
+      panelWidth,
+      panelHeight,
+      meterWidth,
+      meterHeight,
+      meterX,
+      meterY,
+      shimmerTween: null,
+      lastProgress: 0,
+      lastFillWidth: -1,
+      lastAbilityLevels: null
+    };
+    this._heavenHellMeterUi = ui;
+    this.heavenHellAbilityPanel = container;
+
+    return ui;
+  }
+
+  redrawHeavenHellMeterFill(ui, progress = 0) {
+    if (!ui?.fillGfx || ui.fillGfx.destroyed) return;
+    const fillWidth = Math.max(0, Math.floor((ui.meterWidth - 4) * progress));
+    const x = ui.meterX + 2;
+    const y = ui.meterY - (ui.meterHeight - 4) / 2;
+    const height = ui.meterHeight - 4;
+    const glowBoost = 0.35 + progress * 0.65;
+
+    ui.fillGfx.clear();
+    if (fillWidth <= 0) {
+      if (ui.shimmer) ui.shimmer.setVisible(false);
+      if (ui.shimmerTween) {
+        ui.shimmerTween.stop();
+        ui.shimmerTween = null;
+      }
+      ui.lastFillWidth = 0;
+      if (ui.outerGlow) ui.outerGlow.setAlpha(0.06 + progress * 0.12);
+      return;
+    }
+
+    ui.fillGfx.fillGradientStyle(
+      0x6A4A10,
+      0x6A4A10,
+      0xFFD45A,
+      0xFFF0A8,
+      0.92
+    );
+    ui.fillGfx.fillRect(x, y, fillWidth, height);
+    ui.fillGfx.fillStyle(0xFFFFFF, 0.08 + progress * 0.12);
+    ui.fillGfx.fillRect(x, y, fillWidth, Math.max(2, Math.floor(height * 0.35)));
+
+    if (ui.shimmer) {
+      ui.shimmer.setVisible(true);
+      ui.shimmer.y = ui.meterY;
+      ui.shimmer.displayHeight = height;
+      ui.shimmer.setAlpha(0.18 + progress * 0.42);
+      if (ui.lastFillWidth !== fillWidth) {
+        ui.lastFillWidth = fillWidth;
+        if (ui.shimmerTween) {
+          ui.shimmerTween.stop();
+          ui.shimmerTween = null;
+        }
+        ui.shimmer.x = x - 36;
+        ui.shimmerTween = this.tweens.add({
+          targets: ui.shimmer,
+          x: x + fillWidth + 18,
+          duration: 1100 - Math.floor(progress * 350),
+          repeat: -1,
+          ease: "Sine.easeInOut",
+          onRepeat: () => {
+            if (ui.shimmer && !ui.shimmer.destroyed) {
+              ui.shimmer.x = x - 36;
+            }
+          }
+        });
+      }
+    }
+
+    if (ui.outerGlow) {
+      ui.outerGlow.setAlpha(0.08 + glowBoost * 0.14);
+      ui.outerGlow.setScale(1 + progress * 0.04);
+    }
+  }
+
+  refreshHeavenHellAbilitySlots(ui, abilities = {}) {
+    if (!ui?.abilityRows) return;
+    const levels = {
+      portal: Math.max(0, Math.floor(Number(abilities?.portal || 0))),
+      divineWrath: Math.max(0, Math.floor(Number(abilities?.divineWrath || 0))),
+      divineCharge: Math.max(0, Math.floor(Number(abilities?.divineCharge || 0)))
+    };
+    const levelsKey = `${levels.portal}:${levels.divineWrath}:${levels.divineCharge}`;
+    if (ui.lastAbilityLevels === levelsKey) return;
+    ui.lastAbilityLevels = levelsKey;
+
+    ui.abilityRows.forEach((row) => {
+      const level = levels[row.key] || 0;
+      row.slots.forEach((slot, slotIndex) => {
+        const filled = level > slotIndex;
+        slot.slotChildren.forEach((child) => {
+          if (!child || child.destroyed) return;
+          child.destroy();
+        });
+        const refreshed = this.createHeavenHellAbilitySlot(slot.slotX, slot.rowY, filled, row.key);
+        slot.slotChildren = refreshed;
+        refreshed.forEach((child) => ui.container.add(child));
+      });
+    });
+  }
+
+  playHeavenHellMeterMilestoneFx(level = "half") {
+    const ui = this._heavenHellMeterUi;
+    if (!ui?.container || ui.container.destroyed) return;
+
+    const pulseStrength = level === "ready" ? 1.14 : level === "threeQuarter" ? 1.08 : 1.04;
+    const glowAlpha = level === "ready" ? 0.42 : level === "threeQuarter" ? 0.28 : 0.18;
+    const duration = level === "ready" ? 260 : 180;
+
+    this.tweens.add({
+      targets: ui.container,
+      scaleX: pulseStrength,
+      scaleY: pulseStrength,
+      duration,
+      yoyo: true,
+      ease: "Back.easeOut"
+    });
+    if (ui.outerGlow) {
+      this.tweens.add({
+        targets: ui.outerGlow,
+        alpha: glowAlpha,
+        duration,
+        yoyo: true,
+        ease: "Sine.easeOut"
+      });
+    }
+    if (level === "ready") {
+      this.cameras?.main?.shake?.(240, 0.006);
+      const flash = this.add.rectangle(ui.container.x, ui.container.y, ui.panelWidth + 12, ui.panelHeight + 12, 0xFFF0A0, 0.55)
+        .setDepth(DEPTH_HERO + 30)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({
+        targets: flash,
+        alpha: 0,
+        scaleX: 1.12,
+        scaleY: 1.12,
+        duration: 420,
+        ease: "Cubic.easeOut",
+        onComplete: () => flash.destroy()
+      });
+    }
+  }
+
+  updateHeavenHellAbilityText(gameState = {}, { allowRewardFx = true } = {}) {
+    const heavenHell = gameState?.heavenHell;
+    const isBonus = gameState?.isBonus === true;
+    if (!heavenHell || !isBonus) {
+      this._heavenHellActiveGameState = null;
+      this._heavenHellMeterRuntime = null;
+      this.hideHeavenHellAbilityPanel();
+      return;
+    }
+
+    const bonus = heavenHell?.bonus || {};
+    const killsTotal = Math.max(0, Number(bonus?.killsTotal || 0));
+    const killsTowardsUnlock = Math.max(0, Number(bonus?.killsTowardsUnlock ?? 0));
+    const nextUnlock = Math.max(1, Number(bonus?.nextAbilityKillThreshold || 20));
+    const ui = this._heavenHellMeterUi;
+    const runtime = this._heavenHellMeterRuntime;
+    const displayedKills = runtime
+      ? Math.max(0, Math.floor(Number(runtime.displayKills) || 0))
+      : (Number.isFinite(Number(this._heavenHellMeterDisplayKills))
+        ? Math.max(0, Math.floor(Number(this._heavenHellMeterDisplayKills)))
+        : killsTowardsUnlock);
+    const prevProgress = ui ? Number(ui.lastProgress) || 0 : 0;
+    const needsFinalSync = displayedKills !== killsTowardsUnlock;
+    this._heavenHellActiveGameState = null;
+    this._heavenHellMeterRuntime = null;
+    this.renderHeavenHellKillMeterDisplay({
+      displayKills: killsTowardsUnlock,
+      nextUnlock,
+      abilities: bonus?.abilities || {},
+      prevProgress,
+      allowRewardFx,
+      skipMilestones: needsFinalSync,
+      skipUnlockBlink: needsFinalSync,
+      killsTotal,
+      actionCount: Math.max(0, Math.floor(Number(bonus?.actionCount || 0))),
+      procs: Array.isArray(bonus?.abilityProcsThisAction) ? bonus.abilityProcsThisAction : []
+    });
+    this._heavenHellMeterDisplayKills = killsTowardsUnlock;
   }
 
   getHeavenHellAwardedFreespinsThisAction(procs = []) {
@@ -1869,21 +2359,27 @@ export class GameScene extends Phaser.Scene {
   }
 
   playHeavenHellMeterBlink(blinkCount = 3) {
-    if (!this.heavenHellKillMeterFill || this.heavenHellKillMeterFill.destroyed) return;
+    const ui = this._heavenHellMeterUi;
+    if (!ui?.container || ui.container.destroyed) return;
     if (this.heavenHellMeterBlinkTween) {
       this.heavenHellMeterBlinkTween.stop();
       this.heavenHellMeterBlinkTween = null;
     }
+    const targets = [ui.goldBorder, ui.outerGlow].filter((obj) => obj && !obj.destroyed);
+    if (targets.length === 0) return;
     this.heavenHellMeterBlinkTween = this.tweens.add({
-      targets: this.heavenHellKillMeterFill,
-      alpha: { from: 1, to: 0.25 },
+      targets,
+      alpha: { from: 1, to: 0.2 },
       duration: 120,
       yoyo: true,
       repeat: Math.max(1, Math.floor(Number(blinkCount) || 3)),
       ease: "Sine.easeInOut",
       onComplete: () => {
-        if (this.heavenHellKillMeterFill && !this.heavenHellKillMeterFill.destroyed) {
-          this.heavenHellKillMeterFill.setAlpha(0.95);
+        if (ui.goldBorder && !ui.goldBorder.destroyed) {
+          ui.goldBorder.setAlpha(1);
+        }
+        if (ui.outerGlow && !ui.outerGlow.destroyed) {
+          ui.outerGlow.setAlpha(0.12);
         }
         this.heavenHellMeterBlinkTween = null;
       }
@@ -1891,36 +2387,37 @@ export class GameScene extends Phaser.Scene {
   }
 
   playHeavenHellFreespinAwardPopup(awardedFreespins = 2) {
-    if (!this.heavenHellAbilityText || this.heavenHellAbilityText.destroyed) return;
+    const ui = this._heavenHellMeterUi;
+    if (!ui?.container || ui.container.destroyed) return;
     const amount = Math.max(1, Math.floor(Number(awardedFreespins) || 2));
     const popup = this.add.text(
-      this.heavenHellAbilityText.x + 180,
-      this.heavenHellAbilityText.y - 18,
+      ui.container.x,
+      ui.container.y - ui.panelHeight / 2 - 14,
       `+${amount} Freespins`,
       {
-        fontFamily: "Arial",
-        fontSize: "20px",
+        fontFamily: '"Cinzel", "Times New Roman", serif',
+        fontSize: "22px",
         fontStyle: "bold",
         color: "#FFD55D",
-        stroke: "#111111",
-        strokeThickness: 4
+        stroke: "#2A1400",
+        strokeThickness: 5
       }
     )
       .setOrigin(0.5, 1)
-      .setDepth(DEPTH_HERO + 25)
+      .setDepth(DEPTH_HERO + 30)
       .setAlpha(0);
 
     this.tweens.add({
       targets: popup,
       alpha: 1,
-      y: popup.y - 20,
+      y: popup.y - 24,
       duration: 260,
       ease: "Sine.easeOut",
       onComplete: () => {
         this.tweens.add({
           targets: popup,
           alpha: 0,
-          y: popup.y - 12,
+          y: popup.y - 14,
           duration: 420,
           ease: "Sine.easeIn",
           onComplete: () => popup.destroy()
@@ -13431,6 +13928,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   createBonusFreespinRingDisplay(index, position, frames) {
+    if (!BONUS_FREESPIN_RING_VISUALS_ENABLED) return null;
     const ringSize = position.size || 32;
     const ringTextureKey = frames.ringTextureKey || BONUS_FREESPIN_RING_SHEET_TEXTURE_KEY;
     const usesPowerCircle = ringTextureKey === BONUS_FREESPIN_POWER_CIRCLE_TEXTURE_KEY;
@@ -13492,6 +13990,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   startBonusFreespinRingSparkleLoop(display) {
+    if (!BONUS_FREESPIN_RING_VISUALS_ENABLED) return;
     if (!display?.sparkles || !Array.isArray(display.sparkles)) return;
     display.sparkles.forEach((sparkle, sparkIndex) => {
       if (!sparkle || sparkle.destroyed) return;
@@ -13510,6 +14009,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   positionBonusFreespinRingDisplay(display, position, animate = true) {
+    if (!BONUS_FREESPIN_RING_VISUALS_ENABLED) return;
     if (!display?.container || display.container.destroyed || !position) return;
     display.size = position.size || display.size || 32;
     display.ring?.setDisplaySize(display.size, display.size * (display.ringHeightRatio || 1));
@@ -13543,6 +14043,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   setBonusFreespinRingLit(display, lit = true) {
+    if (!BONUS_FREESPIN_RING_VISUALS_ENABLED) return;
     const frames = this.ensureBonusFreespinRingFrames();
     if (!display || !frames) return;
     if (display.ring && frames.ringIdleKey) {
@@ -13570,6 +14071,7 @@ export class GameScene extends Phaser.Scene {
     playAppearSound = true,
     essenceSoundKey = null
   } = {}) {
+    if (!BONUS_FREESPIN_RING_VISUALS_ENABLED) return;
     if (!display?.container || display.container.destroyed) return;
     this.time.delayedCall(Math.max(0, Math.floor(delay) || 0), () => {
       if (!display?.container || display.container.destroyed) return;
@@ -13648,6 +14150,11 @@ export class GameScene extends Phaser.Scene {
 
   consumeBonusFreespinRingDisplay(display, delay = 0) {
     if (!display?.container || display.container.destroyed) return;
+    if (!BONUS_FREESPIN_RING_VISUALS_ENABLED) {
+      this.tweens.killTweensOf([display.container, display.glow, display.orb, ...(display.sparkles || [])]);
+      display.container.destroy();
+      return;
+    }
     this.time.delayedCall(Math.max(0, Math.floor(delay) || 0), () => {
       if (!display?.container || display.container.destroyed) return;
       const x = display.container.x;
@@ -13703,10 +14210,22 @@ export class GameScene extends Phaser.Scene {
     ripple = false,
     consumeDelay = 0
   } = {}) {
+    const displayCount = Math.max(0, Math.min(30, Math.floor(Number(remaining) || 0)));
+    if (!BONUS_FREESPIN_RING_VISUALS_ENABLED) {
+      if (displayCount <= 0) {
+        this.clearBonusFreespinRings({ fade: false });
+        this.bonusFreespinRingCount = 0;
+        return;
+      }
+      this.clearBonusFreespinRings({ fade: false });
+      this.bonusFreespinRingDisplays = [];
+      this.bonusFreespinRingCount = displayCount;
+      return;
+    }
+
     const frames = this.ensureBonusFreespinRingFrames();
     if (!frames) return;
 
-    const displayCount = Math.max(0, Math.min(30, Math.floor(Number(remaining) || 0)));
     const displays = Array.isArray(this.bonusFreespinRingDisplays)
       ? this.bonusFreespinRingDisplays
       : [];
@@ -13814,7 +14333,7 @@ export class GameScene extends Phaser.Scene {
     displays.forEach((display, index) => {
       if (!display?.container || display.container.destroyed) return;
       this.tweens.killTweensOf([display.container, display.glow, display.orb, ...(display.sparkles || [])]);
-      if (fade) {
+      if (fade && BONUS_FREESPIN_RING_VISUALS_ENABLED) {
         this.consumeBonusFreespinRingDisplay(display, index * 24);
       } else {
         display.container.destroy();
@@ -14036,198 +14555,8 @@ export class GameScene extends Phaser.Scene {
 
   updateBananaMeter(meter = 0) {
     const meterCount = typeof meter === "object" ? (meter?.count ?? 0) : meter;
-    const info = this.getBananaMeterInfo(meterCount);
-    this.currentBananaMeterCount = info.count;
-    const segments = this.getBananaMeterSegments();
-    const { currentIndex, nextIndex } = this.getBananaMeterSegmentIndexes(info.count);
-    const cellSize = 70;
-    const gridWidth = clientConfig.area.width * cellSize;
-    const gridHeight = clientConfig.area.height * cellSize;
-    const y = Math.max(12, GRID_OFFSET_Y - 52);
-    const segmentGap = segments.length > 20 ? 1 : 3;
-    const maxBarWidth = Math.max(240, Math.floor(clientConfig.area.width * cellSize) - 12);
-    const computedSegmentWidth = Math.floor(
-      (maxBarWidth - segmentGap * Math.max(segments.length - 1, 0)) / Math.max(segments.length, 1)
-    );
-    const segmentWidth = Math.max(12, Math.min(50, computedSegmentWidth));
-    const segmentHeight = segments.length > 20 ? 16 : 20;
-    const viewportWidth = Number(this.scale?.width) || Number(this.sys?.game?.config?.width) || 0;
-    const isMobileLike = viewportWidth > 0 ? viewportWidth <= 900 : true;
-    const segmentIconSize = isMobileLike
-      ? Math.max(22, Math.min(30, segmentWidth + 12))
-      : Math.max(18, Math.min(26, segmentWidth + 8));
-    const milestoneFontPx = isMobileLike ? 12 : 11;
-    const getSegmentIconDisplaySize = (segment) => {
-      if (!segment || segment.type === "SEG") return segmentIconSize;
-      const boostedSize = Math.round(segmentIconSize * 1.35);
-      return isMobileLike ? Math.min(boostedSize, 42) : Math.min(boostedSize, 36);
-    };
-    const totalBarWidth = segments.length * segmentWidth + segmentGap * Math.max(segments.length - 1, 0);
-    const centerX = GRID_OFFSET_X + gridWidth / 2;
-    const x = centerX - totalBarWidth / 2;
-    const barY = y + 36;
-    this._bananaMeterLayout = {
-      x,
-      y,
-      centerX,
-      totalBarWidth,
-      barY,
-      segmentGap,
-      segmentWidth,
-      segmentHeight,
-      segmentCount: segments.length
-    };
-
-    if (!this.bananaMeterLabel || this.bananaMeterLabel.destroyed) {
-      this.bananaMeterLabel = this.add.text(x, y - 18, "BANANA METER", {
-        fontSize: "14px",
-        fontFamily: '"Cinzel", sans-serif',
-        fontStyle: "bold",
-          color: "#FFE082",
-          stroke: "#3E2C00",
-          strokeThickness: 2
-      }).setOrigin(0.5, 0.5).setDepth(201);
-    }
-    this.bananaMeterLabel.setOrigin(0.5, 0.5);
-    this.bananaMeterLabel.setPosition(centerX, y - 18);
-
-    if (!this.bananaMeterText || this.bananaMeterText.destroyed) {
-      this.bananaMeterText = this.add.text(centerX, y + 4, "", {
-        fontSize: "26px",
-        fontFamily: '"Cinzel", "Times New Roman", serif',
-        fontStyle: "bold",
-        color: "#FFD54F",
-        stroke: "#5D4037",
-        strokeThickness: 4
-      }).setOrigin(0.5, 0.5).setDepth(201);
-    }
-    this.bananaMeterText.setOrigin(0.5, 0.5);
-    this.bananaMeterText.setPosition(centerX, y + 4);
-
-    const meterText = info.mode === "MAIN"
-      ? `${info.count}/5  |  COLLECT 5 BANANAS AND WIN BONUS`
-      : `${info.count}  |  LVL ${info.level} BONUS (${info.rangeLabel})`;
-    this.bananaMeterText.setFontSize(info.mode === "MAIN" ? "19px" : "26px");
-    this.bananaMeterText.setText(meterText);
-
-    const shouldRebuildSegments =
-      !Array.isArray(this.bananaMeterSegments) ||
-      !Array.isArray(this.bananaMeterSegmentLabels) ||
-      !Array.isArray(this.bananaMeterMilestoneLabels) ||
-      this.bananaMeterSegments.length !== segments.length ||
-      this.bananaMeterSegmentLabels.length !== segments.length ||
-      this.bananaMeterMilestoneLabels.length !== segments.length;
-
-    if (shouldRebuildSegments) {
-      if (Array.isArray(this.bananaMeterSegments)) {
-        this.bananaMeterSegments.forEach((obj) => obj?.destroy?.());
-      }
-      if (Array.isArray(this.bananaMeterSegmentLabels)) {
-        this.bananaMeterSegmentLabels.forEach((obj) => obj?.destroy?.());
-      }
-      if (Array.isArray(this.bananaMeterMilestoneLabels)) {
-        this.bananaMeterMilestoneLabels.forEach((obj) => obj?.destroy?.());
-      }
-
-      this.bananaMeterSegments = [];
-      this.bananaMeterSegmentLabels = [];
-      this.bananaMeterMilestoneLabels = [];
-
-      segments.forEach((segment, index) => {
-        const segX = x + index * (segmentWidth + segmentGap);
-        const iconSize = getSegmentIconDisplaySize(segment);
-        const segmentRect = this.add.rectangle(segX, barY, segmentWidth, segmentHeight, 0x2d2312)
-          .setOrigin(0, 0.5)
-          .setDepth(201);
-        segmentRect.setVisible(false);
-        this.bananaMeterSegments.push(segmentRect);
-
-        const segmentIcon = this.add.image(segX + segmentWidth / 2, barY, "banana_empty")
-          .setOrigin(0.5, 0.5)
-          .setDepth(202)
-          .setDisplaySize(iconSize, iconSize);
-        this.bananaMeterSegmentLabels.push(segmentIcon);
-
-        if (segment.type !== "SEG" && segment.shortLabel) {
-          const milestoneLabel = this.add.text(
-            segX + segmentWidth / 2,
-            barY - Math.round(segmentHeight * 0.95),
-            segment.shortLabel,
-            {
-              fontSize: `${milestoneFontPx}px`,
-              fontFamily: '"Cinzel", sans-serif',
-              fontStyle: "bold",
-              color: "#E9D7A8",
-              stroke: "#3A2A05",
-              strokeThickness: 3
-            }
-          )
-            .setOrigin(0.5, 1)
-            .setDepth(203);
-          this.bananaMeterMilestoneLabels.push(milestoneLabel);
-        } else {
-          this.bananaMeterMilestoneLabels.push(null);
-        }
-      });
-    }
-
-    for (let i = 0; i < segments.length; i++) {
-      const rect = this.bananaMeterSegments?.[i];
-      const label = this.bananaMeterSegmentLabels?.[i];
-      const milestoneLabel = this.bananaMeterMilestoneLabels?.[i];
-      if (!rect || rect.destroyed || !label || label.destroyed) continue;
-      const segX = x + i * (segmentWidth + segmentGap);
-      rect.setPosition(segX, barY);
-      label.setPosition(segX + segmentWidth / 2, barY);
-      if (milestoneLabel && !milestoneLabel.destroyed) {
-        milestoneLabel.setPosition(segX + segmentWidth / 2, barY - Math.round(segmentHeight * 0.95));
-        milestoneLabel.setFontSize(milestoneFontPx);
-      }
-
-      let fillColor = 0x2d2312;
-      let fillAlpha = 0.55;
-      let strokeColor = 0x1a1307;
-      const segmentType = segments[i]?.type || "SEG";
-
-      if (segmentType === "BONUS") {
-        fillColor = 0x3f2a0f;
-        strokeColor = 0x836026;
-      } else if (segmentType === "WILD2") {
-        fillColor = 0x213224;
-        strokeColor = 0x2f6f45;
-      }
-
-      const isMaxState = nextIndex === -1 && i === currentIndex;
-      const isNextTarget = i === nextIndex || isMaxState;
-      const isReached = i <= currentIndex;
-
-      if (isReached) {
-        fillColor = 0x9a741f;
-        fillAlpha = 0.9;
-        strokeColor = 0xd9b45a;
-      }
-
-      rect.setFillStyle(fillColor, fillAlpha);
-      rect.setStrokeStyle(2, strokeColor, 1);
-      const iconTexture = isReached ? "banana_filled" : "banana_empty";
-      if (label.texture?.key !== iconTexture && this.textures.exists(iconTexture)) {
-        label.setTexture(iconTexture);
-      }
-      label.clearTint();
-      label.setAlpha(1);
-      const iconSize = getSegmentIconDisplaySize(segments[i]);
-      label.setDisplaySize(iconSize, iconSize);
-
-      if (milestoneLabel && !milestoneLabel.destroyed) {
-        if (isReached) {
-          milestoneLabel.setColor("#FFF1BC");
-          milestoneLabel.setStroke("#6A4704", 3);
-        } else {
-          milestoneLabel.setColor("#E9D7A8");
-          milestoneLabel.setStroke("#3A2A05", 3);
-        }
-      }
-    }
+    this.currentBananaMeterCount = Math.max(0, Math.min(30, Math.floor(Number(meterCount) || 0)));
+    this.hideBananaMeter();
   }
 
   animateBananaCollectToMeter(fromX, fromY, meterCount = null, options = null) {
@@ -17790,7 +18119,7 @@ export class GameScene extends Phaser.Scene {
 
   /**
    * Animate hero hunting bananas along a path
-   * @param {number} totalBananasKilledInSequence - Legacy sequence counter; speed is now driven by monkey form.
+   * @param {number} totalDemonsKilledInSequence - Legacy sequence counter; speed is now driven by monkey form.
    * @param {string} stepType - The hero step type ("destroy", "mystery", "mysteryWild")
    * @param {string} weapon - The hero weapon ("staff", "sword", "axe")
    * @param {object} bonusInfo - Optional: { isBonus: boolean, baseKillCount: number, bananasPerChest: number }
@@ -17800,7 +18129,7 @@ export class GameScene extends Phaser.Scene {
     affectedPositions,
     orbDrops = [],
     multiplier = 1,
-    totalBananasKilledInSequence = 0,
+    totalDemonsKilledInSequence = 0,
     stepType = "destroy",
     weapon = "staff",
     bonusInfo = null,
@@ -17846,6 +18175,10 @@ export class GameScene extends Phaser.Scene {
       ? huntBehavior.lightningBeeFeatureCollections
       : [];
     const bonusEntryFreespins = Math.max(1, Math.floor(Number(huntBehavior?.bonusEntryFreespins) || 5));
+    const heavenHellGameState = huntBehavior?.heavenHellGameState || null;
+    if (heavenHellGameState?.heavenHell?.bonus && heavenHellGameState?.isBonus === true) {
+      this.prepareHeavenHellKillMeterForAction(heavenHellGameState);
+    }
     let heroFootprintSize = Math.max(
       1,
       Math.floor(Number(heroPath?.[0]?.footprintSize || huntBehavior?.heroFootprintSize) || (huntBehavior?.giantMonkeyActive ? 2 : 1))
@@ -17875,11 +18208,20 @@ export class GameScene extends Phaser.Scene {
         };
       }
     };
-    const baseRushDuration = 100 * huntSpeedFactor; // Stable stage 1-3 movement speed
-    const minRushDuration = 50 * huntSpeedFactor;   // Max rush speed (faster = lower duration)
-    const rushAccelerationRate = 0.86; // Gentle acceleration only after rush form is active
-    const approachDuration = 80 * huntSpeedFactor;   // Fast approach to banana
-    const attackDuration = 150 * huntSpeedFactor;    // Quick strike
+    const baseRushDuration = 72 * huntSpeedFactor;
+    const minRushDuration = 28 * huntSpeedFactor;
+    const rushAccelerationRate = 0.74;
+    const approachDuration = 58 * huntSpeedFactor;
+    const attackDuration = 110 * huntSpeedFactor;
+    const HUNT_MOMENTUM_GAIN = 0.14;
+    const HUNT_MOMENTUM_MAX = 2.6;
+    const HUNT_MOMENTUM_IMPACT_DECAY = 0.42;
+    let huntMomentum = 1.0;
+    const applyMomentumToDuration = (duration) => Math.max(
+      minRushDuration,
+      Math.floor(Number(duration) / Math.min(HUNT_MOMENTUM_MAX, huntMomentum))
+    );
+    const isHeavenHellBonusHunt = Boolean(heavenHellGameState?.heavenHell?.bonus && heavenHellGameState?.isBonus === true);
     const bloodSlowMoDuration = 900; // Extended slow-motion blood splatter
     
     // Orb animation settings
@@ -17947,38 +18289,20 @@ export class GameScene extends Phaser.Scene {
         return;
       }
 
-      const sourcePosition = Number.isFinite(Number(pathStep?.reel)) && Number.isFinite(Number(pathStep?.row))
-        ? { reel: Number(pathStep.reel), row: Number(pathStep.row) }
-        : this.currentHeroAnchor;
-      const levelUpIntensity = nextThreshold >= 25 ? "major" : "medium";
-      this.playMonkeyLevelUpSlowMotionCue(levelUpIntensity);
-      const levelUpBurst = this.playMonkeyLevelUpRingBurst(sourcePosition, {
-        heroFootprintSize,
-        intensity: levelUpIntensity,
-        durationMs: 1500
-      });
       const isInitialBonusWon = (
         this.currentAction === "bananaHunt" &&
         this.isInBonusMode !== true &&
         nextThreshold === 5
       );
-      const bonusWonLabel = isInitialBonusWon
-        ? this.playBonusWonFloatingLabel(`${bonusEntryFreespins} FREESPINS WON`, {
-          fontSize: "48px",
-          glowFontSize: "52px"
-        })
-        : Promise.resolve();
-      if (isInitialBonusWon) {
-        void bonusWonLabel.catch(() => {});
-        await Promise.all([
-          levelUpBurst,
-          this.playBonusWonCelebrationPause()
-        ]);
+      if (!isInitialBonusWon) {
         return;
       }
 
-      // Keep normal level-ups readable, but never let those celebrations stall the hunt cadence.
-      void Promise.all([levelUpBurst, bonusWonLabel]).catch(() => {});
+      void this.playBonusWonFloatingLabel(`${bonusEntryFreespins} FREESPINS WON`, {
+        fontSize: "48px",
+        glowFontSize: "52px"
+      }).catch(() => {});
+      await this.playBonusWonCelebrationPause();
     };
     const retriggerThresholds = [10, 15, 20, 25, 30];
     const handleBonusRetriggerFromMeterProgress = (fromCount, toCount) => {
@@ -18848,13 +19172,18 @@ export class GameScene extends Phaser.Scene {
       await playEntryImpactFx(startX, startY);
     };
 
-    const getDirectFlightDuration = (fromX, fromY, targetX, targetY, quickStop = false) => {
+    const getDirectFlightDuration = (fromX, fromY, targetX, targetY, quickStop = false, { chargeLaunch = false } = {}) => {
       if (quickStop) return 1;
+      if (chargeLaunch) {
+        const distance = Phaser.Math.Distance.Between(fromX, fromY, targetX, targetY);
+        return Math.max(42 * huntSpeedFactor, Math.min(120 * huntSpeedFactor, 36 * huntSpeedFactor + distance * 0.22));
+      }
       const distance = Phaser.Math.Distance.Between(fromX, fromY, targetX, targetY);
-      return Math.max(
-        240 * huntSpeedFactor,
-        Math.min(460 * huntSpeedFactor, 170 * huntSpeedFactor + distance * 1.2)
+      const base = Math.max(
+        165 * huntSpeedFactor,
+        Math.min(340 * huntSpeedFactor, 120 * huntSpeedFactor + distance * 0.9)
       );
+      return applyMomentumToDuration(base);
     };
 
     const moveHeroLinearlyToTarget = async (targetX, targetY, duration, ease = 'Power3.easeIn', { featureApproach = false } = {}) => {
@@ -19260,6 +19589,21 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    let startChargeLaunch = false;
+    if (startHasBanana && isHeavenHellBonusHunt && startStep?.divineChargeProc === true) {
+      const chargeRushTexture = getHeroTexture(weapon, {
+        footprintSize: heroFootprintSize,
+        rushActive: true,
+        bonusStage: visualBonusStage
+      });
+      if (this.heroSprite && !this.heroSprite.destroyed) {
+        this.heroSprite.setTexture(chargeRushTexture);
+      }
+      await this.playHeavenHellDivineChargeWindup(startStep, { stepQuickStop: false });
+      startChargeLaunch = true;
+      huntMomentum = HUNT_MOMENTUM_MAX;
+    }
+
     if (startHasBanana && !is3x3Troll) {
       if (rushActive) {
         startStep.footprintCells
@@ -19322,6 +19666,12 @@ export class GameScene extends Phaser.Scene {
         ]);
       }
       applyImpactWinCountUp(startStep);
+      if (isHeavenHellBonusHunt && startStep?.divineWrathProc === true) {
+        await this.playHeavenHellDivineWrathAtStep(startStep, heavenHellGameState, { stepQuickStop: false });
+      }
+      if (isHeavenHellBonusHunt && startChargeLaunch) {
+        await this.playHeavenHellDivineChargeImpact(startStep, heavenHellGameState, { x: startX, y: startY });
+      }
       const startGrowthHandled = startStep?.giantMonkeyActivated === true;
       if (startGrowthHandled) {
         registerGrowthBananasToMeter(startStep).forEach((promise) => {
@@ -19353,9 +19703,9 @@ export class GameScene extends Phaser.Scene {
     
     // Thunderkong rule: wild-strength banana-check triggers only after monkey moves to a banana.
 
-    // Track current acceleration segment. Stage 1-3 stays stable; rush form adds the speed bump.
+    // Track current acceleration segment. Momentum chain builds speed across consecutive kills.
     const initialSpeedMultiplier = getHuntSpeedMultiplier(startStep);
-    let currentSegmentSpeed = baseRushDuration * initialSpeedMultiplier;
+    let currentSegmentSpeed = applyMomentumToDuration(baseRushDuration * initialSpeedMultiplier);
     let lastBananaIndex = 0;
     
     // Move along path with accelerating rush and impact checks.
@@ -19363,6 +19713,10 @@ export class GameScene extends Phaser.Scene {
       for (let i = pathStartIndex + 1; i < heroPath.length; i++) {
       let stepQuickStop = this.consumeQuickStop();
       const step = heroPath[i];
+      if (step?.wrathPreKilled === true) {
+        continue;
+      }
+      let stepChargeLaunch = false;
       let heroFormNeedsSync = false;
       if (typeof step?.rushActive === "boolean") {
         rushActive = step.rushActive === true;
@@ -19396,6 +19750,20 @@ export class GameScene extends Phaser.Scene {
       const stepSkipsImpactSlowMo = stepWaitsForBananaUpgrade || stepHasFeatureActivation;
       const useFeatureApproachCue = stepHasFeatureActivation && !stepQuickStop;
       const stepBananaMeterArrivalPromises = [];
+
+      if (isBananaStep && isHeavenHellBonusHunt && step?.divineChargeProc === true && !stepQuickStop) {
+        const chargeRushTexture = getHeroTexture(weapon, {
+          footprintSize: heroFootprintSize,
+          rushActive: true,
+          bonusStage: visualBonusStage
+        });
+        if (this.heroSprite && !this.heroSprite.destroyed) {
+          this.heroSprite.setTexture(chargeRushTexture);
+        }
+        await this.playHeavenHellDivineChargeWindup(step, { stepQuickStop });
+        stepChargeLaunch = true;
+        huntMomentum = HUNT_MOMENTUM_MAX;
+      }
       
       // BEFORE MOVING: Transform previous position to mystery if mystery step
       // This happens at the START of each movement, so mystery appears under hero before he leaves
@@ -19543,7 +19911,16 @@ export class GameScene extends Phaser.Scene {
       let currentDuration;
       
       if (isBananaStep) {
-        if (!rushActive && !is3x3Troll) {
+        if (stepChargeLaunch) {
+          currentDuration = getDirectFlightDuration(
+            this.heroSprite?.x ?? targetX,
+            this.heroSprite?.y ?? targetY,
+            targetX,
+            targetY,
+            stepQuickStop,
+            { chargeLaunch: true }
+          );
+        } else if (!rushActive && !is3x3Troll) {
           currentDuration = getDirectFlightDuration(
             this.heroSprite?.x ?? targetX,
             this.heroSprite?.y ?? targetY,
@@ -19552,11 +19929,8 @@ export class GameScene extends Phaser.Scene {
             stepQuickStop
           );
         } else {
-          // Rush-form approach gets a modest form-based speed bump.
           const speedMultiplier = getHuntSpeedMultiplier(step);
-          currentDuration = approachDuration * speedMultiplier;
-          
-          // If fighting 3x3 troll, make attacks MUCH faster
+          currentDuration = applyMomentumToDuration(approachDuration * speedMultiplier);
           if (is3x3Troll) {
             currentDuration *= trollAttackSpeedMultiplier;
           }
@@ -19564,9 +19938,10 @@ export class GameScene extends Phaser.Scene {
       } else {
         const speedMultiplier = getHuntSpeedMultiplier(step);
         const adjustedMinSpeed = minRushDuration * speedMultiplier;
+        huntMomentum = Math.min(HUNT_MOMENTUM_MAX, huntMomentum + HUNT_MOMENTUM_GAIN);
         currentSegmentSpeed = rushActive
           ? Math.max(adjustedMinSpeed, currentSegmentSpeed * rushAccelerationRate)
-          : baseRushDuration * speedMultiplier;
+          : applyMomentumToDuration(baseRushDuration * speedMultiplier);
         currentDuration = currentSegmentSpeed;
       }
       
@@ -19577,26 +19952,38 @@ export class GameScene extends Phaser.Scene {
       // More trails = faster movement (visual feedback)
       const trailCount = Math.ceil((baseRushDuration / currentDuration) * 2);
       
-      // Spawn trail images
-      if (rushActive && !stepQuickStop) {
-        for (let t = 0; t < Math.min(trailCount, 6); t++) {
+      // Spawn trail images — angel trail asset during rush / charge launch
+      if ((rushActive || stepChargeLaunch || huntMomentum >= 1.5) && !stepQuickStop) {
+        const trailLimit = stepChargeLaunch ? 8 : Math.min(trailCount, 6);
+        for (let t = 0; t < trailLimit; t++) {
           setTimeout(() => {
-            const trail = this.add.image(this.heroSprite.x, this.heroSprite.y, heroTexture)
-              .setOrigin(0.5)
-              .setScale(heroBaseScale)
-              .setDepth(DEPTH_HERO - 1)
-              .setAlpha(0.35)
-              .setTint(BANANA_TRAIL_TINT);
-            
+            if (!this.heroSprite || this.heroSprite.destroyed) return;
+            const useAngelTrail = this.textures?.exists?.("helldive_angel_trail") && (stepChargeLaunch || huntMomentum >= 1.8);
+            const trail = useAngelTrail
+              ? this.add.image(this.heroSprite.x, this.heroSprite.y, "helldive_angel_trail")
+                  .setOrigin(0.5)
+                  .setScale(heroBaseScale * 0.72)
+                  .setDepth(DEPTH_HERO - 1)
+                  .setAlpha(0.42)
+                  .setBlendMode(Phaser.BlendModes.ADD)
+              : this.add.image(this.heroSprite.x, this.heroSprite.y, heroTexture)
+                  .setOrigin(0.5)
+                  .setScale(heroBaseScale)
+                  .setDepth(DEPTH_HERO - 1)
+                  .setAlpha(0.35)
+                  .setTint(BANANA_TRAIL_TINT);
             this.tweens.add({
               targets: trail,
               alpha: 0,
-              scale: heroBaseScale * 0.8,
-              duration: 150,
+              scale: (trail.scaleX || heroBaseScale) * 0.78,
+              duration: stepChargeLaunch ? 120 : 150,
               ease: 'Power2.easeOut',
               onComplete: () => trail.destroy()
             });
-          }, t * 15);
+          }, t * (stepChargeLaunch ? 10 : 15));
+        }
+        if (stepChargeLaunch) {
+          this.spawnHeavenHellChargeLaunchTrails(startX, startY, targetX, targetY, { heroScale: heroBaseScale });
         }
       }
       
@@ -19637,14 +20024,18 @@ export class GameScene extends Phaser.Scene {
             this.tweens.killTweensOf(this.heroSprite);
             this.heroSprite.setPosition(targetX, targetY);
           } else {
-            await moveHeroLinearlyToTarget(targetX, targetY, currentDuration, 'Power2.easeIn', {
-              featureApproach: useFeatureApproachCue
-            });
+            await moveHeroLinearlyToTarget(
+              targetX,
+              targetY,
+              currentDuration,
+              stepChargeLaunch ? 'Cubic.easeIn' : 'Power2.easeIn',
+              { featureApproach: useFeatureApproachCue }
+            );
           }
 
           if (!stepQuickStop) {
             const bananaHitSound = `banana_hit_${Math.floor(Math.random() * 4) + 1}`;
-            this.playSfx(bananaHitSound, { volume: 0.42 });
+            this.playSfx(bananaHitSound, { volume: stepChargeLaunch ? 0.5 : 0.42 });
 
             const landingPunchDuration = Math.max(70, Math.min(120, currentDuration * 0.28));
             await new Promise((resolve) => {
@@ -19690,9 +20081,13 @@ export class GameScene extends Phaser.Scene {
             this.tweens.killTweensOf(this.heroSprite);
             this.heroSprite.setPosition(targetX, targetY);
           } else {
-            await moveHeroLinearlyToTarget(targetX, targetY, attackAnimDuration, 'Power2.easeIn', {
-              featureApproach: useFeatureApproachCue
-            });
+            await moveHeroLinearlyToTarget(
+              targetX,
+              targetY,
+              attackAnimDuration,
+              stepChargeLaunch ? 'Cubic.easeIn' : 'Power2.easeIn',
+              { featureApproach: useFeatureApproachCue }
+            );
             if (this.heroSprite && !this.heroSprite.destroyed) {
               this.tweens.add({
                 targets: this.heroSprite,
@@ -19733,13 +20128,20 @@ export class GameScene extends Phaser.Scene {
           this.tweens.killTweensOf(this.heroSprite);
           this.heroSprite.setPosition(targetX, targetY);
         } else {
-          await moveHeroLinearlyToTarget(targetX, targetY, currentDuration, 'Power3.easeIn', {
-            featureApproach: useFeatureApproachCue
-          });
+          await moveHeroLinearlyToTarget(
+            targetX,
+            targetY,
+            currentDuration,
+            stepChargeLaunch ? 'Cubic.easeIn' : 'Power3.easeIn',
+            { featureApproach: useFeatureApproachCue }
+          );
         }
       }
       if (!stepQuickStop) {
         emitRushingMonkeyStepTrail(step, stepAffectedCells);
+      }
+      if (isBananaStep && !stepQuickStop) {
+        huntMomentum = Math.max(1.0, huntMomentum - HUNT_MOMENTUM_IMPACT_DECAY);
       }
       
       // Handle destroy step AFTER hero arrives at position
@@ -19922,6 +20324,13 @@ export class GameScene extends Phaser.Scene {
 
         if (step.goldpile && step.goldpile.value > 0 && !is3x3Troll) {
           this.dropGoldPile(targetX, targetY, step.goldpile.value, step.goldpile.tier);
+        }
+
+        if (isHeavenHellBonusHunt && step?.divineWrathProc === true) {
+          await this.playHeavenHellDivineWrathAtStep(step, heavenHellGameState, { stepQuickStop });
+        }
+        if (isHeavenHellBonusHunt && stepChargeLaunch) {
+          await this.playHeavenHellDivineChargeImpact(step, heavenHellGameState, { x: targetX, y: targetY });
         }
         
         // Bonus hunt keeps ordinary banana hits fluid; upgrade hits still wait for the banana meter arrival.
@@ -22337,7 +22746,8 @@ export class GameScene extends Phaser.Scene {
     heroFootprintSize = null,
     intensity = "major",
     preferHeroSprite = true,
-    durationMs = null
+    durationMs = null,
+    radialScale = 1
   } = {}) {
     const center = this.getMonkeyLevelUpBurstCenter(heroPosition, heroFootprintSize, { preferHeroSprite });
     if (!center) {
@@ -22352,15 +22762,19 @@ export class GameScene extends Phaser.Scene {
     const baseDuration = isMajor ? 720 : 500;
     const resolvedDuration = Math.max(260, Math.floor(Number(durationMs) || baseDuration));
     const durationScale = resolvedDuration / baseDuration;
-    const baseRadius = Math.max(26, 24 + footprintSize * 16);
-    const maxScale = isMajor ? 4.35 : 3.35;
+    const resolvedRadialScale = Phaser.Math.Clamp(Number(radialScale) || 1, 0.45, 1.2);
+    const baseRadius = Math.max(26, 24 + footprintSize * 16) * resolvedRadialScale;
+    const maxScale = (isMajor ? 4.35 : 3.35) * resolvedRadialScale;
     const depth = DEPTH_HERO + 18;
     const colors = [0xFFF45C, 0xFFD24A, 0xFFEFA8, 0xFFFFFF];
 
-    this.playSfx?.("wins_explode", { volume: isMajor ? 0.34 : 0.22 });
-    this.playSfx?.("wins_highlight", { volume: isMajor ? 0.32 : 0.22 });
-    this.playSfx?.("lightning_at_lvl_up", { volume: isMajor ? 0.58 : 0.46 });
-    this.cameras?.main?.shake(isMajor ? 260 : 180, isMajor ? 0.011 : 0.007);
+    this.playSfx?.("wins_explode", { volume: (isMajor ? 0.34 : 0.22) * resolvedRadialScale });
+    this.playSfx?.("wins_highlight", { volume: (isMajor ? 0.32 : 0.22) * resolvedRadialScale });
+    this.playSfx?.("lightning_at_lvl_up", { volume: (isMajor ? 0.58 : 0.46) * resolvedRadialScale });
+    this.cameras?.main?.shake(
+      isMajor ? 260 : 180,
+      (isMajor ? 0.011 : 0.007) * resolvedRadialScale
+    );
     const growthPower = Math.max(0, Math.min(2, footprintSize - 1));
     this.playHeroLightningLevelUpBurst(heroPosition, {
       heroFootprintSize: footprintSize,
@@ -22368,11 +22782,11 @@ export class GameScene extends Phaser.Scene {
       preferHeroSprite,
       durationMs: resolvedDuration,
       depth: depth + 4,
-      boltCount: isMajor ? 12 + growthPower * 5 : 8 + growthPower * 3,
-      boltLengthScale: 1 + growthPower * 0.68,
-      boltSizeScale: 1 + growthPower * 0.32,
-      flashScale: 1 + growthPower * 0.42,
-      flashAlphaScale: 1 + growthPower * 0.22
+      boltCount: Math.max(4, Math.floor((isMajor ? 12 + growthPower * 5 : 8 + growthPower * 3) * resolvedRadialScale)),
+      boltLengthScale: (1 + growthPower * 0.68) * resolvedRadialScale,
+      boltSizeScale: (1 + growthPower * 0.32) * resolvedRadialScale,
+      flashScale: (1 + growthPower * 0.42) * resolvedRadialScale,
+      flashAlphaScale: (1 + growthPower * 0.22) * resolvedRadialScale
     });
 
     const flash = this.add.circle(center.x, center.y, baseRadius * 0.78, 0xFFF45C, isMajor ? 0.58 : 0.42)
@@ -22412,7 +22826,7 @@ export class GameScene extends Phaser.Scene {
       });
     });
 
-    const beamCount = isMajor ? 28 : 18;
+    const beamCount = Math.max(8, Math.floor((isMajor ? 28 : 18) * resolvedRadialScale));
     for (let i = 0; i < beamCount; i++) {
       const angle = (i / beamCount) * Math.PI * 2 + Phaser.Math.FloatBetween(-0.08, 0.08);
       const color = colors[i % colors.length];
@@ -22449,7 +22863,7 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
-    const sparkCount = isMajor ? 42 : 24;
+    const sparkCount = Math.max(12, Math.floor((isMajor ? 42 : 24) * resolvedRadialScale));
     for (let i = 0; i < sparkCount; i++) {
       const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
       const distance = Phaser.Math.Between(baseRadius, isMajor ? 210 : 150);

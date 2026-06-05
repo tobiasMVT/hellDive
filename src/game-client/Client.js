@@ -21,11 +21,6 @@ export class Client {
     return gameState?.heavenHell && typeof gameState.heavenHell === "object";
   }
 
-  shouldShowLegacyChargeMeter(gameState = {}) {
-    if (!this.isHeavenHellEnabled(gameState)) return true;
-    return gameState?.isBonus !== true;
-  }
-
   buildMergeGunAreasFromPositions(rawPositions = []) {
     const positionsByKey = new Map();
     (Array.isArray(rawPositions) ? rawPositions : []).forEach((entry) => {
@@ -458,9 +453,6 @@ export class Client {
       
       // Sync multiplier display with server state (should be 1 on new spin)
       this.scene.createOrUpdateHouse(gameState.multiplier || 1);
-      if (this.shouldShowLegacyChargeMeter(gameState)) {
-        this.scene.updateBananaMeter?.(gameState.bananaMeter ?? gameState.bananaMeterCount ?? 0);
-      }
       this.scene.renderHeavenHellLootGround?.([]);
       this.scene.updateHeavenHellAbilityText?.(gameState);
 
@@ -498,8 +490,8 @@ export class Client {
         const sceneMeterCount = Number(this.scene?.currentBananaMeterCount);
         let meterStartCount = Number.isFinite(sceneMeterCount) ? sceneMeterCount : finalMeterCount;
         if (!Number.isFinite(sceneMeterCount)) {
-          const bananasKilledThisHunt = Math.max(0, Number(gameState?.bananasKilled ?? 0) || 0);
-          meterStartCount = Math.max(0, finalMeterCount - bananasKilledThisHunt);
+          const demonsKilledThisAction = Math.max(0, Number(gameState?.demonsKilledThisAction ?? 0) || 0);
+          meterStartCount = Math.max(0, finalMeterCount - demonsKilledThisAction);
         }
         meterStartCount = Math.min(meterStartCount, finalMeterCount);
         await this.scene.animateHeroHunt(
@@ -507,7 +499,7 @@ export class Client {
           gameState.affectedPositions, 
           gameState.orbDrops || [],
           gameState.multiplier || 1,
-          gameState.totalBananasCollectedInSequence ?? gameState.totalBananasKilledInSequence ?? 0,
+          gameState.totalDemonsCollectedInSequence ?? gameState.totalDemonsKilledInSequence ?? 0,
           stepType,
           weapon,
           null,
@@ -528,7 +520,8 @@ export class Client {
             mergeGunActivations: gameState?.mergeGunFeatureThisAction?.activations || gameState?.mergeGunActivationsThisAction || [],
             mergeGunAreas: this.getMergeGunAreasForDisplay(gameState),
             bonusMysteryFeatureCollections: gameState?.bonusMysteryFeatureCollectedThisAction || [],
-            lightningBeeFeatureCollections: gameState?.lightningBeeFeatureCollectedThisAction || []
+            lightningBeeFeatureCollections: gameState?.lightningBeeFeatureCollectedThisAction || [],
+            heavenHellGameState: this.isHeavenHellEnabled(gameState) && gameState?.isBonus ? gameState : null
           }
         );
         this.scene.syncHeroBonusForm?.(gameState?.heroFootprintSize || 1, false, gameState?.heroPosition || null);
@@ -563,9 +556,6 @@ export class Client {
       // Show freespin counter (just the remaining number)
       const initialSpins = gameState.bonusState?.finalFreespins || gameState.bonusWon?.enterBonusWith?.freespins || 5;
       this.scene.updateFreespinCounter(initialSpins);
-      if (this.shouldShowLegacyChargeMeter(gameState)) {
-        this.scene.updateBananaMeter?.(gameState.bananaMeter ?? gameState.bananaMeterCount ?? 0);
-      }
       this.syncBonusMysteryFeatureUi(gameState, { consume: false });
       this.syncLightningBeeFeatureUi(gameState, { consume: false });
       await this.syncMergeGunFeatureUi(gameState, { playActivation: false });
@@ -622,9 +612,6 @@ export class Client {
       // Update freespin counter (just the remaining number)
       const remaining = gameState.bonusState?.finalFreespins || 0;
       this.scene.updateFreespinCounter(remaining, { deferRingConsume: true });
-      if (this.shouldShowLegacyChargeMeter(gameState)) {
-        this.scene.updateBananaMeter?.(gameState.bananaMeter ?? gameState.bananaMeterCount ?? 0);
-      }
       
       // Clear old symbols with the ape smash at freespin action start. Falls back to the legacy slide if no board was available.
       const smashedOldSymbols = await this.playFreespinSmashSymbolClear(gameState);
@@ -839,8 +826,8 @@ export class Client {
         const sceneMeterCount = Number(this.scene?.currentBananaMeterCount);
         let meterStartCount = Number.isFinite(sceneMeterCount) ? sceneMeterCount : finalMeterCount;
         if (!Number.isFinite(sceneMeterCount)) {
-          const bananasKilledThisHunt = Math.max(0, Number(gameState?.bananasKilled ?? 0) || 0);
-          meterStartCount = Math.max(0, finalMeterCount - bananasKilledThisHunt);
+          const demonsKilledThisAction = Math.max(0, Number(gameState?.demonsKilledThisAction ?? 0) || 0);
+          meterStartCount = Math.max(0, finalMeterCount - demonsKilledThisAction);
         }
         meterStartCount = Math.min(meterStartCount, finalMeterCount);
         
@@ -849,7 +836,7 @@ export class Client {
           gameState.affectedPositions, 
           gameState.orbDrops || [],
           gameState.multiplier || 1,
-          gameState.totalBananasCollectedInSequence ?? gameState.totalBananasKilledInSequence ?? 0,
+          gameState.totalDemonsCollectedInSequence ?? gameState.totalDemonsKilledInSequence ?? 0,
           stepType,
           weapon,
           null,
@@ -870,13 +857,10 @@ export class Client {
             mergeGunActivations: gameState?.mergeGunFeatureThisAction?.activations || gameState?.mergeGunActivationsThisAction || [],
             mergeGunAreas: this.getMergeGunAreasForDisplay(gameState),
             bonusMysteryFeatureCollections: gameState?.bonusMysteryFeatureCollectedThisAction || [],
-            lightningBeeFeatureCollections: gameState?.lightningBeeFeatureCollectedThisAction || []
+            lightningBeeFeatureCollections: gameState?.lightningBeeFeatureCollectedThisAction || [],
+            heavenHellGameState: this.isHeavenHellEnabled(gameState) ? gameState : null
           }
         );
-        if (this.isHeavenHellEnabled(gameState)) {
-          await this.scene.playHeavenHellDivineWrathAreaTelegraph?.(gameState);
-          await this.scene.playHeavenHellDivineChargeSequence?.(gameState);
-        }
         if (bonusStageEvent?.giantMonkeyActivated) {
           await this.scene.animateHeroGrowthExpansion?.(bonusStageEvent);
         } else {
@@ -928,10 +912,6 @@ export class Client {
       
     } else if (gameState.executedAction === 'chestreward') {
       // Chest rewards are disabled for Thunderkong.
-    }
-
-    if (this.shouldShowLegacyChargeMeter(gameState)) {
-      this.scene.updateBananaMeter?.(gameState.bananaMeter ?? gameState.bananaMeterCount ?? 0);
     }
 
     if (gameState.executedAction === "freespin" || gameState.executedAction === "freerespin") {
