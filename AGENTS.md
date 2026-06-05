@@ -24,3 +24,11 @@ Read `.cursor/skills/` for HellDive design and architecture. Start with `helldiv
 | `retrigger-system` | Kill meter, end-of-battle retrigger +2 FS, ability unlock settlement |
 
 Also read `.md` files in `game-server` and `game-client`, and `GAME_SUMMARY.md` for prototype context.
+
+Do not overreach, try to keep the context as small as needed.
+
+Pls read a suiteable .md file under .cursor/skills whenever im asking for a feature.
+
+If u find it better to update the .md files in skills please do, incase a function is not clear enough.
+
+If u are implement a function or system that is not there, pls add a new .md skill file.

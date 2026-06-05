@@ -29,6 +29,7 @@ Spin → cluster wins → explode → redrop → repeat until no wins
 - **No cluster win evaluation** on bonus spins
 - Focus: demon kills, loot, multiplier progression, retriggers
 - Loot stored until Collect Phase (see `loot-system`)
+- First Hell bonus action should open with at least **one demon** so the Angel's bonus-entry attack has a live target
 
 ## Presentation Notes
 

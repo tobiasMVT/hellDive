@@ -8886,6 +8886,63 @@ export class GameServer {
     return valid[valid.length - 1]?.value ?? 0;
   }
 
+  getHeavenHellLootTableKey(entry = {}, lootConfig = null) {
+    const config = lootConfig || this.getHeavenHellConfig()?.bonus?.loot || {};
+    if (typeof entry?.lootTableKey === "string" && entry.lootTableKey.length > 0) {
+      return entry.lootTableKey;
+    }
+    const symbolTableMap = config?.symbolLootTables && typeof config.symbolLootTables === "object"
+      ? config.symbolLootTables
+      : {};
+    const symbolKey = String(Math.floor(Number(entry?.symbol)));
+    if (symbolTableMap[symbolKey]) {
+      return String(symbolTableMap[symbolKey]);
+    }
+    if (entry?.isBoss === true) return "boss_demon";
+    if (entry?.isMultiplierDemon === true) return "multiplier_demon";
+    return "normal_demon";
+  }
+
+  getHeavenHellLootTableEntries(tableKey = "", lootConfig = null) {
+    const config = lootConfig || this.getHeavenHellConfig()?.bonus?.loot || {};
+    const tables = config?.tables && typeof config.tables === "object" ? config.tables : {};
+    if (Array.isArray(tables?.[tableKey])) {
+      return tables[tableKey];
+    }
+    if (Array.isArray(config?.[tableKey])) {
+      return config[tableKey];
+    }
+    return Array.isArray(config?.values) ? config.values : [];
+  }
+
+  getHeavenHellLootScatterOffsets(entry = {}, pieceIndex = 0, pieceCount = 1) {
+    const normalizedCount = Math.max(1, Math.floor(Number(pieceCount) || 1));
+    const chargeMultiplier = Math.max(1, Math.floor(Number(entry?.lootMultiplier ?? 1) || 1));
+    const isBoss = entry?.isBoss === true;
+    const minRadius = isBoss
+      ? 40
+      : chargeMultiplier > 1
+        ? 25
+        : normalizedCount === 1
+          ? 6
+          : 10;
+    const maxRadius = isBoss
+      ? 60
+      : chargeMultiplier > 1
+        ? 45
+        : normalizedCount === 1
+          ? 16
+          : 20;
+    const angleStep = (Math.PI * 2) / normalizedCount;
+    const baseAngle = normalizedCount === 1 ? Math.random() * Math.PI * 2 : pieceIndex * angleStep;
+    const angle = baseAngle + ((Math.random() - 0.5) * angleStep * 0.55);
+    const radius = minRadius + (Math.random() * Math.max(0, maxRadius - minRadius));
+    return {
+      offsetX: Math.round(Math.cos(angle) * radius),
+      offsetY: Math.round(Math.sin(angle) * radius * 0.72)
+    };
+  }
+
   ensureHeavenHellState(gameState) {
     if (!gameState || typeof gameState !== "object") return null;
     if (!gameState.heavenHell || typeof gameState.heavenHell !== "object") {
@@ -9030,6 +9087,7 @@ export class GameServer {
     const heavenHell = this.ensureHeavenHellState(gameState);
     const bonusState = heavenHell?.bonus || {};
     const chain = Math.max(0, Math.floor(Number(bonusState?.freerespinChain || 0)));
+    const isFirstBonusAction = Math.max(0, Math.floor(Number(bonusState?.actionCount || 0))) <= 1;
 
     const portalLevel = Math.max(0, Math.min(2, Math.floor(Number(bonusState?.portalLevel || 0))));
     const portalSpawn = bonusConfig?.portalSpawnByLevel?.[String(portalLevel)] || bonusConfig?.portalSpawnByLevel?.["0"] || {};
@@ -9234,6 +9292,23 @@ export class GameServer {
       }
     }
 
+    if (isFirstBonusAction && placements.length === 0) {
+      for (const pos of portalClusterOrder) {
+        const key = `${pos.reel},${pos.row}`;
+        if (occupied.has(key)) continue;
+        reels[pos.reel][pos.row] = demonId;
+        placements.push({
+          ...pos,
+          symbol: demonId,
+          type: "demon",
+          guaranteed: true,
+          firstActionGuarantee: true
+        });
+        occupied.add(key);
+        break;
+      }
+    }
+
     const guaranteedMultiplierKeys = new Set();
     const guaranteedNormalKeys = new Set();
     placements.forEach((entry) => {
@@ -9297,6 +9372,7 @@ export class GameServer {
       chance: Number(demonWaveChance.toFixed ? demonWaveChance.toFixed(4) : demonWaveChance),
       randomDemonsTargeted: Math.max(0, Math.floor(Number(demonWaveTargetCount) || 0)),
       portalDemonsTargeted: guaranteedNormalDemons + guaranteedMultiplierDemons,
+      firstActionForcedGuarantee: isFirstBonusAction && placements.some((entry) => entry?.firstActionGuarantee === true),
       totalDemonsSpawned: rippleInjections.length,
       freerespinChain: chain,
       suppressedByChain: demonWaveSuppressedByChain === true
@@ -9329,29 +9405,36 @@ export class GameServer {
     const bonusState = heavenHell.bonus;
     const lootConfig = this.getHeavenHellConfig()?.bonus?.loot || {};
     const baseDropChance = Number(lootConfig?.baseDropChance ?? 0.3);
-    const valueEntries = Array.isArray(lootConfig?.values) ? lootConfig.values : [];
     const drops = [];
 
     killEntries.forEach((entry) => {
       const shouldDrop = guaranteed || entry?.guaranteedLoot === true || this.rollChance(baseDropChance);
       if (!shouldDrop) return;
+      const tableKey = this.getHeavenHellLootTableKey(entry, lootConfig);
+      const valueEntries = this.getHeavenHellLootTableEntries(tableKey, lootConfig);
       const amount = Number(this.pickWeightedValueFromEntries(valueEntries) || 0);
       if (!(amount > 0)) return;
-      const finalMultiplier = Math.max(
+      const pieceMultiplier = Math.max(
         1,
         Math.floor(Number(entry?.lootMultiplier ?? lootMultiplier ?? 1) || 1)
       );
-      const drop = {
-        reel: Number(entry?.reel),
-        row: Number(entry?.row),
-        baseValue: amount,
-        source: entry?.source || "demon",
-        isBoss: entry?.isBoss === true,
-        multiplier: finalMultiplier,
-        value: amount * finalMultiplier
-      };
-      bonusState.lootGround.push(drop);
-      drops.push(drop);
+      for (let pieceIndex = 0; pieceIndex < pieceMultiplier; pieceIndex++) {
+        const offsets = this.getHeavenHellLootScatterOffsets(entry, pieceIndex, pieceMultiplier);
+        const drop = {
+          reel: Number(entry?.reel),
+          row: Number(entry?.row),
+          baseValue: amount,
+          value: amount,
+          source: entry?.source || "demon",
+          isBoss: entry?.isBoss === true,
+          lootTableKey: tableKey,
+          pieceMultiplier,
+          offsetX: offsets.offsetX,
+          offsetY: offsets.offsetY
+        };
+        bonusState.lootGround.push(drop);
+        drops.push(drop);
+      }
     });
 
     return drops;
@@ -9754,14 +9837,24 @@ export class GameServer {
     const heavenHell = this.ensureHeavenHellState(gameState);
     const bonusState = heavenHell?.bonus;
     const drops = Array.isArray(bonusState?.lootGround) ? bonusState.lootGround : [];
-    const baseLoot = drops.reduce((sum, drop) => sum + Number(drop?.value || 0), 0);
+    const baseLoot = drops.reduce((sum, drop) => sum + Number(drop?.baseValue ?? drop?.value ?? 0), 0);
     const globalMultiplier = Math.max(1, Math.floor(Number(bonusState?.globalMultiplier || 1)));
+    const settledDrops = drops.map((drop) => {
+      const baseValue = Number(drop?.baseValue ?? drop?.value ?? 0);
+      return {
+        ...drop,
+        baseValue,
+        value: baseValue,
+        collectMultiplier: globalMultiplier,
+        settledValue: baseValue * globalMultiplier
+      };
+    });
     const totalTbm = baseLoot * globalMultiplier;
     const totalTwa = totalTbm * Number(betSize || 0);
     gameState.tbm = Number(gameState.tbm || 0) + totalTbm;
     gameState.twa = Number(gameState.twa || 0) + totalTwa;
     gameState.winAmount = totalTbm;
-    gameState.heavenHell.bonus.lootGroundSettled = drops;
+    gameState.heavenHell.bonus.lootGroundSettled = settledDrops;
     gameState.heavenHell.bonus.lootGround = [];
     gameState.heavenHell.bonus.globalMultiplier = 1;
     gameState.multiplier = 1;
@@ -11947,4 +12040,3 @@ function resetGameState(gameState) {
 
 // Export resetGameState so it can be used externally
 export { resetGameState };
-

@@ -21,6 +21,16 @@ export class Client {
     return gameState?.heavenHell && typeof gameState.heavenHell === "object";
   }
 
+  async playHeavenHellCollectPhaseIfNeeded(gameState = {}) {
+    if (!this.isHeavenHellEnabled(gameState) || gameState?.nextAction !== "spin") return;
+    const settledDrops = Array.isArray(gameState?.heavenHell?.bonus?.lootGroundSettled)
+      ? gameState.heavenHell.bonus.lootGroundSettled
+      : [];
+    if (settledDrops.length === 0) return false;
+    await this.scene.playHeavenHellCollectPhase?.(gameState);
+    return true;
+  }
+
   buildMergeGunAreasFromPositions(rawPositions = []) {
     const positionsByKey = new Map();
     (Array.isArray(rawPositions) ? rawPositions : []).forEach((entry) => {
@@ -573,9 +583,12 @@ export class Client {
         this.scene.createOrUpdateHouse(gameState?.multiplier || 1);
         await this.scene.playHeavenHellRippleSpawn?.(gameState);
         this.scene.hideNonHeavenHellBonusSymbols?.(gameState);
+        const playedCollectPhase = await this.playHeavenHellCollectPhaseIfNeeded(gameState);
         this.scene.renderHeavenHellLootGround?.(gameState?.heavenHell?.bonus?.lootGround || []);
         this.scene.updateHeavenHellAbilityText?.(gameState);
-        this.scene.updateCountUp(gameState.twa || 0);
+        if (!playedCollectPhase) {
+          this.scene.updateCountUp(gameState.twa || 0);
+        }
         if (gameState.nextAction === 'spin') {
           this.scene.resetLightningCount?.();
           this.scene.stopBonusTheme?.();
@@ -694,6 +707,7 @@ export class Client {
       } else {
         this.scene.updateCountUp(gameState.twa || 0);
       }
+      await this.playHeavenHellCollectPhaseIfNeeded(gameState);
       
       // Check if bonus is ending (last freespin completed)
       if (gameState.nextAction === 'spin') {
@@ -707,9 +721,12 @@ export class Client {
         this.scene.syncBonusMultiplierFruits?.(gameState, { refreshVisuals: false });
         await this.scene.playHeavenHellRippleSpawn?.(gameState);
         this.scene.hideNonHeavenHellBonusSymbols?.(gameState);
+        const playedCollectPhase = await this.playHeavenHellCollectPhaseIfNeeded(gameState);
         this.scene.renderHeavenHellLootGround?.(gameState?.heavenHell?.bonus?.lootGround || []);
         this.scene.updateHeavenHellAbilityText?.(gameState);
-        this.scene.updateCountUp(gameState.twa || 0);
+        if (!playedCollectPhase) {
+          this.scene.updateCountUp(gameState.twa || 0);
+        }
         if (gameState.nextAction === 'spin') {
           this.scene.resetLightningCount?.();
           this.scene.stopBonusTheme?.();
@@ -797,6 +814,7 @@ export class Client {
       } else {
         this.scene.updateCountUp(gameState.twa || 0);
       }
+      await this.playHeavenHellCollectPhaseIfNeeded(gameState);
       
       // Check if bonus is ending
       if (gameState.nextAction === 'spin') {
@@ -853,6 +871,9 @@ export class Client {
             finalBonusStage: Number(gameState?.bonusStage || huntBonusStage || 0),
             heroFootprintSize: huntHeroFootprintSize,
             giantMonkeyActive: huntHeroFootprintSize > 1,
+            firstHeavenHellBonusEntryAttack:
+              this.isHeavenHellEnabled(gameState) &&
+              Math.max(0, Math.floor(Number(gameState?.heavenHell?.bonus?.actionCount || 0))) === 1,
             mergeGunFeatureCollections: gameState?.mergeGunFeatureThisAction?.collected || gameState?.mergeGunFeatureCollectedThisAction || [],
             mergeGunActivations: gameState?.mergeGunFeatureThisAction?.activations || gameState?.mergeGunActivationsThisAction || [],
             mergeGunAreas: this.getMergeGunAreasForDisplay(gameState),
@@ -896,7 +917,10 @@ export class Client {
       
       this.scene.cleanupAllBackplates();
       
-      this.scene.updateCountUp(gameState.twa || 0);
+      const playedCollectPhase = await this.playHeavenHellCollectPhaseIfNeeded(gameState);
+      if (!playedCollectPhase) {
+        this.scene.updateCountUp(gameState.twa || 0);
+      }
       if (this.isHeavenHellEnabled(gameState)) {
         this.scene.syncSpritesToReelState?.(gameState?.reels || {});
         this.scene.hideNonHeavenHellBonusSymbols?.(gameState);
@@ -991,4 +1015,3 @@ export default Client
 async function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
-

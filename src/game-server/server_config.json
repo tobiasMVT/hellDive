@@ -1017,6 +1017,67 @@
             "loot": {
                 "baseDropChance": 0.3,
                 "multiplierDemonSpawnChance": 0.1,
+                "symbolLootTables": {
+                    "11": "normal_demon",
+                    "12": "multiplier_demon",
+                    "13": "boss_demon"
+                },
+                "tables": {
+                    "normal_demon": [
+                        {
+                            "value": 0.1,
+                            "weight": 35
+                        },
+                        {
+                            "value": 0.2,
+                            "weight": 28
+                        },
+                        {
+                            "value": 0.5,
+                            "weight": 20
+                        },
+                        {
+                            "value": 1,
+                            "weight": 12
+                        },
+                        {
+                            "value": 5,
+                            "weight": 5
+                        }
+                    ],
+                    "multiplier_demon": [
+                        {
+                            "value": 0.2,
+                            "weight": 30
+                        },
+                        {
+                            "value": 0.5,
+                            "weight": 30
+                        },
+                        {
+                            "value": 1,
+                            "weight": 24
+                        },
+                        {
+                            "value": 5,
+                            "weight": 16
+                        }
+                    ],
+                    "boss_demon": [
+                        {
+                            "value": 0.5,
+                            "weight": 30
+                        },
+                        {
+                            "value": 1,
+                            "weight": 35
+                        },
+                        {
+                            "value": 5,
+                            "weight": 35
+                        }
+                    ]
+                },
                 "values": [
                     {
                         "value": 0.1,
