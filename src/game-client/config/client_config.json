@@ -11,7 +11,12 @@
     },
     "mathStyle": "normal",
     "normal": {
-            "noStrategy": 1
+        "noStrategy": 1,
+        "noStrategy_max10": 2,
+        "noStrategy_max200": 4,
+        "noStrategy_max500": 4,
+        "noStrategy_max0": 6,
+        "bonus": 0
     },
     "area": { "width": 8, "height": 8 },
     "clientState": {

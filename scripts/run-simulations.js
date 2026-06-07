@@ -162,14 +162,113 @@ const findBonusSnapshotState = (states) => {
   return lastBonusState;
 };
 
-const bumpAgg = (map, key, tbm) => {
-  const prev = map.get(key) || { count: 0, sumTbm: 0 };
+/** Bonus-only final TBM: 0 on its own, then >0 ranges. Non-bonus rounds are separate. */
+const BONUS_TBM_ZERO_KEY = "0";
+
+const BONUS_TBM_ABOVE_ZERO_BUCKETS = [
+  { key: "0-10", label: ">0-10", low: 0, high: 10, lowExclusive: true },
+  { key: "10-20", label: "10-20", low: 10, high: 20, lowExclusive: true },
+  { key: "20-40", label: "20-40", low: 20, high: 40, lowExclusive: true },
+  { key: "40-80", label: "40-80", low: 40, high: 80, lowExclusive: true },
+  { key: "80-120", label: "80-120", low: 80, high: 120, lowExclusive: true },
+  { key: "120-150", label: "120-150", low: 120, high: 150, lowExclusive: true },
+  { key: "150-200", label: "150-200", low: 150, high: 200, lowExclusive: true },
+  { key: "200-250", label: "200-250", low: 200, high: 250, lowExclusive: true },
+  { key: "250-300", label: "250-300", low: 250, high: 300, lowExclusive: true },
+  { key: "300-400", label: "300-400", low: 300, high: 400, lowExclusive: true },
+  { key: "400-500", label: "400-500", low: 400, high: 500, lowExclusive: true },
+  { key: "500-600", label: "500-600", low: 500, high: 600, lowExclusive: true },
+  { key: "600-700", label: "600-700", low: 600, high: 700, lowExclusive: true },
+  { key: "700-800", label: "700-800", low: 700, high: 800, lowExclusive: true },
+  { key: "800-900", label: "800-900", low: 800, high: 900, lowExclusive: true },
+  { key: "900-1000", label: "900-1000", low: 900, high: 1000, lowExclusive: true },
+  { key: "1000-1250", label: "1000-1250", low: 1000, high: 1250, lowExclusive: true },
+  { key: "1250-1500", label: "1250-1500", low: 1250, high: 1500, lowExclusive: true },
+  { key: "1500-1750", label: "1500-1750", low: 1500, high: 1750, lowExclusive: true },
+  { key: "1750-2000", label: "1750-2000", low: 1750, high: 2000, lowExclusive: true },
+  { key: "2000+", label: "2000+", low: 2000, high: Infinity, lowExclusive: false }
+];
+
+const resolveBonusTbmBucketKey = (tbm) => {
+  const value = Number(tbm);
+  if (!Number.isFinite(value) || value === 0) return BONUS_TBM_ZERO_KEY;
+
+  for (const bucket of BONUS_TBM_ABOVE_ZERO_BUCKETS) {
+    const aboveLow = bucket.lowExclusive ? value > bucket.low : value >= bucket.low;
+    const withinHigh = bucket.high === Infinity ? true : value <= bucket.high;
+    if (aboveLow && withinHigh) return bucket.key;
+  }
+
+  return "uncategorized";
+};
+
+const buildStatSummary = (agg, { totalStake = 0, completedRounds = 0, bonusRounds = 0, bonusOnly = false } = {}) => ({
+  rounds: agg.count,
+  shareOfAllRoundsPercent:
+    completedRounds > 0 ? twoDecimals((agg.count / completedRounds) * 100) : 0,
+  shareOfBonusesPercent:
+    bonusOnly && bonusRounds > 0 ? twoDecimals((agg.count / bonusRounds) * 100) : 0,
+  totalTbm: Number(agg.sumTbm.toFixed(4)),
+  averageTbm: agg.count > 0 ? twoDecimals(agg.sumTbm / agg.count) : 0,
+  totalPayout: Number(agg.sumPayout.toFixed(4)),
+  averagePayout: agg.count > 0 ? twoDecimals(agg.sumPayout / agg.count) : 0,
+  rtpPercent: totalStake > 0 ? fourDecimals((agg.sumPayout / totalStake) * 100) : 0
+});
+
+const buildFinalTbmDistributionRows = (countMap, { totalStake = 0, completedRounds = 0, bonusRounds = 0 } = {}) => {
+  const zeroAgg = countMap.get(BONUS_TBM_ZERO_KEY) || { count: 0, sumTbm: 0, sumPayout: 0 };
+  const zeroRow = {
+    key: BONUS_TBM_ZERO_KEY,
+    label: "0",
+    ...buildStatSummary(zeroAgg, { totalStake, completedRounds, bonusRounds, bonusOnly: true })
+  };
+
+  const aboveZeroRows = BONUS_TBM_ABOVE_ZERO_BUCKETS.map((bucket) => {
+    const agg = countMap.get(bucket.key) || { count: 0, sumTbm: 0, sumPayout: 0 };
+    return {
+      key: bucket.key,
+      label: bucket.label,
+      ...buildStatSummary(agg, { totalStake, completedRounds, bonusRounds, bonusOnly: true })
+    };
+  });
+
+  const uncategorized = countMap.has("uncategorized")
+    ? [{
+        key: "uncategorized",
+        label: "uncategorized",
+        ...buildStatSummary(countMap.get("uncategorized"), {
+          totalStake,
+          completedRounds,
+          bonusRounds,
+          bonusOnly: true
+        })
+      }]
+    : [];
+
+  return { zero: zeroRow, aboveZero: [...aboveZeroRows, ...uncategorized] };
+};
+
+/** Flat { "0": {...}, "0-10": {...}, ... } from distribution rows. */
+const distributionToKeyedObject = (distributionRows) => {
+  const out = {};
+  const addRow = (row) => {
+    const { key, label, ...stats } = row;
+    out[key] = { label, ...stats };
+  };
+  addRow(distributionRows.zero);
+  distributionRows.aboveZero.forEach(addRow);
+  return out;
+};
+
+const bumpAgg = (map, key, tbm, payout = 0) => {
+  const prev = map.get(key) || { count: 0, sumTbm: 0, sumPayout: 0 };
   prev.count += 1;
   prev.sumTbm += tbm;
+  prev.sumPayout += payout;
   map.set(key, prev);
 };
 
-const buildTbmBucketRows = (countMap) =>
+const buildTbmBucketRows = (countMap, { totalStake = 0, bonusRounds = 0 } = {}) =>
   [...countMap.entries()]
     .sort((a, b) => {
       if (typeof a[0] === "number" && typeof b[0] === "number") return a[0] - b[0];
@@ -178,8 +277,12 @@ const buildTbmBucketRows = (countMap) =>
     .map(([key, agg]) => ({
       key,
       rounds: agg.count,
+      shareOfBonusesPercent: bonusRounds > 0 ? twoDecimals((agg.count / bonusRounds) * 100) : 0,
       totalTbm: Number(agg.sumTbm.toFixed(4)),
-      averageTbm: agg.count > 0 ? twoDecimals(agg.sumTbm / agg.count) : 0
+      averageTbm: agg.count > 0 ? twoDecimals(agg.sumTbm / agg.count) : 0,
+      totalPayout: Number(agg.sumPayout.toFixed(4)),
+      averagePayout: agg.count > 0 ? twoDecimals(agg.sumPayout / agg.count) : 0,
+      rtpPercent: totalStake > 0 ? fourDecimals((agg.sumPayout / totalStake) * 100) : 0
     }));
 
 const buildAbilityRtpRows = (contributionTBM, contributionPayout, totalStake) =>
@@ -274,6 +377,9 @@ const tbmByAbilityKey = new Map();
 const tbmByDivineXLevel = new Map();
 const tbmByDivineStrikeLevel = new Map();
 const tbmByDivineChargeLevel = new Map();
+const finalTbmDistribution = new Map();
+const bonusPhaseDistribution = new Map();
+const noBonusStats = { count: 0, sumTbm: 0, sumPayout: 0 };
 
 const abilityContributionTBM = emptyAbilityContribution();
 const abilityContributionPayout = emptyAbilityContribution();
@@ -334,24 +440,33 @@ for (let i = 1; i <= rounds; i += 1) {
   const hadBonus = server.hasBonus(states);
 
   if (hadBonus) {
+    const bonusPhaseTbm = roundBetSize > 0 ? bonusWin / roundBetSize : bonusWin;
+    const bonusPhaseBucket = resolveBonusTbmBucketKey(bonusPhaseTbm);
+
+    bumpAgg(finalTbmDistribution, resolveBonusTbmBucketKey(roundTbm), roundTbm, safeWin);
+    bumpAgg(bonusPhaseDistribution, bonusPhaseBucket, bonusPhaseTbm, bonusWin);
     bonusRounds += 1;
     bonusWinsPerBonusRound.push(bonusWin);
     totalBonusPhaseWin += bonusWin;
     totalRoundWinWhenBonus += safeWin;
 
-    const snapshotTbm = readRoundTbm(bonusSnapshot);
-    bonusEndTbmValues.push(snapshotTbm);
+    // Full round TBM at game over + ability loadout from last bonus-phase state.
+    bonusEndTbmValues.push(roundTbm);
 
     const abilities = readBonusAbilities(bonusSnapshot);
     const abilityTotal = totalAbilityLevels(abilities);
     bonusEndAbilityTotals.push(abilityTotal);
-    bumpAgg(tbmByTotalAbilityLevels, abilityTotal, snapshotTbm);
-    bumpAgg(tbmByAbilityKey, abilityKey(abilities), snapshotTbm);
-    bumpAgg(tbmByDivineXLevel, abilities.divineX, snapshotTbm);
-    bumpAgg(tbmByDivineStrikeLevel, abilities.divineStrike, snapshotTbm);
-    bumpAgg(tbmByDivineChargeLevel, abilities.divineCharge, snapshotTbm);
+    bumpAgg(tbmByTotalAbilityLevels, abilityTotal, roundTbm, safeWin);
+    bumpAgg(tbmByAbilityKey, abilityKey(abilities), roundTbm, safeWin);
+    bumpAgg(tbmByDivineXLevel, abilities.divineX, roundTbm, safeWin);
+    bumpAgg(tbmByDivineStrikeLevel, abilities.divineStrike, roundTbm, safeWin);
+    bumpAgg(tbmByDivineChargeLevel, abilities.divineCharge, roundTbm, safeWin);
 
     bonusEndKillCounts.push(readBonusKillCount(bonusSnapshot));
+  } else {
+    noBonusStats.count += 1;
+    noBonusStats.sumTbm += roundTbm;
+    noBonusStats.sumPayout += safeWin;
   }
 
   if (progressEvery > 0 && i % progressEvery === 0) {
@@ -390,12 +505,45 @@ const avgBonusEndTbm = meanOf(bonusEndTbmValues);
 const avgBonusEndKillCount = meanOf(bonusEndKillCounts);
 const avgBonusEndAbilityTotal = meanOf(bonusEndAbilityTotals);
 
+const gameOverAbilityStats = {
+  description:
+    "Correlational: full round TBM/payout grouped by ability levels on the last bonus-phase state. Shows which loadouts tended to finish with strong runs — not direct causal RTP per ability.",
+  averageTbm: bonusRounds > 0 ? twoDecimals(avgBonusEndTbm) : 0,
+  averageKillCount: bonusRounds > 0 ? twoDecimals(avgBonusEndKillCount) : 0,
+  averageTotalAbilityLevels: bonusRounds > 0 ? twoDecimals(avgBonusEndAbilityTotal) : 0,
+  byLoadout: buildTbmBucketRows(tbmByAbilityKey, { totalStake, bonusRounds }),
+  byTotalAbilityLevels: buildTbmBucketRows(tbmByTotalAbilityLevels, { totalStake, bonusRounds }),
+  byDivineXLevel: buildTbmBucketRows(tbmByDivineXLevel, { totalStake, bonusRounds }),
+  byDivineStrikeLevel: buildTbmBucketRows(tbmByDivineStrikeLevel, { totalStake, bonusRounds }),
+  byDivineChargeLevel: buildTbmBucketRows(tbmByDivineChargeLevel, { totalStake, bonusRounds }),
+  topLoadoutsByAvgTbm:
+    bonusRounds > 0
+      ? buildTbmBucketRows(tbmByAbilityKey, { totalStake, bonusRounds })
+          .filter((row) => row.rounds >= 5)
+          .sort((a, b) => b.averageTbm - a.averageTbm)
+          .slice(0, 10)
+      : []
+};
+
 const bonusRatePercent =
   completedRounds > 0 ? twoDecimals((bonusRounds / completedRounds) * 100) : 0;
 
 const abilityRtpRows = buildAbilityRtpRows(abilityContributionTBM, abilityContributionPayout, totalStake);
 const trackedAbilityRtpPercent = abilityRtpRows.reduce((sum, row) => sum + row.rtpPercent, 0);
-const unattributedRtpPercent = fourDecimals(Math.max(0, rtp - trackedAbilityRtpPercent - mainGameRtpPercent));
+
+const finalTbmDistributionRows = buildFinalTbmDistributionRows(finalTbmDistribution, {
+  totalStake,
+  completedRounds,
+  bonusRounds
+});
+
+const bonusPhaseDistributionRows = buildFinalTbmDistributionRows(bonusPhaseDistribution, {
+  totalStake,
+  completedRounds,
+  bonusRounds
+});
+
+const noBonusSummary = buildStatSummary(noBonusStats, { totalStake, completedRounds });
 
 const report = {
   config: {
@@ -434,18 +582,20 @@ const report = {
     tbmStdDev: Number(tbmStdDev.toFixed(6))
   },
   abilities: {
-    description:
-      "Collect-phase loot attribution from heavenHell bonus settlement. Each loot drop is tagged by kill source (divineX / divineStrike / divineCharge / baseHunt) and its share of the final collect TBM is credited to that ability bucket.",
-    procTotals: abilityProcTotals,
-    contributionTbm: Object.fromEntries(
-      ABILITY_KEYS.map((key) => [key, fourDecimals(abilityContributionTBM[key])])
-    ),
-    contributionPayout: Object.fromEntries(
-      ABILITY_KEYS.map((key) => [key, fourDecimals(abilityContributionPayout[key])])
-    ),
-    rtpByAbility: abilityRtpRows,
-    trackedAbilityRtpPercent: fourDecimals(trackedAbilityRtpPercent),
-    unattributedRtpPercent
+    atGameOver: gameOverAbilityStats,
+    lootSourceAtCollect: {
+      description:
+        "Diagnostic only: at Collect Phase settlement, loot drops are tagged by which ability killed the demon. Splits collect TBM proportionally by loot base value. Overlaps (one drop, global multiplier) and indirect effects (divineX → more kills → more loot) are not fully captured. Sum can exceed bonus RTP.",
+      procTotals: abilityProcTotals,
+      contributionTbm: Object.fromEntries(
+        ABILITY_KEYS.map((key) => [key, fourDecimals(abilityContributionTBM[key])])
+      ),
+      contributionPayout: Object.fromEntries(
+        ABILITY_KEYS.map((key) => [key, fourDecimals(abilityContributionPayout[key])])
+      ),
+      rtpByLootSource: abilityRtpRows,
+      trackedLootSourceRtpPercent: fourDecimals(trackedAbilityRtpPercent)
+    }
   },
   mainGameSpinRespin: {
     description: "Per completed round: win attributed to main-game actions (spin/respin) before bonus phase",
@@ -469,17 +619,18 @@ const report = {
       bonusRounds > 0 ? Number((totalRoundWinWhenBonus / bonusRounds).toFixed(4)) : 0,
     bonusPhaseWinVariance: Number(bonusWinVariance.toFixed(6)),
     bonusPhaseWinStdDev: Number(bonusWinStdDev.toFixed(6)),
-    atGameOver: {
+    noBonus: {
+      description: "Rounds that never entered bonus.",
+      ...noBonusSummary
+    },
+    finalTbmDistribution: {
+      description: "Bonus rounds only. Full round final TBM. zero = exactly 0; aboveZero = final TBM > 0.",
+      ...finalTbmDistributionRows
+    },
+    bonusPhaseDistribution: {
       description:
-        "End-of-round snapshot taken from the last bonus-phase state (freespin / bonustransition / hunt / chestreward). Kill count uses heavenHell.bonus.killsTotal.",
-      averageTbm: bonusRounds > 0 ? twoDecimals(avgBonusEndTbm) : 0,
-      averageKillCount: bonusRounds > 0 ? twoDecimals(avgBonusEndKillCount) : 0,
-      averageTotalAbilityLevels: bonusRounds > 0 ? twoDecimals(avgBonusEndAbilityTotal) : 0,
-      tbmByTotalAbilityLevels: buildTbmBucketRows(tbmByTotalAbilityLevels),
-      tbmByAbilityKey: buildTbmBucketRows(tbmByAbilityKey),
-      tbmByDivineXLevel: buildTbmBucketRows(tbmByDivineXLevel),
-      tbmByDivineStrikeLevel: buildTbmBucketRows(tbmByDivineStrikeLevel),
-      tbmByDivineChargeLevel: buildTbmBucketRows(tbmByDivineChargeLevel)
+        "Bonus rounds only. Win earned during bonus phase (twa while isBonus), bucketed by bonus-phase TBM (bonusWin / betSize).",
+      ...distributionToKeyedObject(bonusPhaseDistributionRows)
     },
     description:
       "bonusPhaseWin* = twa while isBonus; averageRoundWinWhenBonus = full round twa when bonus occurred."
@@ -510,23 +661,67 @@ console.log(`Max TBM:          ${report.metrics.maxTbm}`);
 console.log(`Bonus rounds:     ${report.bonus.bonusRounds}`);
 console.log(`Bonus frequency:  ${report.bonus.bonusFrequency}`);
 console.log(`Bonus rate:       ${report.bonus.bonusRatePercent}% of completed rounds`);
-console.log("--- Ability RTP (collect-phase attribution) ---");
-report.abilities.rtpByAbility.forEach((row) => {
-  const procCount = report.abilities.procTotals[row.ability];
+console.log("--- No bonus ---");
+console.log(
+  `  ${String(report.bonus.noBonus.rounds).padStart(6)} rounds  (${report.bonus.noBonus.shareOfAllRoundsPercent}% all, avg TBM ${report.bonus.noBonus.averageTbm}, RTP ${report.bonus.noBonus.rtpPercent}%)`
+);
+console.log("--- Bonus final TBM ---");
+const printBonusTbmRow = (row) => {
+  console.log(
+    `  ${row.label.padEnd(14)} ${String(row.rounds).padStart(6)} rounds  (${row.shareOfBonusesPercent}% of bonuses, RTP ${row.rtpPercent}%)`
+  );
+};
+printBonusTbmRow(report.bonus.finalTbmDistribution.zero);
+report.bonus.finalTbmDistribution.aboveZero.forEach((row) => {
+  if (row.rounds <= 0) return;
+  printBonusTbmRow(row);
+});
+console.log("--- Bonus phase win only (bonus TBM buckets) ---");
+const phaseDist = report.bonus.bonusPhaseDistribution;
+if (phaseDist["0"]) {
+  printBonusTbmRow({ label: phaseDist["0"].label || "0", ...phaseDist["0"] });
+}
+Object.keys(phaseDist)
+  .filter((key) => key !== "description" && key !== "0")
+  .forEach((key) => {
+    const row = phaseDist[key];
+    if (row.rounds <= 0) return;
+    printBonusTbmRow({ label: row.label || key, ...row });
+  });
+if (bonusRounds > 0) {
+  console.log("--- Abilities at game over (full round TBM by final loadout) ---");
+  console.log(`  Avg round TBM when bonus: ${report.abilities.atGameOver.averageTbm}`);
+  console.log(`  Avg kills at game over:   ${report.abilities.atGameOver.averageKillCount}`);
+  console.log("  Per ability level (X / Strike / Charge):");
+  const printLevelRow = (label, rows) => {
+    if (!rows.length) return;
+    const summary = rows.map((r) => `L${r.key}: avgTBM ${r.averageTbm} (${r.rounds}r, ${r.rtpPercent}% RTP)`).join(" | ");
+    console.log(`    ${label}: ${summary}`);
+  };
+  printLevelRow("divineX     ", report.abilities.atGameOver.byDivineXLevel);
+  printLevelRow("divineStrike", report.abilities.atGameOver.byDivineStrikeLevel);
+  printLevelRow("divineCharge", report.abilities.atGameOver.byDivineChargeLevel);
+  if (report.abilities.atGameOver.topLoadoutsByAvgTbm.length > 0) {
+    console.log("  Top loadouts (min 5 rounds, by avg TBM):");
+    report.abilities.atGameOver.topLoadoutsByAvgTbm.slice(0, 5).forEach((row) => {
+      console.log(
+        `    ${String(row.key).padEnd(12)} avgTBM ${String(row.averageTbm).padStart(8)}  RTP ${String(row.rtpPercent).padStart(6)}%  (${row.rounds} rounds)`
+      );
+    });
+  }
+}
+console.log("--- Loot source at collect (diagnostic, not causal RTP) ---");
+report.abilities.lootSourceAtCollect.rtpByLootSource.forEach((row) => {
+  const procCount = report.abilities.lootSourceAtCollect.procTotals[row.ability];
   const procLabel = procCount === undefined ? "—" : procCount;
   const isCoreAbility = row.ability === "divineX" || row.ability === "divineStrike" || row.ability === "divineCharge";
   if (row.totalContributionTbm > 0 || isCoreAbility) {
     console.log(
-      `  ${row.ability.padEnd(13)} RTP ${String(row.rtpPercent).padStart(8)}%  (TBM ${row.totalContributionTbm}, procs ${procLabel})`
+      `  ${row.ability.padEnd(13)} collect ${String(row.rtpPercent).padStart(8)}%  (TBM ${row.totalContributionTbm}, procs ${procLabel})`
     );
   }
 });
-console.log(`  Tracked ability RTP sum: ${report.abilities.trackedAbilityRtpPercent}%`);
-if (bonusRounds > 0) {
-  console.log(`Bonus gameover avg TBM:       ${report.bonus.atGameOver.averageTbm}`);
-  console.log(`Bonus gameover avg kills:     ${report.bonus.atGameOver.averageKillCount}`);
-  console.log(`Bonus gameover avg abilities: ${report.bonus.atGameOver.averageTotalAbilityLevels}`);
-}
+console.log(`  Loot-source sum: ${report.abilities.lootSourceAtCollect.trackedLootSourceRtpPercent}% (can exceed bonus RTP)`);
 console.log(`Main game var/std:   ${report.mainGameSpinRespin.variance} / ${report.mainGameSpinRespin.stdDev}`);
 console.log(`Bonus phase var/std: ${report.bonus.bonusPhaseWinVariance} / ${report.bonus.bonusPhaseWinStdDev}`);
 console.log(`Output:           ${resolvedOutputPath}`);

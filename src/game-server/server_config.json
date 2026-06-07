@@ -27,7 +27,19 @@
         "magicBookInSightMoreThan0Less500": 50
     },
     "normal": {
-        "noStrategy": 1,
+        "noStrategy": 0,
+        "noStrategy_max0": 12,
+        "noStrategy_min_1_max10": 2,
+        "noStrategy_min_1_max200": 4,
+        "noStrategy_min_1_max500": 4,
+        "noStrategy_min_1_max750": 1,
+
+        "noStrategy_min_5_max10": 2,
+        "noStrategy_min_10_max200": 4,
+        "noStrategy_min_20_max500": 4,
+        "noStrategy_min_20_max750": 1,
+
+
         "bonus": 0
     },
     "bonus": {
@@ -937,11 +949,11 @@
     "heavenHell": {
         "enabled": true,
         "main": {
-            "portalTriggerChancePerKill": 0.01,
+            "portalTriggerChancePerKill": 0.015,
             "portalTriggerChancePerHuntAction": 0
         },
         "bonus": {
-            "entryFreespins": 5,
+            "entryFreespins": 6,
             "portalBonusChanceOnEntry": 0.0,
             "maxFreespinsCap": 0,
             "maxBonusActionsPerRound": 0,
@@ -949,8 +961,8 @@
             "spawnDampeningFactorPerStep": 0.75,
             "maxFreerespinDampeningSteps": 0,
             "spawnChanceByStage": {
-                "freespin": 0.10,
-                "1": 0.02,
+                "freespin": 0.35,
+                "1": 0.03,
                 "2": 0.013,
                 "3": 0.009,
                 "4": 0.006,
