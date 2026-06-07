@@ -25,7 +25,8 @@ export function createClientFlowMethods(deps = {}) {
         playActivation: false,
         suppressPreviewWhenActivationsPending: true
       });
-      this.scene.updateHeavenHellAbilityText?.(gameState, { allowRewardFx: false });
+      const heavenHellAbilityPresentationState = this.getHeavenHellAbilityPresentationState?.(gameState) || gameState;
+      this.scene.updateHeavenHellAbilityText?.(heavenHellAbilityPresentationState, { allowRewardFx: false });
 
       if (gameState.executedAction === "spin" || gameState.executedAction === "freespin") {
         this.scene.emitRoundStarted?.();

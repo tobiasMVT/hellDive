@@ -9042,6 +9042,36 @@ export class GameServer {
     });
   }
 
+  applyHeavenHellChestDropsToPath(heroPath = [], chestDrops = []) {
+    if (!Array.isArray(heroPath) || !Array.isArray(chestDrops) || chestDrops.length === 0) return;
+
+    heroPath.forEach((step) => {
+      if (step && typeof step === "object" && Array.isArray(step.chestDrops)) {
+        step.chestDrops = [];
+      }
+    });
+
+    const unassigned = chestDrops.map((drop, index) => ({ drop, index }));
+    heroPath.forEach((step) => {
+      if (!step || typeof step !== "object" || unassigned.length === 0) return;
+      const stepKillKeys = this.collectHeavenHellStepAttackKillKeys(step);
+      if (stepKillKeys.size === 0) return;
+
+      const matchedDrops = [];
+      for (let i = unassigned.length - 1; i >= 0; i--) {
+        const entry = unassigned[i];
+        const key = `${Math.floor(Number(entry?.drop?.reel))},${Math.floor(Number(entry?.drop?.row))}`;
+        if (!stepKillKeys.has(key)) continue;
+        matchedDrops.push(entry.drop);
+        unassigned.splice(i, 1);
+      }
+
+      if (matchedDrops.length > 0) {
+        step.chestDrops = matchedDrops.reverse();
+      }
+    });
+  }
+
   normalizeHeavenHellKillEntryCredit(entry = {}, { weightedBossKills = 1 } = {}) {
     // Each demon counts once per attack. Divine X is ×2 max — never stacks impact + X into ×4.
     const killCountMultiplier = entry?.divineXDoubleKill === true ? 2 : 1;
@@ -9968,15 +9998,16 @@ export class GameServer {
     const bossMultiplierGain = Math.max(0, Math.floor(Number(bonusConfig?.boss?.multiplierGain ?? 2) || 2));
     const portalBonusSpawn = bonusConfig?.portalBonusSpawn || {};
     const hasPortalBonus = bonusState?.portalBonus === true;
-    const portalMultiplierGain = Math.max(
+    const baseMultiplierDemonGain = Math.max(
       1,
-      Math.floor(
-        Number(
-          (hasPortalBonus ? portalBonusSpawn?.multiplierGainPerKill : 1) ??
-            1
-        ) || 1
-      )
+      Math.floor(Number(bonusConfig?.multiplierDemon?.multiplierGain ?? 1) || 1)
     );
+    const multiplierDemonGain = hasPortalBonus
+      ? Math.max(
+          1,
+          Math.floor(Number(portalBonusSpawn?.multiplierGainPerKill ?? baseMultiplierDemonGain) || baseMultiplierDemonGain)
+        )
+      : baseMultiplierDemonGain;
 
     const killed = new Map();
     const abilityGuaranteedKillBoosts = new Map();
@@ -10085,7 +10116,7 @@ export class GameServer {
     killEntries.forEach((entry) => {
       weightedKills += Math.max(1, Math.floor(Number(entry.weightedKills) || 1));
       if (isBonus && entry.isMultiplierDemon) {
-        bonusState.globalMultiplier += portalMultiplierGain;
+        bonusState.globalMultiplier += multiplierDemonGain;
       }
       if (isBonus && entry.isBoss) {
         bonusState.globalMultiplier += bossMultiplierGain;
@@ -10098,6 +10129,9 @@ export class GameServer {
     const chestDrops = isBonus
       ? this.resolveHeavenHellChestDrops(gameState, killEntries)
       : [];
+    if (isBonus) {
+      this.applyHeavenHellChestDropsToPath(huntResult?.heroPath || [], chestDrops);
+    }
 
     if (isBonus) {
       bonusState.killsThisAction = killEntries.length;
@@ -10217,14 +10251,14 @@ export class GameServer {
     gameState.heavenHell.bonus.lootGround = [];
     gameState.heavenHell.bonus.pendingChests = [];
     gameState.heavenHell.bonus.chestRewardResumeAction = null;
-    gameState.heavenHell.bonus.globalMultiplier = 1;
-    gameState.multiplier = 1;
+    gameState.multiplier = globalMultiplier;
     this.syncHeavenHellChestCounters(gameState);
     return totalTbm;
   }
 
   executeHeavenHellBonusSpawnAction(gameState, betSize = 0) {
     const heavenHell = this.ensureHeavenHellState(gameState);
+    const bonusState = heavenHell?.bonus;
     const action = gameState.executedAction;
     const isFreespin = action === "freespin";
     const isFreerespin = action === "freerespin";
@@ -10236,6 +10270,11 @@ export class GameServer {
     const hasBonusActionCap = Number.isFinite(maxBonusActionsPerRoundRaw) && maxBonusActionsPerRoundRaw > 0;
     if (hasBonusActionCap && heavenHell.bonus.actionCount > Math.floor(maxBonusActionsPerRoundRaw)) {
       gameState.bonusState.finalFreespins = 0;
+      if ((bonusState?.pendingChests?.length || 0) > 0) {
+        bonusState.chestRewardResumeAction = "spin";
+        gameState.nextAction = "chestreward";
+        return true;
+      }
       this.settleHeavenHellBonus(gameState, betSize);
       gameState.isBonus = false;
       gameState.nextAction = "spin";
@@ -10271,6 +10310,12 @@ export class GameServer {
     const hasDemons = boardResult.rippleInjections.length > 0;
     if (hasDemons) {
       gameState.nextAction = ACTION_FREESPIN_BANANA_HUNT;
+      return true;
+    }
+
+    if ((bonusState?.pendingChests?.length || 0) > 0) {
+      bonusState.chestRewardResumeAction = gameState.bonusState.finalFreespins > 0 ? "freerespin" : "spin";
+      gameState.nextAction = "chestreward";
       return true;
     }
 

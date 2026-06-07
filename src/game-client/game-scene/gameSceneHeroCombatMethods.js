@@ -1870,6 +1870,14 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
                 this.dropEnergyOrbs(startX, startY, startOrbs, orbSize, orbColors, orbFallDuration, orbSuckDuration);
                 startBananaOrbsDropped = true;
               }
+              if (isHeavenHellBonusHunt) {
+                const startChestDrops = Array.isArray(startStep?.chestDrops) ? startStep.chestDrops : [];
+                if (startChestDrops.length > 0) {
+                  await this.playHeavenHellQueuedChestDrops?.(startChestDrops);
+                } else {
+                  await this.playHeavenHellQueuedChestDropsForCells?.([{ reel: startPos.reel, row: startPos.row }], heavenHellGameState);
+                }
+              }
             }
           }
         }
@@ -2722,6 +2730,15 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
                 );
               }
             });
+
+            if (isHeavenHellBonusHunt) {
+              const stepChestDrops = Array.isArray(step?.chestDrops) ? step.chestDrops : [];
+              if (stepChestDrops.length > 0) {
+                await this.playHeavenHellQueuedChestDrops?.(stepChestDrops);
+              } else {
+                await this.playHeavenHellQueuedChestDropsForCells?.(bananaTargets, heavenHellGameState);
+              }
+            }
 
             if (step.goldpile && step.goldpile.value > 0 && !is3x3Troll) {
               this.dropGoldPile(targetX, targetY, step.goldpile.value, step.goldpile.tier);

@@ -146,7 +146,7 @@ export function createClientActionMethods(deps = {}) {
         this.scene.hideNonHeavenHellBonusSymbols?.(gameState);
         const playedCollectPhase = await this.playHeavenHellCollectPhaseIfNeeded(gameState);
         this.scene.renderHeavenHellLootGround?.(gameState?.heavenHell?.bonus?.lootGround || []);
-        this.scene.updateHeavenHellAbilityText?.(gameState);
+        await this.syncHeavenHellAbilityUi?.(gameState, { allowRewardFx: false });
         if (!playedCollectPhase) {
           this.scene.updateCountUp(gameState.twa || 0);
         }
@@ -271,7 +271,7 @@ export function createClientActionMethods(deps = {}) {
         this.scene.hideNonHeavenHellBonusSymbols?.(gameState);
         const playedCollectPhase = await this.playHeavenHellCollectPhaseIfNeeded(gameState);
         this.scene.renderHeavenHellLootGround?.(gameState?.heavenHell?.bonus?.lootGround || []);
-        this.scene.updateHeavenHellAbilityText?.(gameState);
+        await this.syncHeavenHellAbilityUi?.(gameState, { allowRewardFx: false });
         if (!playedCollectPhase) {
           this.scene.updateCountUp(gameState.twa || 0);
         }
@@ -461,6 +461,10 @@ export function createClientActionMethods(deps = {}) {
 
       this.scene.cleanupAllBackplates();
 
+      if (this.isHeavenHellEnabled(gameState)) {
+        await this.scene.ensureHeavenHellQueuedChestDrops?.(gameState, { animateMissing: false });
+      }
+
       const playedCollectPhase = await this.playHeavenHellCollectPhaseIfNeeded(gameState);
       if (!playedCollectPhase) {
         this.scene.updateCountUp(gameState.twa || 0);
@@ -470,7 +474,7 @@ export function createClientActionMethods(deps = {}) {
         this.scene.hideNonHeavenHellBonusSymbols?.(gameState);
         this.scene.createOrUpdateHouse?.(gameState?.multiplier || 1);
         this.scene.renderHeavenHellLootGround?.(gameState?.heavenHell?.bonus?.lootGround || []);
-        this.scene.updateHeavenHellAbilityText?.(gameState, { allowRewardFx: true });
+        await this.syncHeavenHellAbilityUi?.(gameState, { allowRewardFx: true });
       }
 
       if (gameState.nextAction === "spin") {
@@ -486,6 +490,7 @@ export function createClientActionMethods(deps = {}) {
 
       this.scene.setCurrentAction?.("chestreward");
       this.scene.startBonusTheme?.();
+      await this.scene.ensureHeavenHellQueuedChestDrops?.(gameState, { animateMissing: false });
 
       await this.scene.playHeavenHellChestRewardSequence?.(gameState);
 

@@ -143,3 +143,10 @@ where Divine Charge triggered
 where bosses died
 
 simply by looking at the accumulated loot.
+
+Heaven/Hell multiplier lifecycle
+
+The resolved bonus multiplier must stay on the final bonus state through `chestreward` and Collect Phase.
+
+Do not reset the Heaven/Hell `globalMultiplier` inside bonus settlement.
+Reset it when a new round starts or when a fresh Heaven/Hell bonus is entered.

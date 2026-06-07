@@ -14,12 +14,17 @@ Demon kill
 -> normal loot roll
 -> chest drop roll
 -> chest stored in heavenHell.bonus.pendingChests[]
+-> matching heroPath kill step gets chestDrops[] annotation for presentation timing
 
 Board clears
 -> nextAction = chestreward
 -> queued chests resolve in order
 -> rewards apply immediately
 -> resume freerespin or settle bonus
+
+Defensive rule:
+- never settle bonus / force `nextAction = spin` while `heavenHell.bonus.pendingChests[]` is non-empty
+- even forced exits such as win-cap or bonus-action caps must route through `chestreward` first
 ```
 
 ## Main Files
@@ -101,10 +106,19 @@ Legacy mirror counters also stay synced on `gameState.bonusState`:
 
 `gameSceneHeavenHellMethods.js` handles:
 
-- chest drop highlight
+- queued chest drop landing on the kill cell during combat
+- persistent ground-chest rendering until the reward action
 - angel move-to-chest
-- simple reel tick/reveal panels
-- reward pop / battlefield landing
+- reel tick/reveal panels displayed directly above the opened chest
+- reward pop / battlefield landing from the chest to the ground
 - final UI sync for freespins and abilities
+
+## Current Presentation Rules
+
+- Chest drops should appear as soon as the demon dies, using the kill cell.
+- Chests stay closed on the battlefield until all demons are dead and `chestreward` runs.
+- Reel/tick reveal UI should be framed over the chest itself, with camera reframing if needed.
+- Loot rewards from chest reveals should pop out of the chest and land on the ground near it.
+- Loot from chest reveals should never fly directly to the hero mid-bonus.
 
 Keep reward math on the server. Keep chest visuals in the scene.

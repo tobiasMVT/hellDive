@@ -204,10 +204,26 @@ export function createGameServerFlowMethods(deps = {}) {
 
     finalizeResponseState(gameState) {
       if (gameState.tbm >= serverConfig.wincap) {
+        const pendingChests = Array.isArray(gameState?.heavenHell?.bonus?.pendingChests)
+          ? gameState.heavenHell.bonus.pendingChests
+          : [];
+        const pendingChestCount = pendingChests.length;
+        const bonusState = pendingChestCount > 0 ? this.ensureHeavenHellState(gameState)?.bonus : null;
+        const nextActionBeforeWinCap = gameState.nextAction;
         gameState.winAmount = serverConfig.wincap;
         gameState.twa = serverConfig.wincap * gameState.betSize;
         gameState.tbm = serverConfig.wincap;
-        gameState.nextAction = "spin";
+        if (gameState.isBonus === true && pendingChestCount > 0) {
+          if (bonusState && typeof bonusState.chestRewardResumeAction !== "string") {
+            bonusState.chestRewardResumeAction =
+              nextActionBeforeWinCap === "freerespin" || Number(gameState.bonusState?.finalFreespins || 0) > 0
+                ? "freerespin"
+                : "spin";
+          }
+          gameState.nextAction = "chestreward";
+        } else {
+          gameState.nextAction = "spin";
+        }
       }
 
       if (

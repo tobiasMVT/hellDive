@@ -993,6 +993,8 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         this.load.image('helldive_loot_amethyst', 'assets/helldive/loot/amethyst.png');
         this.load.image('bonus_silhouette', 'assets/bonus.png'); // BONUS text for storm silhouette
         this.load.image('bonus_chest', 'assets/chest.png'); // Golden chest for bonus
+        this.load.image('helldive_chest_wooden', 'assets/chest_wooden.png');
+        this.load.image('helldive_chest_divine', 'assets/chest_divine.png');
     
         // Combat sounds
         this.load.audio('banana_hit_1', 'assets/sounds/banana_attacked1.mp3');
