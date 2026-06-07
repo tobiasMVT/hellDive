@@ -1,8 +1,8 @@
 {
-    "playBackEnd": false,
+    "playBackEnd": true,
     "devMode": false,
-    "gameRounds": 50000,
-    "saveTickets": false,
+    "gameRounds": 100,
+    "saveTickets": true,
     "usePreSavedTickets": false,
     "wallet": {
         "balance": 10000,

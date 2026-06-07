@@ -69,29 +69,29 @@ export function createGameServerBonusActionMethods(deps = {}) {
       this.stampHeroFootprintOnReels(gameState.reels, heroPos, gameState.heroFootprintSize || 1);
 
       const necromancerLevel = gameState.hero?.necromancer || 0;
-      const necromancerSpawns = this.spawnNecromancerBananas(
+      const necromancerSpawns = this.spawnNecromancerDemons(
         necromancerLevel,
         heroPos,
         gameState.heroFootprintSize || 1
       );
       gameState.necromancerSpawns = necromancerSpawns;
-      gameState.reels = this.placeNecromancerBananas(gameState.reels, necromancerSpawns);
+      gameState.reels = this.placeNecromancerDemons(gameState.reels, necromancerSpawns);
 
       const freespinConfig = serverConfig.freespinConfig || {};
-      const bananaSpawnConfig = freespinConfig.bananaSpawn || serverConfig.bananaSpawn;
+      const demonSpawnConfig = freespinConfig.bananaSpawn || serverConfig.bananaSpawn;
       const isFirstFreespin = gameState.bonusState.initialFreespins === (gameState.bonusState.finalFreespins + 1);
-      const guaranteedBanana = isFirstFreespin && freespinConfig.firstFreespinGuaranteedBanana;
+      const guaranteedDemon = isFirstFreespin && freespinConfig.firstFreespinGuaranteedBanana;
 
       const currentKills = gameState.bonusState.finalDemonsCollected ?? gameState.bonusState.finalDemonsKilled ?? 0;
       const nextRetriggerThreshold = resolveNextBonusRetriggerThreshold(currentKills);
-      const bananasAwayFromNextStage = nextRetriggerThreshold === null
+      const demonsAwayFromNextStage = nextRetriggerThreshold === null
         ? null
         : Math.max(0, nextRetriggerThreshold - currentKills);
 
-      gameState.reels = this.addBananas(gameState.reels, bananaSpawnConfig, {
-        guaranteedBanana,
+      gameState.reels = this.addDemons(gameState.reels, demonSpawnConfig, {
+        guaranteedDemon,
         gameState,
-        bananasAwayFromBonusStage: bananasAwayFromNextStage,
+        demonsAwayFromBonusStage: demonsAwayFromNextStage,
         remainingFreespins: gameState.bonusState.finalFreespins,
         hero: gameState.hero,
         heroPosition: heroPos,
@@ -185,7 +185,7 @@ export function createGameServerBonusActionMethods(deps = {}) {
       if (!result.hasWins) {
         const barrelsOnBoard = this.getBarrelSymbolsOnBoard(gameState.reels);
         if (barrelsOnBoard.length > 0) {
-          const barrelResult = this.triggerBarrelBananaBursts(gameState.reels, barrelsOnBoard, gameState);
+          const barrelResult = this.triggerBarrelDemonBursts(gameState.reels, barrelsOnBoard, gameState);
           if (barrelResult.barrelBursts.length > 0) {
             pendingBarrelDropReels = barrelResult.reels;
           }
@@ -204,7 +204,7 @@ export function createGameServerBonusActionMethods(deps = {}) {
         gameState.reelsBeforeDrop = pendingBarrelDropReels;
         gameState.reelsAfterDrop = null;
         gameState.nextAction = "freerespin";
-      } else if (Object.values(gameState.reels).some((row) => row.some((sym) => this.isBanana(sym)))) {
+      } else if (Object.values(gameState.reels).some((row) => row.some((sym) => this.isDemon(sym)))) {
         gameState.clusters = [];
         gameState.reels = gameState.reels;
         gameState.reelsBeforeDrop = null;
@@ -230,25 +230,25 @@ export function createGameServerBonusActionMethods(deps = {}) {
 
       gameState.gravity = this.decideGravity(gameState.reelsBeforeDrop);
 
-      const allowBananas = true;
-      const resolvedFreespinBananaConfig = this.resolveBananaSpawnConfig(
+      const allowDemons = true;
+      const resolvedFreespinDemonConfig = this.resolveDemonSpawnConfig(
         serverConfig.freespinConfig?.bananaSpawn || {},
         gameState
       );
 
-      const abilityReduction = resolvedFreespinBananaConfig?.abilityReduction || {};
-      let bananaChanceMultiplier = 1.0;
+      const abilityReduction = resolvedFreespinDemonConfig?.abilityReduction || {};
+      let demonChanceMultiplier = 1.0;
       if (Object.keys(abilityReduction).length > 0) {
         const meterLevel = Math.max(0, Math.floor(Number(gameState.bananaMeter?.level) || 0));
-        bananaChanceMultiplier = abilityReduction[meterLevel] ?? abilityReduction[String(meterLevel)] ?? 1.0;
+        demonChanceMultiplier = abilityReduction[meterLevel] ?? abilityReduction[String(meterLevel)] ?? 1.0;
       }
       const currentKills = gameState.bonusState.finalDemonsCollected ?? gameState.bonusState.finalDemonsKilled ?? 0;
       const nextRetriggerThreshold = resolveNextBonusRetriggerThreshold(currentKills);
-      const bananasAwayFromNextStage = nextRetriggerThreshold === null
+      const demonsAwayFromNextStage = nextRetriggerThreshold === null
         ? null
         : Math.max(0, nextRetriggerThreshold - currentKills);
-      bananaChanceMultiplier *= this.getBonusStageSuspenseChanceMultiplier(
-        bananasAwayFromNextStage,
+      demonChanceMultiplier *= this.getBonusStageSuspenseChanceMultiplier(
+        demonsAwayFromNextStage,
         gameState.bonusState.finalFreespins
       );
       const timeSymbolConfig = this.resolveExplodingBarrelConfig(gameState) || {};
@@ -262,10 +262,10 @@ export function createGameServerBonusActionMethods(deps = {}) {
         gameState.reelsBeforeDrop,
         this.serverConfig.symbolWeightsMain,
         gameState.gravity || "down",
-        allowBananas,
+        allowDemons,
         timeSymbolChance,
-        bananaChanceMultiplier,
-        resolvedFreespinBananaConfig?.respinChance,
+        demonChanceMultiplier,
+        resolvedFreespinDemonConfig?.respinChance,
         this.buildHeroFootprintState(gameState.heroPosition, gameState.heroFootprintSize || 1),
         { isBonus: true }
       );
@@ -408,7 +408,7 @@ export function createGameServerBonusActionMethods(deps = {}) {
       if (!result.hasWins) {
         const barrelsOnBoard = this.getBarrelSymbolsOnBoard(gameState.reels);
         if (barrelsOnBoard.length > 0) {
-          const barrelResult = this.triggerBarrelBananaBursts(gameState.reels, barrelsOnBoard, gameState);
+          const barrelResult = this.triggerBarrelDemonBursts(gameState.reels, barrelsOnBoard, gameState);
           if (barrelResult.barrelBursts.length > 0) {
             pendingBarrelDropReels = barrelResult.reels;
           }
@@ -432,7 +432,7 @@ export function createGameServerBonusActionMethods(deps = {}) {
         }
 
         gameState.nextAction = "freerespin";
-      } else if (Object.values(gameState.reels).some((row) => row.some((sym) => this.isBanana(sym)))) {
+      } else if (Object.values(gameState.reels).some((row) => row.some((sym) => this.isDemon(sym)))) {
         gameState.clusters = [];
         gameState.winAmount = 0;
         gameState.reelsBeforeDrop = null;
@@ -466,7 +466,7 @@ export function createGameServerBonusActionMethods(deps = {}) {
       return false;
     },
 
-    handleFreespinBananaHuntAction(gameState, betSize, { heavenHellEnabled } = {}) {
+    handleFreespinDemonHuntAction(gameState, betSize, { heavenHellEnabled } = {}) {
       const stepType = "destroy";
       const weaponId = BASE_MONKEY_STATE.weapon;
       const heroPosition = gameState.heroPosition || null;
@@ -476,7 +476,7 @@ export function createGameServerBonusActionMethods(deps = {}) {
       const reelsToHunt = isTrollRush ? gameState.reelsBeforeDrop : gameState.reels;
 
       const preHuntReels = JSON.parse(JSON.stringify(reelsToHunt || {}));
-      const huntResult = this.executeBananaHunt(reelsToHunt, stepType, weaponId, heroPosition, gameState);
+      const huntResult = this.executeDemonHunt(reelsToHunt, stepType, weaponId, heroPosition, gameState);
 
       if (!gameState.rtpData) {
         gameState.rtpData = {};
@@ -547,7 +547,7 @@ export function createGameServerBonusActionMethods(deps = {}) {
       gameState.totalDemonsKilledInSequence = (gameState.totalDemonsKilledInSequence || 0) + (gameState.demonsKilledThisAction || 0);
       gameState.totalDemonsCollectedInSequence = (gameState.totalDemonsCollectedInSequence || 0) + gameState.demonsCollected;
       if (!heavenHellEnabled) {
-        this.addBananaMeterProgress(gameState, gameState.demonsCollected);
+        this.addDemonMeterProgress(gameState, gameState.demonsCollected);
         this.normalizeBonusStageState(gameState, { awardFreespins: true });
       }
       if (huntResult.growthAppliedDuringHunt === true) {
@@ -812,3 +812,5 @@ export function createGameServerBonusActionMethods(deps = {}) {
     }
   };
 }
+
+

@@ -1,7 +1,7 @@
 import serverConfig from "./server_config.json" with { type: "json" };
-import { createGameServerMainActionMethods } from "./game-server/gameServerMainActionMethods";
-import { createGameServerBonusActionMethods } from "./game-server/gameServerBonusActionMethods";
-import { createGameServerFlowMethods } from "./game-server/gameServerFlowMethods";
+import { createGameServerMainActionMethods } from "./game-server/gameServerMainActionMethods.js";
+import { createGameServerBonusActionMethods } from "./game-server/gameServerBonusActionMethods.js";
+import { createGameServerFlowMethods } from "./game-server/gameServerFlowMethods.js";
 import { generateChest, resolveChestSequence } from "./lib/chestSystem.js";
 
 const originalConfig = JSON.parse(JSON.stringify(serverConfig))
@@ -67,7 +67,7 @@ const BONUS_RETRIGGER_THRESHOLDS = Array.from(
   )
 ).sort((a, b) => a - b);
 
-const resolveBananaMeterLevel = (rawCount = 0) => {
+const resolveDemonMeterLevel = (rawCount = 0) => {
   const count = Math.max(0, Math.min(MAX_BANANA_METER_COUNT, Math.floor(Number(rawCount) || 0)));
   const match = BANANA_METER_LEVELS.find((entry) => count >= entry.min);
   return match ? match.level : 0;
@@ -98,7 +98,7 @@ const isPositiveNumber = (value) => {
   return Number.isFinite(n) && n > 0;
 };
 
-const getCollectedBananaThreshold = (entry) => {
+const getCollectedDemonThreshold = (entry) => {
   const threshold = Number(entry?.minCollectedBananas ?? entry?.collectedBananas ?? 0);
   if (!Number.isFinite(threshold)) return 0;
   return Math.max(0, Math.floor(threshold));
@@ -166,8 +166,8 @@ export class GameServer {
       this.lightningBeeFeatureId = serverConfig.symbolsMapping?.lightningBeeFeature; // Lightning bee feature (ID 20)
       
       // Store all hunt target IDs (banana preferred, banana kept for compatibility)
-      this.bananaId = serverConfig.symbolsMapping?.banana ?? serverConfig.symbolsMapping?.banana;
-      this.bananaIds = [
+      this.demonId = serverConfig.symbolsMapping?.banana ?? serverConfig.symbolsMapping?.banana;
+      this.demonIds = [
         serverConfig.symbolsMapping?.banana,
         serverConfig.symbolsMapping?.banana2,
         serverConfig.symbolsMapping?.banana3,
@@ -191,7 +191,7 @@ export class GameServer {
     return parseFloat(n.toFixed(2));
   }
 
-  normalizeBananaMeter(gameState) {
+  normalizeDemonMeter(gameState) {
     if (!gameState || typeof gameState !== "object") return { count: 0, level: 0 };
 
     const legacyCount = Number(gameState?.bonusState?.finalDemonsCollected ?? gameState?.bonusState?.finalDemonsKilled ?? 0);
@@ -203,12 +203,12 @@ export class GameServer {
         Math.floor(Number.isFinite(currentCount) ? currentCount : 0)
       )
     );
-    const level = resolveBananaMeterLevel(count);
+    const level = resolveDemonMeterLevel(count);
 
     gameState.bananaMeter = { count, level };
     gameState.bananaMeterCount = count;
     gameState.bananaMeterLevel = level;
-    this.activeBananaMeterLevel = level;
+    this.activeDemonMeterLevel = level;
 
     return gameState.bananaMeter;
   }
@@ -229,7 +229,7 @@ export class GameServer {
     return Math.max(0, Math.min(1, normalized));
   }
 
-  getCollectedBananaCount(gameState = null) {
+  getCollectedDemonCount(gameState = null) {
     const rawCount = Number(
       gameState?.bananaMeter?.count ??
       gameState?.bananaMeterCount ??
@@ -249,20 +249,20 @@ export class GameServer {
     );
   }
 
-  getCollectedBananaAdjustment(entries = [], gameState = null) {
+  getCollectedDemonAdjustment(entries = [], gameState = null) {
     if (!Array.isArray(entries) || entries.length === 0) return null;
 
-    const collectedCount = this.getCollectedBananaCount(gameState);
+    const collectedCount = this.getCollectedDemonCount(gameState);
     const sortedEntries = [...entries]
       .filter((entry) => isPlainObject(entry))
-      .sort((a, b) => getCollectedBananaThreshold(b) - getCollectedBananaThreshold(a));
+      .sort((a, b) => getCollectedDemonThreshold(b) - getCollectedDemonThreshold(a));
 
-    return sortedEntries.find((entry) => collectedCount >= getCollectedBananaThreshold(entry)) || null;
+    return sortedEntries.find((entry) => collectedCount >= getCollectedDemonThreshold(entry)) || null;
   }
 
-  resolveBananaSpawnConfig(config = {}, gameState = null) {
+  resolveDemonSpawnConfig(config = {}, gameState = null) {
     const baseConfig = isPlainObject(config) ? config : {};
-    const adjustment = this.getCollectedBananaAdjustment(baseConfig.collectedBananaAdjustments, gameState);
+    const adjustment = this.getCollectedDemonAdjustment(baseConfig.collectedBananaAdjustments, gameState);
     if (!adjustment) {
       return baseConfig;
     }
@@ -301,7 +301,7 @@ export class GameServer {
     const baseConfig = isPlainObject(serverConfig?.explodingBananBarrel)
       ? serverConfig.explodingBananBarrel
       : {};
-    const adjustment = this.getCollectedBananaAdjustment(baseConfig.collectedBananaAdjustments, gameState);
+    const adjustment = this.getCollectedDemonAdjustment(baseConfig.collectedBananaAdjustments, gameState);
     if (!adjustment) {
       return baseConfig;
     }
@@ -948,7 +948,7 @@ export class GameServer {
     const currentNumber = Number(currentSymbol);
     if (!Number.isFinite(currentNumber) || currentNumber <= 0) return false;
     if (currentNumber === this.heroId) return false;
-    if (this.isBanana(currentNumber)) return false;
+    if (this.isDemon(currentNumber)) return false;
     if (currentNumber === this.timeId) return false;
     if (currentNumber === Number(serverConfig?.symbolsMapping?.time_depleted ?? 17)) return false;
     if (currentNumber === this.mysteryId || currentNumber === this.mysteryWildId) return false;
@@ -1699,7 +1699,7 @@ export class GameServer {
     const currentNumber = Number(currentSymbol);
     if (!Number.isFinite(currentNumber) || currentNumber <= 0) return false;
     if (currentNumber === this.heroId) return false;
-    if (this.isBanana(currentNumber)) return false;
+    if (this.isDemon(currentNumber)) return false;
     if (currentNumber === this.timeId) return false;
     if (currentNumber === Number(serverConfig?.symbolsMapping?.time_depleted ?? 17)) return false;
     if (currentNumber === this.mysteryId || currentNumber === this.mysteryWildId) return false;
@@ -2192,7 +2192,7 @@ export class GameServer {
     const currentNumber = Number(currentSymbol);
     if (!Number.isFinite(currentNumber) || currentNumber <= 0) return false;
     if (currentNumber === this.heroId) return false;
-    if (this.isBanana(currentNumber)) return false;
+    if (this.isDemon(currentNumber)) return false;
     if (currentNumber === this.timeId) return false;
     if (currentNumber === Number(serverConfig?.symbolsMapping?.time_depleted ?? 17)) return false;
     if (currentNumber === this.mysteryId || currentNumber === this.mysteryWildId) return false;
@@ -2257,7 +2257,7 @@ export class GameServer {
       !Number.isFinite(replacementNumber) ||
       !payoutSymbols.map((symbol) => Number(symbol)).includes(replacementNumber) ||
       this.isPersistentBonusFeatureSymbol(replacementNumber) ||
-      this.isBanana(replacementNumber) ||
+      this.isDemon(replacementNumber) ||
       replacementNumber === this.timeId
     ) {
       replacement = fallback;
@@ -3049,7 +3049,7 @@ export class GameServer {
     return count;
   }
 
-  getTargetAnchorsForBanana(banana, footprintSize = 1) {
+  getTargetAnchorsForDemon(banana, footprintSize = 1) {
     const size = Math.max(1, Math.floor(Number(footprintSize) || 1));
     if (!banana || !Number.isFinite(banana.reel) || !Number.isFinite(banana.row)) return [];
     if (size <= 1) {
@@ -3066,14 +3066,14 @@ export class GameServer {
     return anchors;
   }
 
-  getBananasInFootprint(reels, anchor, footprintSize = 1) {
+  getDemonsInFootprint(reels, anchor, footprintSize = 1) {
     return this.getHeroFootprintCells(anchor, footprintSize)
       .map((cell) => ({
         reel: cell.reel,
         row: cell.row,
         bananaId: reels?.[cell.reel]?.[cell.row]
       }))
-      .filter((cell) => this.isBanana(cell.bananaId));
+      .filter((cell) => this.isDemon(cell.bananaId));
   }
 
   stampHeroFootprintOnReels(reels, anchor, footprintSize = 1) {
@@ -3094,14 +3094,14 @@ export class GameServer {
     return reels;
   }
 
-  trimPathToFirstBananaContact(reels, path = [], footprintSize = 1) {
+  trimPathToFirstDemonContact(reels, path = [], footprintSize = 1) {
     if (!Array.isArray(path) || path.length === 0) {
       return [];
     }
 
     for (let index = 0; index < path.length; index++) {
       const anchor = path[index];
-      if (this.getBananasInFootprint(reels, anchor, footprintSize).length > 0) {
+      if (this.getDemonsInFootprint(reels, anchor, footprintSize).length > 0) {
         return path.slice(0, index + 1);
       }
     }
@@ -3162,7 +3162,7 @@ export class GameServer {
         if (symbol === null || symbol === undefined || symbol === 0 || symbol === "HOUSE" || symbol === this.heroId) {
           return;
         }
-        if (this.isBanana(symbol)) {
+        if (this.isDemon(symbol)) {
           bananaCount++;
         } else {
           occupiedCount++;
@@ -3254,7 +3254,7 @@ export class GameServer {
         currentSymbol !== "HOUSE" &&
         currentSymbol !== this.heroId
       ) {
-        const isBananaCell = this.isBanana(currentSymbol);
+        const isBananaCell = this.isDemon(currentSymbol);
         consumedCells.push({
           reel: cell.reel,
           row: cell.row,
@@ -3327,7 +3327,7 @@ export class GameServer {
       gameState.demonsCollected = Number(gameState.demonsCollected || 0) + demonsConsumed;
       gameState.totalDemonsKilledInSequence = Number(gameState.totalDemonsKilledInSequence || 0) + demonsConsumed;
       gameState.totalDemonsCollectedInSequence = Number(gameState.totalDemonsCollectedInSequence || 0) + demonsConsumed;
-      this.addBananaMeterProgress(gameState, demonsConsumed);
+      this.addDemonMeterProgress(gameState, demonsConsumed);
     }
 
     return growthResult;
@@ -3345,7 +3345,7 @@ export class GameServer {
       };
     }
 
-    const meter = this.normalizeBananaMeter(gameState);
+    const meter = this.normalizeDemonMeter(gameState);
     const previousStage = Math.max(0, Math.floor(Number(gameState.bonusStage) || 0));
     const previousHeroFootprintSize = Math.max(1, Math.floor(Number(gameState.heroFootprintSize) || 1));
     const stage = resolveBonusStage(meter.count, gameState.isBonus === true);
@@ -3399,7 +3399,7 @@ export class GameServer {
   syncBonusEntryFreespins(gameState) {
     if (!gameState || typeof gameState !== "object") return BONUS_BASE_ENTRY_FREESPINS;
 
-    const meter = this.normalizeBananaMeter(gameState);
+    const meter = this.normalizeDemonMeter(gameState);
     const entryFreespins = resolveBonusEntryFreespins(meter.count);
 
     if (!gameState.bonusWon || typeof gameState.bonusWon !== "object") {
@@ -3461,26 +3461,26 @@ export class GameServer {
     return 1;
   }
 
-  addBananaMeterProgress(gameState, rawAmount = 0) {
-    const meter = this.normalizeBananaMeter(gameState);
+  addDemonMeterProgress(gameState, rawAmount = 0) {
+    const meter = this.normalizeDemonMeter(gameState);
     const amount = Math.max(0, Math.floor(Number(rawAmount) || 0));
     if (amount <= 0) return meter;
 
     const nextCount = Math.min(MAX_BANANA_METER_COUNT, meter.count + amount);
-    const nextLevel = resolveBananaMeterLevel(nextCount);
+    const nextLevel = resolveDemonMeterLevel(nextCount);
     gameState.bananaMeter = { count: nextCount, level: nextLevel };
     gameState.bananaMeterCount = nextCount;
     gameState.bananaMeterLevel = nextLevel;
-    this.activeBananaMeterLevel = nextLevel;
+    this.activeDemonMeterLevel = nextLevel;
 
     return gameState.bananaMeter;
   }
 
-  shouldTriggerBonusFromBananaMeter(gameState) {
+  shouldTriggerBonusFromDemonMeter(gameState) {
     if (!gameState || gameState.isBonus) return false;
     if (gameState.bonusTriggered) return true;
 
-    const meter = this.normalizeBananaMeter(gameState);
+    const meter = this.normalizeDemonMeter(gameState);
     return meter.count >= BANANA_BONUS_TRIGGER_COUNT;
   }
 
@@ -5777,15 +5777,15 @@ export class GameServer {
   /**
    * Check if a symbol is any type of banana
    */
-  isBanana(symbol) {
-    return this.bananaIds.includes(symbol);
+  isDemon(symbol) {
+    return this.demonIds.includes(symbol);
   }
   
   /**
    * Randomly select a banana type based on configured odds
    * Returns the symbol ID of the selected banana type
    */
-  getRandomBananaType() {
+  getRandomDemonType() {
     const typeOdds = serverConfig.bananaSpawn?.typeOdds || { banana: 100 };
     const symbolsMapping = serverConfig.symbolsMapping;
     
@@ -5801,7 +5801,7 @@ export class GameServer {
     }
     
     // Random selection
-    if (weighted.length === 0) return this.bananaId; // Fallback to default
+    if (weighted.length === 0) return this.demonId; // Fallback to default
     return weighted[Math.floor(Math.random() * weighted.length)];
   }
 
@@ -5812,7 +5812,7 @@ export class GameServer {
    * @param {object} heroPosition - Current hero position {reel, row} to avoid (optional, uses starting position if not provided)
    * @returns {Array} - Array of spawn positions [{reel, row, bananaId}, ...]
    */
-  spawnNecromancerBananas(necromancerLevel, heroPosition = null, heroFootprintSize = 1) {
+  spawnNecromancerDemons(necromancerLevel, heroPosition = null, heroFootprintSize = 1) {
     const spawnConfig = serverConfig.necromancerBananaOutput?.[necromancerLevel];
     if (!spawnConfig || spawnConfig.from === 0 && spawnConfig.to === 0) {
       return []; // No bananas to spawn
@@ -5909,10 +5909,10 @@ export class GameServer {
   /**
    * Place necromancer bananas into the reels
    * @param {Object} reels - Current reel state
-   * @param {Array} spawns - Array of spawn positions from spawnNecromancerBananas
+   * @param {Array} spawns - Array of spawn positions from spawnNecromancerDemons
    * @returns {Object} - Updated reels with bananas placed
    */
-  placeNecromancerBananas(reels, spawns) {
+  placeNecromancerDemons(reels, spawns) {
     if (!spawns || spawns.length === 0) return reels;
     
     // Clone reels
@@ -5957,7 +5957,7 @@ export class GameServer {
    * (Hero, Banana, Monsters, etc.)
    */
   isBlockingSymbol(symbol) {
-    return symbol === this.heroId || this.isBanana(symbol) || this.isPersistentBonusFeatureSymbol(symbol);
+    return symbol === this.heroId || this.isDemon(symbol) || this.isPersistentBonusFeatureSymbol(symbol);
   }
 
   /**
@@ -6029,7 +6029,7 @@ export class GameServer {
     for (let reel = 0; reel < this.width; reel++) {
       for (let row = 0; row < this.height; row++) {
         const symbol = reels?.[reel]?.[row];
-        if (this.isBanana(symbol)) {
+        if (this.isDemon(symbol)) {
           bananaPositions.push({ reel, row });
         }
       }
@@ -6053,7 +6053,7 @@ export class GameServer {
       symbol &&
       symbol !== "HOUSE" &&
       symbol !== 0 &&
-      !this.isBanana(symbol) &&
+      !this.isDemon(symbol) &&
       symbol !== this.heroId &&
       symbol !== this.mysteryWildId &&
       !this.isPersistentBonusFeatureSymbol(symbol);
@@ -6074,7 +6074,7 @@ export class GameServer {
         const symbol = getSymbol(reel, row);
         
         // Skip if invalid, house, banana, or doesn't match
-        if (!symbol || symbol === "HOUSE" || symbol === 0 || this.isBanana(symbol)) continue;
+        if (!symbol || symbol === "HOUSE" || symbol === 0 || this.isDemon(symbol)) continue;
         if (this.isHouse(reel, row)) continue;
         if (this.isPersistentBonusFeatureSymbol(symbol)) continue;
         if (symbol !== targetSymbol && symbol !== this.mysteryWildId) continue;
@@ -6144,7 +6144,7 @@ export class GameServer {
     return clusters;
   }
 
-  getBananaCheckSymbol(reels, reel, row, heroState = null, activeWildCellKeys = null) {
+  getDemonCheckSymbol(reels, reel, row, heroState = null, activeWildCellKeys = null) {
     if (reel < 0 || reel >= this.width || row < 0 || row >= this.height) {
       return null;
     }
@@ -6164,7 +6164,7 @@ export class GameServer {
     return Number.isFinite(parsed) ? parsed : symbol;
   }
 
-  collectBananaCheckClusters(reels, bananaPosition, bananaMeterLevel = 0, minSize = 4, heroState = null) {
+  collectDemonCheckClusters(reels, bananaPosition, bananaMeterLevel = 0, minSize = 4, heroState = null) {
     if (!bananaPosition) return [];
 
     const paytable = serverConfig.paytable || {};
@@ -6198,7 +6198,7 @@ export class GameServer {
     const starts = new Map();
     activeWildCells.forEach((wildCell) => {
       getNeighbors(wildCell.reel, wildCell.row).forEach((pos) => {
-        const symbol = this.getBananaCheckSymbol(reels, pos.reel, pos.row, effectiveHeroState, activeWildCellKeys);
+        const symbol = this.getDemonCheckSymbol(reels, pos.reel, pos.row, effectiveHeroState, activeWildCellKeys);
         if (!isPayingSymbol(symbol)) return;
         starts.set(key(pos.reel, pos.row), { reel: pos.reel, row: pos.row, symbol });
       });
@@ -6219,14 +6219,14 @@ export class GameServer {
         if (localVisited.has(posKey)) continue;
         localVisited.add(posKey);
 
-        const symbol = this.getBananaCheckSymbol(reels, current.reel, current.row, effectiveHeroState, activeWildCellKeys);
+        const symbol = this.getDemonCheckSymbol(reels, current.reel, current.row, effectiveHeroState, activeWildCellKeys);
         if (
           symbol === null ||
           symbol === undefined ||
           symbol === 0 ||
           symbol === "HOUSE" ||
           this.isHouse(current.reel, current.row) ||
-          this.isBanana(symbol)
+          this.isDemon(symbol)
         ) {
           continue;
         }
@@ -6279,7 +6279,7 @@ export class GameServer {
     return clusters;
   }
 
-  applyBananaCheckClusterExplosions(
+  applyDemonCheckClusterExplosions(
     reels,
     bananaPosition,
     bananaMeterLevel = 0,
@@ -6290,7 +6290,7 @@ export class GameServer {
     options = {}
   ) {
     const includeHeroWildCells = options?.includeHeroWildCells === true;
-    const clusters = this.collectBananaCheckClusters(reels, bananaPosition, bananaMeterLevel, minSize, heroState);
+    const clusters = this.collectDemonCheckClusters(reels, bananaPosition, bananaMeterLevel, minSize, heroState);
     const scoreResult = this.scoreClusters(clusters, betSize, multiplier);
     if (!scoreResult.hasWins) {
       return { hasClusters: false, clusters: [], twa: 0, tbm: 0, collectedSymbols: [] };
@@ -6457,11 +6457,11 @@ export class GameServer {
     };
   }
 
-  boardHasBananas(reels) {
+  boardHasDemons(reels) {
     if (!reels) return false;
     for (let reel = 0; reel < this.width; reel++) {
       for (let row = 0; row < this.height; row++) {
-        if (this.isBanana(reels?.[reel]?.[row])) {
+        if (this.isDemon(reels?.[reel]?.[row])) {
           return true;
         }
       }
@@ -6478,7 +6478,7 @@ export class GameServer {
     heroState = null,
     useMainGameWildOverride = false
   ) {
-    if (!this.boardHasBananas(reels)) {
+    if (!this.boardHasDemons(reels)) {
       return null;
     }
     const fullBoardResult = this.processClusters(
@@ -6579,29 +6579,29 @@ export class GameServer {
   /**
    * Apply gravity: drop symbols down and fill empty spaces
    * Symbols pass through house positions during drops
-   * @param {boolean} allowBananas - If false, prevents banana spawning in new symbols (default: true)
+   * @param {boolean} allowDemons - If false, prevents banana spawning in new symbols (default: true)
    * @param {number} timeSymbolChance - Chance (0-100) to spawn time symbols in new positions (default: 0)
-   * @param {number} bananaChanceMultiplier - Multiplier for banana spawn chance (default: 1.0)
-   * @param {number|null} bananaBaseChance - Base per-new-symbol banana chance for this gravity pass
+   * @param {number} demonChanceMultiplier - Multiplier for banana spawn chance (default: 1.0)
+   * @param {number|null} demonBaseChance - Base per-new-symbol banana chance for this gravity pass
    */
   applyGravity(
     reels,
     symbolWeights,
     direction = 'down',
-    allowBananas = true,
+    allowDemons = true,
     timeSymbolChance = 0,
-    bananaChanceMultiplier = 1.0,
-    bananaBaseChance = null,
+    demonChanceMultiplier = 1.0,
+    demonBaseChance = null,
     heroState = null,
     options = {}
   ) {
     const newReels = {};
     const movements = [];
-    const parsedBananaBaseChance = Number(bananaBaseChance);
-    const fallbackBananaBaseChance = Number(serverConfig.bananaSpawn?.respinChance);
-    const resolvedBananaBaseChance = Number.isFinite(parsedBananaBaseChance)
-      ? Math.max(0, parsedBananaBaseChance)
-      : (Number.isFinite(fallbackBananaBaseChance) ? Math.max(0, fallbackBananaBaseChance) : 0.05);
+    const parsedDemonBaseChance = Number(demonBaseChance);
+    const fallbackDemonBaseChance = Number(serverConfig.bananaSpawn?.respinChance);
+    const resolvedDemonBaseChance = Number.isFinite(parsedDemonBaseChance)
+      ? Math.max(0, parsedDemonBaseChance)
+      : (Number.isFinite(fallbackDemonBaseChance) ? Math.max(0, fallbackDemonBaseChance) : 0.05);
     const heroFootprint = this.buildHeroFootprintState(
       heroState?.anchor || heroState?.position || null,
       heroState?.size || 1
@@ -6673,15 +6673,15 @@ export class GameServer {
             } else {
               // New symbols spawn from above (row 8, 9, 10...)
               // Allow bananas during respins with configured chance (unless disabled)
-              const baseBananaChance = allowBananas ? resolvedBananaBaseChance : 0;
-              const bananaChance = Math.max(0, baseBananaChance * bananaChanceMultiplier);
+              const baseDemonChance = allowDemons ? resolvedDemonBaseChance : 0;
+              const demonChance = Math.max(0, baseDemonChance * demonChanceMultiplier);
               const newSymbol = this.getSpawnSymbolForReel(
                 reel,
                 symbolWeights,
                 pairState,
                 {
-                  allowBananas: true,
-                  bananaChance,
+                  allowDemons: true,
+                  demonChance,
                   timeSymbolChance
                 },
                 spawnBehavior
@@ -6728,15 +6728,15 @@ export class GameServer {
             } else {
               // New symbols spawn from below (row -1, -2, -3...)
               // Allow bananas during respins with configured chance (unless disabled)
-              const baseBananaChance = allowBananas ? resolvedBananaBaseChance : 0;
-              const bananaChance = Math.max(0, baseBananaChance * bananaChanceMultiplier);
+              const baseDemonChance = allowDemons ? resolvedDemonBaseChance : 0;
+              const demonChance = Math.max(0, baseDemonChance * demonChanceMultiplier);
               const newSymbol = this.getSpawnSymbolForReel(
                 reel,
                 symbolWeights,
                 pairState,
                 {
-                  allowBananas: true,
-                  bananaChance,
+                  allowDemons: true,
+                  demonChance,
                   timeSymbolChance
                 },
                 spawnBehavior
@@ -6815,15 +6815,15 @@ export class GameServer {
       } else {
               // New symbols spawn from right (reel 8, 9, 10...)
               // Allow bananas during respins with configured chance (unless disabled)
-              const baseBananaChance = allowBananas ? resolvedBananaBaseChance : 0;
-              const bananaChance = Math.max(0, baseBananaChance * bananaChanceMultiplier);
+              const baseDemonChance = allowDemons ? resolvedDemonBaseChance : 0;
+              const demonChance = Math.max(0, baseDemonChance * demonChanceMultiplier);
               const newSymbol = this.getSpawnSymbolForReel(
                 reel,
                 symbolWeights,
                 pairState,
                 {
-                  allowBananas: true,
-                  bananaChance,
+                  allowDemons: true,
+                  demonChance,
                   timeSymbolChance
                 },
                 spawnBehavior
@@ -6869,15 +6869,15 @@ export class GameServer {
             } else {
               // New symbols spawn from left (reel -1, -2, -3...)
               // Allow bananas during respins with configured chance (unless disabled)
-              const baseBananaChance = allowBananas ? resolvedBananaBaseChance : 0;
-              const bananaChance = Math.max(0, baseBananaChance * bananaChanceMultiplier);
+              const baseDemonChance = allowDemons ? resolvedDemonBaseChance : 0;
+              const demonChance = Math.max(0, baseDemonChance * demonChanceMultiplier);
               const newSymbol = this.getSpawnSymbolForReel(
                 reel,
                 symbolWeights,
                 pairState,
                 {
-                  allowBananas: true,
-                  bananaChance,
+                  allowDemons: true,
+                  demonChance,
                   timeSymbolChance
                 },
                 spawnBehavior
@@ -7350,7 +7350,7 @@ export class GameServer {
    * Execute banana hunt: Hero moves from starting position to kill all bananas
    * @param {object} heroPosition - Hero's last known position from gameState (null for fresh entry)
    */
-  executeBananaHunt(reels, stepType = "destroy", weaponIdOrName = 0, heroPosition = null, gameState = null) {
+  executeDemonHunt(reels, stepType = "destroy", weaponIdOrName = 0, heroPosition = null, gameState = null) {
     const heroId = serverConfig.symbolsMapping.hero;
     const shortestPathMode = serverConfig.heroShortestPath !== false; // Default to true if not set
     
@@ -7365,7 +7365,7 @@ export class GameServer {
       rushActive: false
     };
     const isBonusHunt = gameState?.isBonus === true;
-    const initialMeter = gameState ? this.normalizeBananaMeter(gameState) : { count: 0, level: 0 };
+    const initialMeter = gameState ? this.normalizeDemonMeter(gameState) : { count: 0, level: 0 };
     let currentMeterCount = Math.max(0, Math.min(MAX_BANANA_METER_COUNT, Math.floor(Number(initialMeter.count) || 0)));
     let currentMeterLevel = Math.max(0, Math.floor(Number(initialMeter.level) || 0));
     let currentStage = isBonusHunt ? resolveBonusStage(currentMeterCount, true) : 0;
@@ -7378,7 +7378,7 @@ export class GameServer {
 
     const syncDynamicStageState = () => {
       currentMeterCount = Math.max(0, Math.min(MAX_BANANA_METER_COUNT, Math.floor(Number(currentMeterCount) || 0)));
-      currentMeterLevel = resolveBananaMeterLevel(currentMeterCount);
+      currentMeterLevel = resolveDemonMeterLevel(currentMeterCount);
       currentStage = isBonusHunt ? resolveBonusStage(currentMeterCount, true) : 0;
       rushActive = isBonusHunt && currentStage >= BONUS_RUSH_START_STAGE;
     };
@@ -7391,8 +7391,8 @@ export class GameServer {
           reel: cell.reel,
           row: cell.row,
           wasSymbol: symbol,
-          banana: this.isBanana(symbol),
-          bananaId: this.isBanana(symbol) ? symbol : null
+          banana: this.isDemon(symbol),
+          bananaId: this.isDemon(symbol) ? symbol : null
         };
       });
       const eatenBananas = footprintCells
@@ -7588,7 +7588,7 @@ export class GameServer {
           symbol === 0 ||
           symbol === "HOUSE" ||
           symbol === heroId ||
-          this.isBanana(symbol) ||
+          this.isDemon(symbol) ||
           this.isMergeGunFeatureSymbol(symbol) ||
           this.isBonusMysteryFeatureSymbol(symbol)
         ) {
@@ -7613,7 +7613,7 @@ export class GameServer {
       const bananasOnBoard = [];
       for (let reel = 0; reel < this.width; reel++) {
         for (let row = 0; row < this.height; row++) {
-          if (this.isBanana(huntReels[reel]?.[row])) {
+          if (this.isDemon(huntReels[reel]?.[row])) {
             bananasOnBoard.push({ reel, row });
           }
         }
@@ -7626,7 +7626,7 @@ export class GameServer {
       this.markHeroFootprintWalked(anchorVisited, entryAnchor, currentHeroFootprintSize);
 
       bananasOnBoard.forEach((banana) => {
-        this.getTargetAnchorsForBanana(banana, currentHeroFootprintSize).forEach((targetAnchor) => {
+        this.getTargetAnchorsForDemon(banana, currentHeroFootprintSize).forEach((targetAnchor) => {
           const rawPath = this.findPath(
             entryAnchor.reel,
             entryAnchor.row,
@@ -7639,11 +7639,11 @@ export class GameServer {
           );
           if (!rawPath) return;
 
-          const path = this.trimPathToFirstBananaContact(huntReels, rawPath, currentHeroFootprintSize);
+          const path = this.trimPathToFirstDemonContact(huntReels, rawPath, currentHeroFootprintSize);
           const resolvedAnchor = path[path.length - 1];
           if (!resolvedAnchor) return;
 
-          const coveredBananas = this.getBananasInFootprint(huntReels, resolvedAnchor, currentHeroFootprintSize).length;
+          const coveredBananas = this.getDemonsInFootprint(huntReels, resolvedAnchor, currentHeroFootprintSize).length;
           if (
             !bestEntryPath ||
             coveredBananas > bestCoveredBananas ||
@@ -7787,7 +7787,7 @@ export class GameServer {
     if (startContext.hasBanana) {
       let startBananasConsumed = 0;
       startContext.eatenBananas.forEach((banana) => {
-        if (this.isBanana(huntReels[banana.reel]?.[banana.row])) {
+        if (this.isDemon(huntReels[banana.reel]?.[banana.row])) {
           huntReels[banana.reel][banana.row] = 0;
           demonsKilled++;
           startBananasConsumed++;
@@ -7799,7 +7799,7 @@ export class GameServer {
         }
       });
       const startProgression = applyStepProgression(startBananasConsumed, startStepEntry, currentPos);
-      const clusterResult = this.applyBananaCheckClusterExplosions(
+      const clusterResult = this.applyDemonCheckClusterExplosions(
         huntReels,
         currentPos,
         currentMeterLevel,
@@ -7843,7 +7843,7 @@ export class GameServer {
       const bananas = [];
       for (let reel = 0; reel < this.width; reel++) {
         for (let row = 0; row < this.height; row++) {
-          if (this.isBanana(huntReels[reel][row])) {
+          if (this.isDemon(huntReels[reel][row])) {
             bananas.push({reel, row});
           }
         }
@@ -7858,7 +7858,7 @@ export class GameServer {
       let bestTarget = null;
       
       for (const banana of bananas) {
-        this.getTargetAnchorsForBanana(banana, currentHeroFootprintSize).forEach((targetAnchor) => {
+        this.getTargetAnchorsForDemon(banana, currentHeroFootprintSize).forEach((targetAnchor) => {
           const rawPath = this.findPath(
             currentPos.reel,
             currentPos.row,
@@ -7872,11 +7872,11 @@ export class GameServer {
 
           if (!rawPath) return;
 
-          const path = this.trimPathToFirstBananaContact(huntReels, rawPath, currentHeroFootprintSize);
+          const path = this.trimPathToFirstDemonContact(huntReels, rawPath, currentHeroFootprintSize);
           const resolvedAnchor = path[path.length - 1];
           if (!resolvedAnchor) return;
 
-          const coveredBananas = this.getBananasInFootprint(huntReels, resolvedAnchor, currentHeroFootprintSize).length;
+          const coveredBananas = this.getDemonsInFootprint(huntReels, resolvedAnchor, currentHeroFootprintSize).length;
           const walkedCount = this.countPathWalkedCells(path, walkedPositions, currentHeroFootprintSize);
           if (!bestTarget) {
             bestTarget = { anchor: resolvedAnchor, path, coveredBananas, walkedCount };
@@ -7943,7 +7943,7 @@ export class GameServer {
         if (stepContext.hasBanana) {
           let bananasConsumedThisStep = 0;
           stepContext.eatenBananas.forEach((banana) => {
-            if (!this.isBanana(huntReels[banana.reel]?.[banana.row])) return;
+            if (!this.isDemon(huntReels[banana.reel]?.[banana.row])) return;
             huntReels[banana.reel][banana.row] = 0;
             demonsKilled++;
             bananasConsumedThisStep++;
@@ -7956,7 +7956,7 @@ export class GameServer {
           const stepProgression = applyStepProgression(bananasConsumedThisStep, stepEntry, stepAnchor);
 
           // Server-side mirror of banana-position cluster pop (keeps gravity state in sync with client).
-          const clusterResult = this.applyBananaCheckClusterExplosions(
+          const clusterResult = this.applyDemonCheckClusterExplosions(
             huntReels,
             stepAnchor,
             currentMeterLevel,
@@ -8061,7 +8061,7 @@ export class GameServer {
           reel: pos.reel,
           row: pos.row,
           revealTo: mysteryRevealSymbol,  // Same for all mysteries!
-          wasBanana: this.isBanana(pos.wasSymbol)  // Track if original was banana
+          wasBanana: this.isDemon(pos.wasSymbol)  // Track if original was banana
         });
       } else if (effectiveStepType === "mysteryWild") {
         // MysteryWild step - create mystery symbols (same as regular mystery)
@@ -8072,7 +8072,7 @@ export class GameServer {
           reel: pos.reel,
           row: pos.row,
           revealTo: mysteryRevealSymbol,  // Might be wild or weighted random
-          wasBanana: this.isBanana(pos.wasSymbol)
+          wasBanana: this.isDemon(pos.wasSymbol)
         });
       }
     });
@@ -8149,7 +8149,7 @@ export class GameServer {
         this.heroId,
         this.mysteryId,
         this.mysteryWildId,
-        ...(Array.isArray(this.bananaIds) ? this.bananaIds : [])
+        ...(Array.isArray(this.demonIds) ? this.demonIds : [])
       ]
         .map((rawSymbol) => Number(rawSymbol))
         .filter((symbolId) => Number.isFinite(symbolId))
@@ -8285,8 +8285,8 @@ export class GameServer {
     weights,
     pairState,
     {
-      allowBananas = false,
-      bananaChance = 0,
+      allowDemons = false,
+      demonChance = 0,
       timeSymbolChance = 0
     } = {},
     spawnBehaviorConfig = null
@@ -8309,7 +8309,7 @@ export class GameServer {
       return forcedSymbol;
     }
 
-    const symbol = this.getRandomSymbol(weights, allowBananas, bananaChance, timeSymbolChance, {
+    const symbol = this.getRandomSymbol(weights, allowDemons, demonChance, timeSymbolChance, {
       spawnBehaviorConfig: behavior
     });
 
@@ -8334,12 +8334,12 @@ export class GameServer {
   /**
    * Get random symbol from weighted pool
    */
-  getRandomSymbol(weights, allowBananas = false, bananaChance = 0, timeSymbolChance = 0, options = {}) {
+  getRandomSymbol(weights, allowDemons = false, demonChance = 0, timeSymbolChance = 0, options = {}) {
     const behavior = options?.spawnBehaviorConfig || this.getSymbolSpawnBehaviorConfig();
 
     // If bananas are allowed and chance hits, return banana
-    if (allowBananas && bananaChance > 0 && Math.random() < bananaChance) {
-      return this.getRandomBananaType();
+    if (allowDemons && demonChance > 0 && Math.random() < demonChance) {
+      return this.getRandomDemonType();
     }
     
     // If time symbols allowed and chance hits, return time symbol
@@ -8368,7 +8368,7 @@ export class GameServer {
    * Check if a banana can be placed at this position
    * Bananas cannot be placed on: house, hero, other bananas, treasures, hero starting position
    */
-  canPlaceBanana(reel, row, reels, options = {}) {
+  canPlaceDemon(reel, row, reels, options = {}) {
     const heroFootprint = this.buildHeroFootprintState(
       options.heroPosition || options.heroAnchor || null,
       options.heroFootprintSize || 1
@@ -8397,7 +8397,7 @@ export class GameServer {
     }
 
     // Can't place on existing banana
-    if (this.isBanana(currentSymbol)) {
+    if (this.isDemon(currentSymbol)) {
       return false;
     }
 
@@ -8433,15 +8433,15 @@ export class GameServer {
    * Used for spin/freespin actions
    * @param {Object} reels - Current reels state
    * @param {Object} config - Banana spawn config (supports optional countOdds for weighted banana counts)
-   * @param {Object} options - Additional options like guaranteedBanana, chestProximity
+   * @param {Object} options - Additional options like guaranteedDemon, chestProximity
    */
-  addBananas(reels, config = {}, options = {}) {
-      const resolvedConfig = this.resolveBananaSpawnConfig(config, options.gameState);
+  addDemons(reels, config = {}, options = {}) {
+      const resolvedConfig = this.resolveDemonSpawnConfig(config, options.gameState);
       const { minBananas = 1, maxBananas = 3, chance = 0.5, abilityReduction = {}, countOdds = null } = resolvedConfig;
       const {
-        guaranteedBanana = false,
-        bananasAwayFromChest = null,
-        bananasAwayFromBonusStage = null,
+        guaranteedDemon = false,
+        demonsAwayFromChest = null,
+        demonsAwayFromBonusStage = null,
         remainingFreespins = null,
         hero = null,
         heroPosition = null,
@@ -8459,7 +8459,7 @@ export class GameServer {
       effectiveChance *= multiplier;
     }
     
-    const throttleDistance = bananasAwayFromBonusStage ?? bananasAwayFromChest;
+    const throttleDistance = demonsAwayFromBonusStage ?? demonsAwayFromChest;
     const suspenseMultiplier = this.getBonusStageSuspenseChanceMultiplier(throttleDistance, remainingFreespins);
     if (suspenseMultiplier !== 1) {
       effectiveChance = effectiveChance * suspenseMultiplier;
@@ -8468,7 +8468,7 @@ export class GameServer {
 
     // Roll to see if we spawn bananas this round
     // Skip roll if guaranteed banana is required
-    if (!guaranteedBanana && Math.random() > effectiveChance) {
+    if (!guaranteedDemon && Math.random() > effectiveChance) {
       return reels; // No bananas this round
     }
 
@@ -8477,7 +8477,7 @@ export class GameServer {
 
     // Determine how many bananas to spawn (at least 1 if guaranteed)
     let bananaCount = this.rollConfiguredCount(parsedMinBananas, parsedMaxBananas, countOdds);
-    if (guaranteedBanana && bananaCount < 1) {
+    if (guaranteedDemon && bananaCount < 1) {
       bananaCount = 1;
     }
 
@@ -8485,7 +8485,7 @@ export class GameServer {
       const validPositions = [];
       for (let reel = 0; reel < this.width; reel++) {
         for (let row = 0; row < this.height; row++) {
-        if (this.canPlaceBanana(reel, row, reels, { heroPosition, heroFootprintSize })) {
+        if (this.canPlaceDemon(reel, row, reels, { heroPosition, heroFootprintSize })) {
             validPositions.push({ reel, row });
           }
         }
@@ -8501,7 +8501,7 @@ export class GameServer {
     const placed = Math.min(bananaCount, validPositions.length);
     for (let i = 0; i < placed; i++) {
       const { reel, row } = validPositions[i];
-      reels[reel][row] = this.getRandomBananaType();
+      reels[reel][row] = this.getRandomDemonType();
     }
 
     return reels;
@@ -8519,7 +8519,7 @@ export class GameServer {
     });
   }
 
-  triggerBarrelBananaBursts(reels, barrelSymbols = [], gameState = null) {
+  triggerBarrelDemonBursts(reels, barrelSymbols = [], gameState = null) {
     const barrelBursts = [];
     if (!reels || !Array.isArray(barrelSymbols) || barrelSymbols.length === 0) {
       if (gameState) {
@@ -8605,7 +8605,7 @@ export class GameServer {
         const oldSymbol = reelsBeforeBurst[reel]?.[row];
         if (oldSymbol === undefined || oldSymbol === null) return;
         if (oldSymbol === this.heroId) return;
-        if (this.isBanana(oldSymbol)) return;
+        if (this.isDemon(oldSymbol)) return;
         if (this.isMergeGunFeatureSymbol(oldSymbol)) return;
         if (this.isBonusMysteryFeatureSymbol(oldSymbol)) return;
         if (this.isLightningBeeFeatureSymbol(oldSymbol)) return;
@@ -8639,7 +8639,7 @@ export class GameServer {
             if (this.isMergeGunFeatureSymbol(currentSymbol)) continue;
             if (this.isLightningBeeFeatureSymbol(currentSymbol)) continue;
             if (
-              !this.canPlaceBanana(reel, row, reelsAfterBurst, {
+              !this.canPlaceDemon(reel, row, reelsAfterBurst, {
                 heroPosition: heroFootprint.anchor || heroAnchor,
                 heroFootprintSize: heroFootprint.size
               })
@@ -8654,7 +8654,7 @@ export class GameServer {
         const pick = validPositions[Math.floor(Math.random() * validPositions.length)];
         const posKey = `${pick.reel},${pick.row}`;
         const oldSymbol = reelsBeforeBurst[pick.reel]?.[pick.row];
-        const newSymbol = this.getRandomBananaType();
+        const newSymbol = this.getRandomDemonType();
         reelsAfterBurst[pick.reel][pick.row] = newSymbol;
         globallyReservedBananaSpawns.add(posKey);
         bananaPositions.push({
@@ -9571,6 +9571,73 @@ export class GameServer {
     return reels;
   }
 
+  ensureAbilityRtpData(gameState) {
+    if (!gameState.rtpData || typeof gameState.rtpData !== "object") {
+      gameState.rtpData = {};
+    }
+    if (!gameState.rtpData.abilityContributionTBM || typeof gameState.rtpData.abilityContributionTBM !== "object") {
+      gameState.rtpData.abilityContributionTBM = {
+        divineX: 0,
+        divineStrike: 0,
+        divineCharge: 0,
+        baseHunt: 0,
+        other: 0
+      };
+    }
+    if (!gameState.rtpData.abilityProcCounts || typeof gameState.rtpData.abilityProcCounts !== "object") {
+      gameState.rtpData.abilityProcCounts = {
+        divineX: 0,
+        divineStrike: 0,
+        divineCharge: 0
+      };
+    }
+    return gameState.rtpData;
+  }
+
+  normalizeAbilityRtpSource(rawSource = "") {
+    const source = String(rawSource || "").trim();
+    if (source === "divineX" || source === "divineStrike" || source === "divineCharge" || source === "baseHunt") {
+      return source;
+    }
+    if (source === "demon") {
+      return "baseHunt";
+    }
+    return "other";
+  }
+
+  recordAbilityProc(gameState, abilityType) {
+    const rtpData = this.ensureAbilityRtpData(gameState);
+    const key = this.normalizeAbilityRtpSource(abilityType);
+    if (key === "divineX" || key === "divineStrike" || key === "divineCharge") {
+      rtpData.abilityProcCounts[key] = Number(rtpData.abilityProcCounts[key] || 0) + 1;
+    }
+  }
+
+  allocateHeavenHellCollectRtpBySource(gameState, totalTbm, drops = []) {
+    const rtpData = this.ensureAbilityRtpData(gameState);
+    if (!(Number(totalTbm) > 0)) return;
+
+    const sourceBase = {};
+    let totalBase = 0;
+    drops.forEach((drop) => {
+      const source = this.normalizeAbilityRtpSource(drop?.source);
+      const base = Number(drop?.baseValue ?? drop?.value ?? 0);
+      if (!(base > 0)) return;
+      sourceBase[source] = (sourceBase[source] || 0) + base;
+      totalBase += base;
+    });
+
+    if (totalBase > 0) {
+      Object.entries(sourceBase).forEach(([source, base]) => {
+        rtpData.abilityContributionTBM[source] =
+          Number(rtpData.abilityContributionTBM[source] || 0) + (base / totalBase) * totalTbm;
+      });
+      return;
+    }
+
+    rtpData.abilityContributionTBM.other = Number(rtpData.abilityContributionTBM.other || 0) + totalTbm;
+  }
+
   resolveHeavenHellLootDrops(gameState, killEntries = [], { guaranteed = false, lootMultiplier = 1 } = {}) {
     if (!gameState || !Array.isArray(killEntries) || killEntries.length === 0) return [];
     const heavenHell = this.ensureHeavenHellState(gameState);
@@ -9811,9 +9878,9 @@ export class GameServer {
             const hadDemon =
               isOriginCell && originTarget.center === true
                 ? true
-                : this.isBanana(symbol);
+                : this.isDemon(symbol);
             let killed = false;
-            if (this.isBanana(symbol)) {
+            if (this.isDemon(symbol)) {
               killed = markKilled(cell.reel, cell.row);
             }
             const isDivineXOriginCellKill = divineXProc === true && isOriginCell;
@@ -9889,7 +9956,7 @@ export class GameServer {
           }
 
           const symbol = getSymbolAt(target.reel, target.row);
-          const hadDemon = this.isBanana(symbol);
+          const hadDemon = this.isDemon(symbol);
           let killed = false;
           if (hadDemon) {
             killed = markKilled(target.reel, target.row);
@@ -9948,6 +10015,11 @@ export class GameServer {
 
     this.pruneWrathPreKilledHuntPath(huntResult, gameState);
 
+    abilityProcs.forEach((proc) => {
+      if (proc?.type === "divineX" || proc?.type === "divineStrike" || proc?.type === "divineCharge") {
+        this.recordAbilityProc(gameState, proc.type);
+      }
+    });
     bonusState.abilityProcsThisAction = abilityProcs;
     return { divineAbilityExtraKills, preKilledKeys };
   }
@@ -10244,6 +10316,7 @@ export class GameServer {
     });
     const totalTbm = baseLoot * globalMultiplier;
     const totalTwa = totalTbm * Number(betSize || 0);
+    this.allocateHeavenHellCollectRtpBySource(gameState, totalTbm, drops);
     gameState.tbm = Number(gameState.tbm || 0) + totalTbm;
     gameState.twa = Number(gameState.twa || 0) + totalTwa;
     gameState.winAmount = totalTbm;
@@ -10353,8 +10426,8 @@ generateReels(symbolWeightsMain, reelCount = 8, symbolsPerReel = 8, options = {}
           symbolWeightsMain,
           pairState,
           {
-            allowBananas: false,
-            bananaChance: 0,
+            allowDemons: false,
+            demonChance: 0,
             timeSymbolChance: 0
           },
           spawnBehavior
@@ -10440,7 +10513,7 @@ hasBonus(roundStates) {
   });
 }
 
-hasBananaHunt(roundStates) {
+hasDemonHunt(roundStates) {
   return roundStates.some(
     (state) =>
       state.executedAction === ACTION_BANANA_HUNT ||
@@ -10478,7 +10551,7 @@ isTicketMatch(ticketName, roundStates) {
   }
 
   const hasBonus = this.hasBonus(roundStates);
-  const hasBananaHunt = this.hasBananaHunt(roundStates);
+  const hasDemonHunt = this.hasDemonHunt(roundStates);
   const hasHammers = (finalState?.collectedTimeSymbols?.length || 0) > 0;
 
   const hasMystery = roundStates.some((state) => state.hero?.step === "mystery");
@@ -10498,21 +10571,21 @@ isTicketMatch(ticketName, roundStates) {
     case "noWin_noHammers":
       return finalTbm === 0 && !hasHammers;
     case "bonusOnRespin":
-      return hasBonus && hasBananaHunt;
+      return hasBonus && hasDemonHunt;
     case "bonusOnSpin":
       return this.hasBonusOnSpin(roundStates);
     case "mystery":
-      return hasMystery && hasBananaHunt;
+      return hasMystery && hasDemonHunt;
     case "mysteryWild":
-      return hasMysteryWild && hasBananaHunt;
+      return hasMysteryWild && hasDemonHunt;
     case "mysteryRunNoBonus":
-      return hasMystery && hasBananaHunt && !hasBonus;
+      return hasMystery && hasDemonHunt && !hasBonus;
     case "mysteryRunBonus":
       return hasMystery && hasBonus;
     case "axe":
-      return hasAxe && hasBananaHunt;
+      return hasAxe && hasDemonHunt;
     case "necromancer2":
-      return hasNecromancer2 && hasBananaHunt;
+      return hasNecromancer2 && hasDemonHunt;
     case "max":
       return hasMysteryWild && hasAxe && hasNecromancer2;
     case "trollBonus":
@@ -10637,7 +10710,19 @@ function resetGameState(gameState) {
           mysteryRTP: 0,
           mysteryWildRTP: 0,
           clusterWinTBM: 0, // Track cluster wins
-          heroAbilitiesApplied: false
+          heroAbilitiesApplied: false,
+          abilityContributionTBM: {
+            divineX: 0,
+            divineStrike: 0,
+            divineCharge: 0,
+            baseHunt: 0,
+            other: 0
+          },
+          abilityProcCounts: {
+            divineX: 0,
+            divineStrike: 0,
+            divineCharge: 0
+          }
         };
         gameState.reelsBeforeDrop = null;
         gameState.reelsAfterDrop = null;
@@ -10801,3 +10886,5 @@ function resetGameState(gameState) {
 
 // Export resetGameState so it can be used externally
 export { resetGameState };
+
+

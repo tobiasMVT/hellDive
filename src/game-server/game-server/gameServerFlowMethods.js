@@ -164,7 +164,7 @@ export function createGameServerFlowMethods(deps = {}) {
       this.clearCompletedLightningBeeFeatureSymbols(gameState, gameState.reelsBeforeDrop);
       this.clearCompletedLightningBeeFeatureSymbols(gameState, gameState.reelsAfterDrop);
       gameState.hero = { ...BASE_MONKEY_STATE };
-      this.normalizeBananaMeter(gameState);
+      this.normalizeDemonMeter(gameState);
       this.normalizeBonusStageState(gameState);
       const heavenHellEnabled = this.isHeavenHellEnabled();
       if (heavenHellEnabled) {
@@ -182,7 +182,7 @@ export function createGameServerFlowMethods(deps = {}) {
       } else if (gameState.executedAction === "respin") {
         this.handleRespinAction(gameState, betSize, context);
       } else if (gameState.executedAction === ACTION_BANANA_HUNT || gameState.executedAction === LEGACY_ACTION_BANANA_HUNT) {
-        this.handleBananaHuntAction(gameState, context);
+        this.handleDemonHuntAction(gameState, context);
       } else if (gameState.executedAction === "bonustransition") {
         this.handleBonusTransitionAction(gameState, context);
       } else if (gameState.executedAction === "freespin") {
@@ -190,7 +190,7 @@ export function createGameServerFlowMethods(deps = {}) {
       } else if (gameState.executedAction === "freerespin") {
         return this.handleFreerespinAction(gameState, betSize, context) === true;
       } else if (gameState.executedAction === ACTION_FREESPIN_BANANA_HUNT || gameState.executedAction === LEGACY_ACTION_FREESPIN_BANANA_HUNT) {
-        this.handleFreespinBananaHuntAction(gameState, betSize, context);
+        this.handleFreespinDemonHuntAction(gameState, betSize, context);
       } else if (gameState.executedAction === "chestreward") {
         this.handleChestRewardAction(gameState, context);
       } else if (gameState.executedAction === ACTION_TROLL_TEASE) {
@@ -308,6 +308,18 @@ export function createGameServerFlowMethods(deps = {}) {
           trollRushRealBonus: gameState.rtpData?.trollRushRealBonus || 0,
           trollRushTeasesMain: gameState.rtpData?.trollRushTeasesMain || 0,
           trollRushTeasesBonus: gameState.rtpData?.trollRushTeasesBonus || 0,
+          abilityContributionTBM: gameState.rtpData?.abilityContributionTBM || {
+            divineX: 0,
+            divineStrike: 0,
+            divineCharge: 0,
+            baseHunt: 0,
+            other: 0
+          },
+          abilityProcCounts: gameState.rtpData?.abilityProcCounts || {
+            divineX: 0,
+            divineStrike: 0,
+            divineCharge: 0
+          },
           isComplete: true
         };
 
@@ -329,7 +341,7 @@ export function createGameServerFlowMethods(deps = {}) {
       if (Array.isArray(gameState.bananas)) {
         gameState.bananas = [...gameState.bananas];
       }
-      this.normalizeBananaMeter(gameState);
+      this.normalizeDemonMeter(gameState);
       if (gameState.isBonus && gameState.bonusState) {
         gameState.bonusState.finalDemonsCollected = gameState.bananaMeter.count;
         gameState.bonusState.finalDemonsKilled = gameState.bananaMeter.count;
@@ -351,3 +363,5 @@ export function createGameServerFlowMethods(deps = {}) {
     }
   };
 }
+
+

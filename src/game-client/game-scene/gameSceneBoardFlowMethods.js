@@ -139,6 +139,13 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
         if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return;
         const footprintSize = Math.max(1, Math.floor(Number(options.heroFootprintSize ?? this.currentHeroFootprintSize) || 1));
         if (footprintSize > 1) return;
+        const centerX = GRID_OFFSET_X + (clientConfig.area.width * 70) / 2;
+        const centerY = GRID_OFFSET_Y + (clientConfig.area.height * 70) / 2;
+        const isMainGameCenterMark =
+          (this.currentAction === "spin" || this.currentAction === "respin" || this.currentAction === "bananaHunt") &&
+          Math.abs(Number(x) - centerX) <= 6 &&
+          Math.abs(Number(y) - centerY) <= 6;
+        if (isMainGameCenterMark) return;
     
         const duration = Math.max(180, Math.floor(Number(options.durationMs) || 430));
         const holdMs = Math.max(0, Math.floor(Number(options.holdMs) || 0));

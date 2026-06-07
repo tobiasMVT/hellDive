@@ -1,8 +1,8 @@
 {
-    "playBackEnd": false,
+    "playBackEnd": true,
     "devMode": false,
-    "gameRounds": 50000,
-    "saveTickets": false,
+    "gameRounds": 10,
+    "saveTickets": true,
     "usePreSavedTickets": false,
     "ocBonus": false,
     "symbolBehaviors": {
@@ -27,8 +27,8 @@
         "magicBookInSightMoreThan0Less500": 50
     },
     "normal": {
-        "noStrategy": 0,
-        "bonus": 1
+        "noStrategy": 1,
+        "bonus": 0
     },
     "bonus": {
         "bonus": 1,
@@ -512,8 +512,8 @@
             "4": 9,
             "5": 1
         },
-        "chance": 0.02,
-        "respinChance": 0.01,
+        "chance": 0.20,
+        "respinChance": 0.10,
         "typeOdds": {
             "banana": 100,
             "banana2": 0,
@@ -937,7 +937,7 @@
     "heavenHell": {
         "enabled": true,
         "main": {
-            "portalTriggerChancePerKill": 1,
+            "portalTriggerChancePerKill": 0.01,
             "portalTriggerChancePerHuntAction": 0
         },
         "bonus": {

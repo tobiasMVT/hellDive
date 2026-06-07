@@ -7,32 +7,24 @@ import serverConfig from "../src/game-server/server_config.json" with { type: "j
 import { GameServer } from "../src/game-server/Gameserver.js";
 
 const twoDecimals = (n) => Number(Number(n).toFixed(2));
+const fourDecimals = (n) => Number(Number(n).toFixed(4));
 
-/** Largest bananaMeter.levelThresholds floor satisfied by this count (0–30). */
-const activeThresholdForCount = (count, sortedThresholds) => {
-  const c = Math.max(0, Math.floor(Number(count) || 0));
-  let best = sortedThresholds[0] ?? 0;
-  for (const t of sortedThresholds) {
-    if (c >= t) best = t;
-  }
-  return best;
-};
+const ABILITY_KEYS = ["divineX", "divineStrike", "divineCharge", "baseHunt", "other"];
+const ABILITY_PROC_KEYS = ["divineX", "divineStrike", "divineCharge"];
 
-/** State where server decided to enter bonus (meter gate). */
-const findBonusTriggerState = (states) => {
-  if (!Array.isArray(states)) return null;
-  for (const s of states) {
-    if (s?.nextAction === "bonustransition") return s;
-  }
-  for (let i = 0; i < states.length - 1; i += 1) {
-    const cur = states[i];
-    const next = states[i + 1];
-    if (next?.isBonus === true && cur?.isBonus !== true && next?.executedAction === "bonustransition") {
-      return cur;
-    }
-  }
-  return null;
-};
+const emptyAbilityContribution = () => ({
+  divineX: 0,
+  divineStrike: 0,
+  divineCharge: 0,
+  baseHunt: 0,
+  other: 0
+});
+
+const emptyAbilityProcCounts = () => ({
+  divineX: 0,
+  divineStrike: 0,
+  divineCharge: 0
+});
 
 const parseArgs = () => {
   const args = process.argv.slice(2);
@@ -80,10 +72,123 @@ const meanOf = (values) => (values.length ? values.reduce((a, b) => a + b, 0) / 
 
 const populationVariance = (values, mean) =>
   values.length ? values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length : 0;
+
 const applyOutputTokens = (template, tokens) =>
   String(template).replace(/\{(date|time|timestamp|strategy|rounds|bet)\}/g, (_, key) =>
     Object.prototype.hasOwnProperty.call(tokens, key) ? String(tokens[key]) : _
   );
+
+const readRoundTbm = (state) => {
+  const fromSummary = Number(state?.roundSummary?.tbm);
+  if (Number.isFinite(fromSummary)) return fromSummary;
+  const fromState = Number(state?.tbm);
+  return Number.isFinite(fromState) ? fromState : 0;
+};
+
+const readBonusAbilities = (state) => {
+  const abilities = state?.heavenHell?.bonus?.abilities;
+  if (!abilities || typeof abilities !== "object") {
+    return { divineX: 0, divineStrike: 0, divineCharge: 0 };
+  }
+  return {
+    divineX: Math.max(0, Math.floor(Number(abilities.divineX) || 0)),
+    divineStrike: Math.max(0, Math.floor(Number(abilities.divineStrike) || 0)),
+    divineCharge: Math.max(0, Math.floor(Number(abilities.divineCharge) || 0))
+  };
+};
+
+const readAbilityContribution = (state) => {
+  const fromSummary = state?.roundSummary?.abilityContributionTBM;
+  const fromRtp = state?.rtpData?.abilityContributionTBM;
+  const source = fromSummary && typeof fromSummary === "object" ? fromSummary : fromRtp;
+  const out = emptyAbilityContribution();
+  if (!source || typeof source !== "object") return out;
+  ABILITY_KEYS.forEach((key) => {
+    out[key] = Number(source[key] || 0);
+  });
+  return out;
+};
+
+const readAbilityProcCounts = (state) => {
+  const fromSummary = state?.roundSummary?.abilityProcCounts;
+  const fromRtp = state?.rtpData?.abilityProcCounts;
+  const source = fromSummary && typeof fromSummary === "object" ? fromSummary : fromRtp;
+  const out = emptyAbilityProcCounts();
+  if (!source || typeof source !== "object") return out;
+  ABILITY_PROC_KEYS.forEach((key) => {
+    out[key] = Math.max(0, Math.floor(Number(source[key] || 0)));
+  });
+  return out;
+};
+
+const totalAbilityLevels = (abilities) =>
+  abilities.divineX + abilities.divineStrike + abilities.divineCharge;
+
+const abilityKey = (abilities) =>
+  `X${abilities.divineX}_S${abilities.divineStrike}_C${abilities.divineCharge}`;
+
+const readBonusKillCount = (state) => {
+  const bonus = state?.heavenHell?.bonus;
+  const killsTotal = Number(bonus?.killsTotal);
+  if (Number.isFinite(killsTotal)) return Math.max(0, Math.floor(killsTotal));
+  const summaryKills = Number(state?.roundSummary?.bonusDemonsKilled);
+  if (Number.isFinite(summaryKills)) return Math.max(0, Math.floor(summaryKills));
+  return Math.max(0, Math.floor(Number(state?.demonsKilled) || 0));
+};
+
+const BONUS_EXECUTED_ACTIONS = new Set([
+  "bonustransition",
+  "freespin",
+  "freerespin",
+  "freespinbananaHunt",
+  "chestreward"
+]);
+
+const isBonusPhaseState = (state) => {
+  if (!state || typeof state !== "object") return false;
+  if (state.bgwe === true || state.isBonus === true) return true;
+  return BONUS_EXECUTED_ACTIONS.has(String(state.executedAction || ""));
+};
+
+/** Last state from the bonus phase (freespin / hunt / collect), used for gameover stats. */
+const findBonusSnapshotState = (states) => {
+  if (!Array.isArray(states) || !states.length) return null;
+  let lastBonusState = null;
+  for (const state of states) {
+    if (isBonusPhaseState(state)) {
+      lastBonusState = state;
+    }
+  }
+  return lastBonusState;
+};
+
+const bumpAgg = (map, key, tbm) => {
+  const prev = map.get(key) || { count: 0, sumTbm: 0 };
+  prev.count += 1;
+  prev.sumTbm += tbm;
+  map.set(key, prev);
+};
+
+const buildTbmBucketRows = (countMap) =>
+  [...countMap.entries()]
+    .sort((a, b) => {
+      if (typeof a[0] === "number" && typeof b[0] === "number") return a[0] - b[0];
+      return String(a[0]).localeCompare(String(b[0]));
+    })
+    .map(([key, agg]) => ({
+      key,
+      rounds: agg.count,
+      totalTbm: Number(agg.sumTbm.toFixed(4)),
+      averageTbm: agg.count > 0 ? twoDecimals(agg.sumTbm / agg.count) : 0
+    }));
+
+const buildAbilityRtpRows = (contributionTBM, contributionPayout, totalStake) =>
+  ABILITY_KEYS.map((ability) => ({
+    ability,
+    totalContributionTbm: fourDecimals(contributionTBM[ability]),
+    totalContributionPayout: fourDecimals(contributionPayout[ability]),
+    rtpPercent: totalStake > 0 ? fourDecimals((contributionPayout[ability] / totalStake) * 100) : 0
+  }));
 
 const args = parseArgs();
 
@@ -145,6 +250,7 @@ if (quietRoundLogs) {
 }
 
 const wins = [];
+const tbmValues = [];
 let totalStake = 0;
 let totalPayout = 0;
 let completedRounds = 0;
@@ -152,34 +258,26 @@ let failedRounds = 0;
 let hitRounds = 0;
 let noHitRounds = 0;
 let maxWin = 0;
+let maxTbm = 0;
 
 let bonusRounds = 0;
 let totalBonusPhaseWin = 0;
 let totalRoundWinWhenBonus = 0;
-let totalBonusBananas = 0;
+let totalMainGameWin = 0;
 const mainGameWinsPerRound = [];
 const bonusWinsPerBonusRound = [];
+const bonusEndTbmValues = [];
+const bonusEndKillCounts = [];
+const bonusEndAbilityTotals = [];
+const tbmByTotalAbilityLevels = new Map();
+const tbmByAbilityKey = new Map();
+const tbmByDivineXLevel = new Map();
+const tbmByDivineStrikeLevel = new Map();
+const tbmByDivineChargeLevel = new Map();
 
-const levelThresholdsRaw = Array.isArray(serverConfig?.bananaMeter?.levelThresholds)
-  ? serverConfig.bananaMeter.levelThresholds.map((t) => Number(t)).filter((t) => Number.isFinite(t))
-  : [0, 5, 10, 15, 20, 25, 30];
-const levelThresholdsSorted = [...new Set(levelThresholdsRaw)].sort((a, b) => a - b);
-
-const bonusTriggerByActiveThreshold = new Map();
-const bonusTriggerByMeterLevel = new Map();
-let bonusTriggerStateMissingCount = 0;
-
-const bonusEndByActiveThreshold = new Map();
-/** meterLevel -> { count, sumFinalTbm } for end-of-bonus rounds */
-const bonusEndByMeterLevel = new Map();
-
-const bumpBonusEndMeterLevel = (level, finalRoundTbm) => {
-  const tbm = Number.isFinite(Number(finalRoundTbm)) ? Number(finalRoundTbm) : 0;
-  const prev = bonusEndByMeterLevel.get(level) || { count: 0, sumFinalTbm: 0 };
-  prev.count += 1;
-  prev.sumFinalTbm += tbm;
-  bonusEndByMeterLevel.set(level, prev);
-};
+const abilityContributionTBM = emptyAbilityContribution();
+const abilityContributionPayout = emptyAbilityContribution();
+const abilityProcTotals = emptyAbilityProcCounts();
 
 const startedAt = performance.now();
 
@@ -200,6 +298,8 @@ for (let i = 1; i <= rounds; i += 1) {
 
   const roundStake = Number(firstState?.roundMeta?.roundCost);
   const roundWin = Number(lastState?.twa);
+  const roundTbm = readRoundTbm(lastState);
+  const roundBetSize = Number(firstState?.roundMeta?.betSize ?? firstState?.betSize ?? betSize) || betSize;
 
   const safeStake = Number.isFinite(roundStake) ? roundStake : betSize;
   const safeWin = Number.isFinite(roundWin) ? roundWin : 0;
@@ -207,60 +307,51 @@ for (let i = 1; i <= rounds; i += 1) {
   totalStake += safeStake;
   totalPayout += safeWin;
   wins.push(safeWin);
+  tbmValues.push(roundTbm);
   completedRounds += 1;
   maxWin = Math.max(maxWin, safeWin);
+  maxTbm = Math.max(maxTbm, roundTbm);
 
-  if (safeWin > 0) hitRounds += 1;
+  if (roundTbm > 0) hitRounds += 1;
   else noHitRounds += 1;
 
   const { mainGameWin, bonusWin } = splitRoundTwaByPhase(states);
   mainGameWinsPerRound.push(mainGameWin);
+  totalMainGameWin += mainGameWin;
 
-  const summary = lastState?.roundSummary;
-  if (summary?.wasBonus) {
+  const roundAbilityContribution = readAbilityContribution(lastState);
+  const roundAbilityProcs = readAbilityProcCounts(lastState);
+  ABILITY_KEYS.forEach((key) => {
+    const tbmPart = Number(roundAbilityContribution[key] || 0);
+    abilityContributionTBM[key] += tbmPart;
+    abilityContributionPayout[key] += tbmPart * roundBetSize;
+  });
+  ABILITY_PROC_KEYS.forEach((key) => {
+    abilityProcTotals[key] += Number(roundAbilityProcs[key] || 0);
+  });
+
+  const bonusSnapshot = findBonusSnapshotState(states);
+  const hadBonus = server.hasBonus(states);
+
+  if (hadBonus) {
     bonusRounds += 1;
     bonusWinsPerBonusRound.push(bonusWin);
     totalBonusPhaseWin += bonusWin;
     totalRoundWinWhenBonus += safeWin;
-    // Final banana meter on the returned state (post-normalize): includes main-game meter
-    // up to bonus trigger plus everything collected in bonus; not "bonus-only delta".
-    const finalMeterCount = Math.min(30, Number(lastState?.bananaMeter?.count) || 0);
-    totalBonusBananas += finalMeterCount;
 
-    const triggerState = findBonusTriggerState(states);
-    if (triggerState) {
-      const triggerCount = Math.min(
-        30,
-        Math.floor(
-          Number(triggerState.bananaMeter?.count ?? triggerState.bananaMeterCount ?? 0) || 0
-        )
-      );
-      const triggerLevel = Math.max(
-        0,
-        Math.floor(Number(triggerState.bananaMeter?.level ?? triggerState.bananaMeterLevel ?? 0) || 0)
-      );
-      const triggerTh = activeThresholdForCount(triggerCount, levelThresholdsSorted);
-      bonusTriggerByActiveThreshold.set(
-        triggerTh,
-        (bonusTriggerByActiveThreshold.get(triggerTh) || 0) + 1
-      );
-      bonusTriggerByMeterLevel.set(triggerLevel, (bonusTriggerByMeterLevel.get(triggerLevel) || 0) + 1);
-    } else {
-      bonusTriggerStateMissingCount += 1;
-    }
+    const snapshotTbm = readRoundTbm(bonusSnapshot);
+    bonusEndTbmValues.push(snapshotTbm);
 
-    const endCount = Math.min(
-      30,
-      Math.floor(Number(lastState.bananaMeter?.count ?? lastState.bananaMeterCount ?? 0) || 0)
-    );
-    const endLevel = Math.max(
-      0,
-      Math.floor(Number(lastState.bananaMeter?.level ?? lastState.bananaMeterLevel ?? 0) || 0)
-    );
-    const endTh = activeThresholdForCount(endCount, levelThresholdsSorted);
-    bonusEndByActiveThreshold.set(endTh, (bonusEndByActiveThreshold.get(endTh) || 0) + 1);
-    const finalRoundTbm = Number(lastState?.tbm ?? summary?.tbm ?? 0);
-    bumpBonusEndMeterLevel(endLevel, finalRoundTbm);
+    const abilities = readBonusAbilities(bonusSnapshot);
+    const abilityTotal = totalAbilityLevels(abilities);
+    bonusEndAbilityTotals.push(abilityTotal);
+    bumpAgg(tbmByTotalAbilityLevels, abilityTotal, snapshotTbm);
+    bumpAgg(tbmByAbilityKey, abilityKey(abilities), snapshotTbm);
+    bumpAgg(tbmByDivineXLevel, abilities.divineX, snapshotTbm);
+    bumpAgg(tbmByDivineStrikeLevel, abilities.divineStrike, snapshotTbm);
+    bumpAgg(tbmByDivineChargeLevel, abilities.divineCharge, snapshotTbm);
+
+    bonusEndKillCounts.push(readBonusKillCount(bonusSnapshot));
   }
 
   if (progressEvery > 0 && i % progressEvery === 0) {
@@ -273,15 +364,19 @@ for (let i = 1; i <= rounds; i += 1) {
 
 const elapsedMs = performance.now() - startedAt;
 const averageWin = completedRounds > 0 ? totalPayout / completedRounds : 0;
+const averageTbm = meanOf(tbmValues);
 const rtp = totalStake > 0 ? (totalPayout / totalStake) * 100 : 0;
 const hitRate = completedRounds > 0 ? hitRounds / completedRounds : 0;
+const mainGameRtpPercent = totalStake > 0 ? (totalMainGameWin / totalStake) * 100 : 0;
+const bonusPhaseRtpPercent = totalStake > 0 ? (totalBonusPhaseWin / totalStake) * 100 : 0;
 
 wins.sort((a, b) => a - b);
 const medianWin = wins.length ? wins[Math.floor((wins.length - 1) / 2)] : 0;
 
-const variance =
-  wins.length > 0 ? wins.reduce((sum, value) => sum + (value - averageWin) ** 2, 0) / wins.length : 0;
-const stdDev = Math.sqrt(variance);
+const payoutVariance = populationVariance(wins, averageWin);
+const payoutStdDev = Math.sqrt(payoutVariance);
+const tbmVariance = populationVariance(tbmValues, averageTbm);
+const tbmStdDev = Math.sqrt(tbmVariance);
 
 const avgMainGameWin = meanOf(mainGameWinsPerRound);
 const mainGameVariance = populationVariance(mainGameWinsPerRound, avgMainGameWin);
@@ -291,61 +386,16 @@ const avgBonusPhaseWin = meanOf(bonusWinsPerBonusRound);
 const bonusWinVariance = populationVariance(bonusWinsPerBonusRound, avgBonusPhaseWin);
 const bonusWinStdDev = Math.sqrt(bonusWinVariance);
 
-const buildBonusShareRows = (countMap, totalBonuses) => {
-  if (totalBonuses <= 0) return [];
-  return [...countMap.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([key, n]) => ({
-      key,
-      bonuses: n,
-      shareOfBonusesPercent: twoDecimals((n / totalBonuses) * 100)
-    }));
-};
-
-const atBonusTriggerByActiveThreshold = buildBonusShareRows(
-  bonusTriggerByActiveThreshold,
-  bonusRounds
-).map((row) => ({
-  thresholdMin: row.key,
-  bonuses: row.bonuses,
-  shareOfBonusesPercent: row.shareOfBonusesPercent
-}));
-
-const atBonusTriggerByMeterLevel = buildBonusShareRows(bonusTriggerByMeterLevel, bonusRounds).map(
-  (row) => ({
-    meterLevel: row.key,
-    bonuses: row.bonuses,
-    shareOfBonusesPercent: row.shareOfBonusesPercent
-  })
-);
-
-const atBonusEndByActiveThreshold = buildBonusShareRows(bonusEndByActiveThreshold, bonusRounds).map(
-  (row) => ({
-    thresholdMin: row.key,
-    bonuses: row.bonuses,
-    shareOfBonusesPercent: row.shareOfBonusesPercent
-  })
-);
-
-const atBonusEndByMeterLevel =
-  bonusRounds <= 0
-    ? []
-    : [...bonusEndByMeterLevel.entries()]
-        .sort((a, b) => a[0] - b[0])
-        .map(([meterLevel, agg]) => {
-          const n = agg.count;
-          const sum = agg.sumFinalTbm;
-          return {
-            meterLevel,
-            bonuses: n,
-            shareOfBonusesPercent: twoDecimals((n / bonusRounds) * 100),
-            totalFinalTbm: Number(sum.toFixed(4)),
-            averageFinalTbm: n > 0 ? twoDecimals(sum / n) : 0
-          };
-        });
+const avgBonusEndTbm = meanOf(bonusEndTbmValues);
+const avgBonusEndKillCount = meanOf(bonusEndKillCounts);
+const avgBonusEndAbilityTotal = meanOf(bonusEndAbilityTotals);
 
 const bonusRatePercent =
   completedRounds > 0 ? twoDecimals((bonusRounds / completedRounds) * 100) : 0;
+
+const abilityRtpRows = buildAbilityRtpRows(abilityContributionTBM, abilityContributionPayout, totalStake);
+const trackedAbilityRtpPercent = abilityRtpRows.reduce((sum, row) => sum + row.rtpPercent, 0);
+const unattributedRtpPercent = fourDecimals(Math.max(0, rtp - trackedAbilityRtpPercent - mainGameRtpPercent));
 
 const report = {
   config: {
@@ -354,6 +404,7 @@ const report = {
     ticketStrategy: resolvedTicketStrategy,
     requestedTicketStrategy: ticketStrategy,
     availableTicketStrategies,
+    playBackEnd: serverConfig.playBackEnd === true,
     outputPathTemplate,
     resolvedOutputPath: outputPath
   },
@@ -365,14 +416,36 @@ const report = {
   metrics: {
     totalStake: Number(totalStake.toFixed(4)),
     totalPayout: Number(totalPayout.toFixed(4)),
-    rtpPercent: Number(rtp.toFixed(4)),
+    rtpPercent: fourDecimals(rtp),
+    mainGameRtpPercent: fourDecimals(mainGameRtpPercent),
+    bonusPhaseRtpPercent: fourDecimals(bonusPhaseRtpPercent),
     averageWin: Number(averageWin.toFixed(4)),
+    averageTbm: Number(averageTbm.toFixed(4)),
     medianWin: Number(medianWin.toFixed(4)),
     maxWin: Number(maxWin.toFixed(4)),
-    hitRate: Number(hitRate.toFixed(4)),
+    maxTbm: Number(maxTbm.toFixed(4)),
+    hitRate: fourDecimals(hitRate),
+    hitRounds,
     noHitRounds,
-    variance: Number(variance.toFixed(6)),
-    stdDev: Number(stdDev.toFixed(6))
+    hitRatioDefinition: "rounds with tbm > 0 / completed rounds",
+    payoutVariance: Number(payoutVariance.toFixed(6)),
+    payoutStdDev: Number(payoutStdDev.toFixed(6)),
+    tbmVariance: Number(tbmVariance.toFixed(6)),
+    tbmStdDev: Number(tbmStdDev.toFixed(6))
+  },
+  abilities: {
+    description:
+      "Collect-phase loot attribution from heavenHell bonus settlement. Each loot drop is tagged by kill source (divineX / divineStrike / divineCharge / baseHunt) and its share of the final collect TBM is credited to that ability bucket.",
+    procTotals: abilityProcTotals,
+    contributionTbm: Object.fromEntries(
+      ABILITY_KEYS.map((key) => [key, fourDecimals(abilityContributionTBM[key])])
+    ),
+    contributionPayout: Object.fromEntries(
+      ABILITY_KEYS.map((key) => [key, fourDecimals(abilityContributionPayout[key])])
+    ),
+    rtpByAbility: abilityRtpRows,
+    trackedAbilityRtpPercent: fourDecimals(trackedAbilityRtpPercent),
+    unattributedRtpPercent
   },
   mainGameSpinRespin: {
     description: "Per completed round: win attributed to main-game actions (spin/respin) before bonus phase",
@@ -383,39 +456,33 @@ const report = {
   },
   bonus: {
     bonusRounds,
+    bonusDetection:
+      "server.hasBonus(states): any state with executedAction bonustransition/freespin/freerespin/freespinbananaHunt, isBonus, or bgwe",
     bonusFrequency:
       bonusRounds > 0
         ? `1/${Number((completedRounds / bonusRounds).toFixed(2))}`
         : "N/A",
+    bonusRatePercent,
     averageBonusPhaseWin:
       bonusRounds > 0 ? Number((totalBonusPhaseWin / bonusRounds).toFixed(4)) : 0,
     averageRoundWinWhenBonus:
       bonusRounds > 0 ? Number((totalRoundWinWhenBonus / bonusRounds).toFixed(4)) : 0,
-    averageFinalBananaMeterCount:
-      bonusRounds > 0 ? Number((totalBonusBananas / bonusRounds).toFixed(2)) : 0,
-    /** @deprecated same as averageFinalBananaMeterCount; kept for older reports */
-    averageBonusBananas:
-      bonusRounds > 0 ? Number((totalBonusBananas / bonusRounds).toFixed(2)) : 0,
     bonusPhaseWinVariance: Number(bonusWinVariance.toFixed(6)),
     bonusPhaseWinStdDev: Number(bonusWinStdDev.toFixed(6)),
-    bonusRatePercent,
-    atBonusTrigger: {
+    atGameOver: {
       description:
-        "Banana meter when bonus STARTS: last server state before bonus with nextAction === 'bonustransition'. (Not the meter when the round finishes.) shareOfBonusesPercent = count in bucket / bonusRounds × 100 (2 dp).",
-      referenceLevelThresholds: levelThresholdsSorted,
-      byActiveThreshold: atBonusTriggerByActiveThreshold,
-      byMeterLevel: atBonusTriggerByMeterLevel,
-      triggerStateMissingCount: bonusTriggerStateMissingCount
-    },
-    atBonusEnd: {
-      description:
-        "Banana meter when bonus is DONE: final completed-round state (nextAction spin, wasBonus true) — same snapshot as averageFinalBananaMeterCount. shareOfBonusesPercent = count in bucket / bonusRounds × 100 (2 dp). byMeterLevel adds totalFinalTbm (sum of lastState.tbm in bucket) and averageFinalTbm (mean TBM per bonus in that bucket, 2 dp).",
-      referenceLevelThresholds: levelThresholdsSorted,
-      byActiveThreshold: atBonusEndByActiveThreshold,
-      byMeterLevel: atBonusEndByMeterLevel
+        "End-of-round snapshot taken from the last bonus-phase state (freespin / bonustransition / hunt / chestreward). Kill count uses heavenHell.bonus.killsTotal.",
+      averageTbm: bonusRounds > 0 ? twoDecimals(avgBonusEndTbm) : 0,
+      averageKillCount: bonusRounds > 0 ? twoDecimals(avgBonusEndKillCount) : 0,
+      averageTotalAbilityLevels: bonusRounds > 0 ? twoDecimals(avgBonusEndAbilityTotal) : 0,
+      tbmByTotalAbilityLevels: buildTbmBucketRows(tbmByTotalAbilityLevels),
+      tbmByAbilityKey: buildTbmBucketRows(tbmByAbilityKey),
+      tbmByDivineXLevel: buildTbmBucketRows(tbmByDivineXLevel),
+      tbmByDivineStrikeLevel: buildTbmBucketRows(tbmByDivineStrikeLevel),
+      tbmByDivineChargeLevel: buildTbmBucketRows(tbmByDivineChargeLevel)
     },
     description:
-      "averageFinalBananaMeterCount: mean end-of-round banana meter (lastState.bananaMeter.count after normalize), capped at 30 per round for this average — includes bananas from base game on the meter before/during bonus, not 'collected only inside bonus'. bonusPhaseWin* = twa while isBonus; averageRoundWinWhenBonus = full round twa when bonus occurred."
+      "bonusPhaseWin* = twa while isBonus; averageRoundWinWhenBonus = full round twa when bonus occurred."
   },
   generatedAt: new Date().toISOString()
 };
@@ -432,26 +499,35 @@ console.log(`Strategy:         ${resolvedTicketStrategy}${resolvedTicketStrategy
 console.log(`Total stake:      ${report.metrics.totalStake}`);
 console.log(`Total payout:     ${report.metrics.totalPayout}`);
 console.log(`RTP:              ${report.metrics.rtpPercent}%`);
-console.log(`Hit rate:         ${report.metrics.hitRate}`);
+console.log(`  Main game RTP:  ${report.metrics.mainGameRtpPercent}%`);
+console.log(`  Bonus phase RTP:${report.metrics.bonusPhaseRtpPercent}%`);
+console.log(`Hit rate (tbm):   ${report.metrics.hitRate} (${report.metrics.hitRounds} hit / ${report.metrics.noHitRounds} no-hit)`);
+console.log(`Avg TBM:          ${report.metrics.averageTbm}`);
+console.log(`Payout var/std:   ${report.metrics.payoutVariance} / ${report.metrics.payoutStdDev}`);
+console.log(`TBM var/std:      ${report.metrics.tbmVariance} / ${report.metrics.tbmStdDev}`);
 console.log(`Max win:          ${report.metrics.maxWin}`);
-console.log(`Bonus frequency:     ${report.bonus.bonusFrequency} (${report.bonus.bonusRounds} bonuses)`);
-console.log(`Bonus rate:          ${report.bonus.bonusRatePercent}% of completed rounds`);
-if (report.bonus.atBonusTrigger.byActiveThreshold.length > 0) {
-  const t = report.bonus.atBonusTrigger.byActiveThreshold
-    .map((r) => `≥${r.thresholdMin}:${r.shareOfBonusesPercent}%`)
-    .join(" | ");
-  console.log(`At bonus TRIGGER (share): ${t}`);
-}
-if (report.bonus.atBonusEnd.byActiveThreshold.length > 0) {
-  const t = report.bonus.atBonusEnd.byActiveThreshold
-    .map((r) => `≥${r.thresholdMin}:${r.shareOfBonusesPercent}%`)
-    .join(" | ");
-  console.log(`At bonus END (share):     ${t}`);
+console.log(`Max TBM:          ${report.metrics.maxTbm}`);
+console.log(`Bonus rounds:     ${report.bonus.bonusRounds}`);
+console.log(`Bonus frequency:  ${report.bonus.bonusFrequency}`);
+console.log(`Bonus rate:       ${report.bonus.bonusRatePercent}% of completed rounds`);
+console.log("--- Ability RTP (collect-phase attribution) ---");
+report.abilities.rtpByAbility.forEach((row) => {
+  const procCount = report.abilities.procTotals[row.ability];
+  const procLabel = procCount === undefined ? "—" : procCount;
+  const isCoreAbility = row.ability === "divineX" || row.ability === "divineStrike" || row.ability === "divineCharge";
+  if (row.totalContributionTbm > 0 || isCoreAbility) {
+    console.log(
+      `  ${row.ability.padEnd(13)} RTP ${String(row.rtpPercent).padStart(8)}%  (TBM ${row.totalContributionTbm}, procs ${procLabel})`
+    );
+  }
+});
+console.log(`  Tracked ability RTP sum: ${report.abilities.trackedAbilityRtpPercent}%`);
+if (bonusRounds > 0) {
+  console.log(`Bonus gameover avg TBM:       ${report.bonus.atGameOver.averageTbm}`);
+  console.log(`Bonus gameover avg kills:     ${report.bonus.atGameOver.averageKillCount}`);
+  console.log(`Bonus gameover avg abilities: ${report.bonus.atGameOver.averageTotalAbilityLevels}`);
 }
 console.log(`Main game var/std:   ${report.mainGameSpinRespin.variance} / ${report.mainGameSpinRespin.stdDev}`);
-console.log(`Bonus phase win avg: ${report.bonus.averageBonusPhaseWin}`);
 console.log(`Bonus phase var/std: ${report.bonus.bonusPhaseWinVariance} / ${report.bonus.bonusPhaseWinStdDev}`);
-console.log(`Round win if bonus:  ${report.bonus.averageRoundWinWhenBonus}`);
-console.log(`Avg final banana meter: ${report.bonus.averageFinalBananaMeterCount} (cap 30/round)`);
 console.log(`Output:           ${resolvedOutputPath}`);
 console.log("========================================\n");

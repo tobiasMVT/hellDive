@@ -21,7 +21,7 @@ export function createGameServerMainActionMethods(deps = {}) {
       gameState.heroPosition = null;
       gameState.skipWheel = false;
       const necromancerLevel = gameState.hero?.necromancer || 0;
-      const necromancerSpawns = this.spawnNecromancerBananas(necromancerLevel, null, 1);
+      const necromancerSpawns = this.spawnNecromancerDemons(necromancerLevel, null, 1);
       gameState.necromancerSpawns = necromancerSpawns;
 
       gameState.reels = this.generateReels(
@@ -31,11 +31,11 @@ export function createGameServerMainActionMethods(deps = {}) {
       );
 
       if (necromancerSpawns.length > 0) {
-        gameState.reels = this.placeNecromancerBananas(gameState.reels, necromancerSpawns);
+        gameState.reels = this.placeNecromancerDemons(gameState.reels, necromancerSpawns);
       }
 
-      const bananaConfig = serverConfig.bananaSpawn || { minBananas: 1, maxBananas: 3, chance: 0.5 };
-      gameState.reels = this.addBananas(gameState.reels, bananaConfig, {
+      const demonConfig = serverConfig.bananaSpawn || { minBananas: 1, maxBananas: 3, chance: 0.5 };
+      gameState.reels = this.addDemons(gameState.reels, demonConfig, {
         gameState,
         heroPosition: null,
         heroFootprintSize: 1
@@ -86,7 +86,7 @@ export function createGameServerMainActionMethods(deps = {}) {
       } else {
         const barrelsOnBoard = this.getBarrelSymbolsOnBoard(gameState.reels);
         if (barrelsOnBoard.length > 0) {
-          const barrelResult = this.triggerBarrelBananaBursts(gameState.reels, barrelsOnBoard, gameState);
+          const barrelResult = this.triggerBarrelDemonBursts(gameState.reels, barrelsOnBoard, gameState);
           if (barrelResult.barrelBursts.length > 0) {
             gameState.reelsBeforeDrop = barrelResult.reels;
             hasPendingBarrelRespin = true;
@@ -99,7 +99,7 @@ export function createGameServerMainActionMethods(deps = {}) {
         gameState.winAmount = 0;
         gameState.reelsAfterDrop = null;
         gameState.nextAction = "respin";
-      } else if (!result.hasWins && Object.values(gameState.reels).some((row) => row.some((sym) => this.isBanana(sym)))) {
+      } else if (!result.hasWins && Object.values(gameState.reels).some((row) => row.some((sym) => this.isDemon(sym)))) {
         gameState.clusters = [];
         gameState.winAmount = 0;
         gameState.reelsBeforeDrop = null;
@@ -110,7 +110,7 @@ export function createGameServerMainActionMethods(deps = {}) {
         gameState.reelsBeforeDrop = null;
         gameState.reelsAfterDrop = null;
 
-        if (this.shouldTriggerBonusFromBananaMeter(gameState)) {
+        if (this.shouldTriggerBonusFromDemonMeter(gameState)) {
           gameState.bonusTriggered = true;
           const triggeredWith = { ...BASE_MONKEY_STATE };
           gameState.hero = { ...BASE_MONKEY_STATE };
@@ -136,10 +136,13 @@ export function createGameServerMainActionMethods(deps = {}) {
       }
 
       gameState.gravity = this.decideGravity(gameState.reelsBeforeDrop);
-      const bonusAlreadyExists = gameState.bonusWon?.won || this.shouldTriggerBonusFromBananaMeter(gameState) || false;
+      const bonusAlreadyExists = gameState.bonusWon?.won || this.shouldTriggerBonusFromDemonMeter(gameState) || false;
       const timeSymbolConfig = this.resolveExplodingBarrelConfig(gameState) || {};
       const timeSymbolChance = bonusAlreadyExists ? 0 : (timeSymbolConfig.chancePerNewSymbolOnRespin ?? 2);
-      const resolvedBananaSpawnConfig = this.resolveBananaSpawnConfig(serverConfig.bananaSpawn || {}, gameState);
+      const resolvedDemonSpawnConfig = this.resolveDemonSpawnConfig(serverConfig.bananaSpawn || {}, gameState);
+      const respinDemonChance = bonusAlreadyExists
+        ? 0
+        : resolvedDemonSpawnConfig?.respinChance;
 
       const gravityResult = this.applyGravity(
         gameState.reelsBeforeDrop,
@@ -148,7 +151,7 @@ export function createGameServerMainActionMethods(deps = {}) {
         true,
         timeSymbolChance,
         1.0,
-        resolvedBananaSpawnConfig?.respinChance,
+        respinDemonChance,
         this.buildHeroFootprintState(gameState.heroPosition, gameState.heroFootprintSize || 1)
       );
 
@@ -249,7 +252,7 @@ export function createGameServerMainActionMethods(deps = {}) {
       if (!result.hasWins) {
         const barrelsOnBoard = this.getBarrelSymbolsOnBoard(gravityResult.reels);
         if (barrelsOnBoard.length > 0) {
-          const barrelResult = this.triggerBarrelBananaBursts(gravityResult.reels, barrelsOnBoard, gameState);
+          const barrelResult = this.triggerBarrelDemonBursts(gravityResult.reels, barrelsOnBoard, gameState);
           if (barrelResult.barrelBursts.length > 0) {
             pendingBarrelDropReels = barrelResult.reels;
           }
@@ -316,7 +319,7 @@ export function createGameServerMainActionMethods(deps = {}) {
         }
 
         gameState.nextAction = "respin";
-      } else if (Object.values(gravityResult.reels).some((row) => row.some((sym) => this.isBanana(sym)))) {
+      } else if (Object.values(gravityResult.reels).some((row) => row.some((sym) => this.isDemon(sym)))) {
         gameState.clusters = [];
         gameState.winAmount = 0;
         gameState.reels = gravityResult.reels;
@@ -337,7 +340,7 @@ export function createGameServerMainActionMethods(deps = {}) {
           gameState.rtpData.mysteryPositionRTP = [];
         }
 
-        if (this.shouldTriggerBonusFromBananaMeter(gameState) && !gameState.bonusWon?.triggeredWith) {
+        if (this.shouldTriggerBonusFromDemonMeter(gameState) && !gameState.bonusWon?.triggeredWith) {
           gameState.bonusTriggered = true;
           const triggeredWith = { ...BASE_MONKEY_STATE };
           gameState.bonusWon = this.rollBonusAbilities(BASE_MONKEY_STATE);
@@ -349,7 +352,7 @@ export function createGameServerMainActionMethods(deps = {}) {
             action: gameState.executedAction || null
           };
           gameState.nextAction = "bonustransition";
-        } else if (this.shouldTriggerBonusFromBananaMeter(gameState)) {
+        } else if (this.shouldTriggerBonusFromDemonMeter(gameState)) {
           gameState.bonusTriggered = true;
           this.syncBonusEntryFreespins(gameState);
           gameState.bgwe = true;
@@ -364,7 +367,7 @@ export function createGameServerMainActionMethods(deps = {}) {
       }
     },
 
-    handleBananaHuntAction(gameState, { heavenHellEnabled } = {}) {
+    handleDemonHuntAction(gameState, { heavenHellEnabled } = {}) {
       const stepType = "destroy";
       const weaponId = BASE_MONKEY_STATE.weapon;
       const heroPosition = gameState.heroPosition || null;
@@ -374,7 +377,7 @@ export function createGameServerMainActionMethods(deps = {}) {
       const reelsToHunt = isTrollRush ? gameState.reelsBeforeDrop : gameState.reels;
 
       const preHuntReels = JSON.parse(JSON.stringify(reelsToHunt || {}));
-      const huntResult = this.executeBananaHunt(reelsToHunt, stepType, weaponId, heroPosition, gameState);
+      const huntResult = this.executeDemonHunt(reelsToHunt, stepType, weaponId, heroPosition, gameState);
 
       if (!gameState.rtpData) {
         gameState.rtpData = {};
@@ -424,7 +427,7 @@ export function createGameServerMainActionMethods(deps = {}) {
       gameState.totalDemonsKilledInSequence = (gameState.totalDemonsKilledInSequence || 0) + demonsKilledThisAction;
       gameState.totalDemonsCollectedInSequence = (gameState.totalDemonsCollectedInSequence || 0) + gameState.demonsCollected;
       if (!heavenHellEnabled) {
-        this.addBananaMeterProgress(gameState, gameState.demonsCollected);
+        this.addDemonMeterProgress(gameState, gameState.demonsCollected);
         this.normalizeBonusStageState(gameState, { awardFreespins: true });
       }
       if (Number(huntResult.clusterWinTbm || 0) > 0) {
@@ -435,16 +438,13 @@ export function createGameServerMainActionMethods(deps = {}) {
       } else {
         gameState.winAmount = 0;
       }
-      if (this.shouldTriggerBonusFromBananaMeter(gameState)) {
+      if (this.shouldTriggerBonusFromDemonMeter(gameState)) {
         gameState.bonusTriggered = true;
       }
       if (heavenHellEnabled && heavenHellPostHunt.totalKills > 0) {
         const triggeredPortal = this.maybeTriggerHeavenHellPortal(gameState, heavenHellPostHunt.totalKills);
         if (triggeredPortal) {
           heavenHellPortalTriggered = true;
-          gameState.nextAction = "bonustransition";
-          gameState.reelsBeforeDrop = null;
-          gameState.clusters = [];
         }
       }
 
@@ -481,9 +481,6 @@ export function createGameServerMainActionMethods(deps = {}) {
           source: "heavenHellRandomTrigger",
           action: gameState.executedAction || null
         };
-        gameState.nextAction = "bonustransition";
-        gameState.reelsBeforeDrop = null;
-        gameState.reelsAfterDrop = null;
       }
     },
 
@@ -549,3 +546,5 @@ export function createGameServerMainActionMethods(deps = {}) {
     }
   };
 }
+
+

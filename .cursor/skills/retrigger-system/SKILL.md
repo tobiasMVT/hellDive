@@ -61,6 +61,12 @@ If demons remain after a hunt, meter accumulates (`29 → 30`) but **no settleme
 | Post-bonus `spin` (`resetGameState`) | `demonsKilled`, `totalDemonsKilledInSequence`, full bonus state |
 | Bonus entry (`bonustransition`) | `heavenHell.bonus.killsTotal`, `killsTowardsUnlock` (fresh meter) |
 
+## Rule Guardrails
+
+- Do not treat `5` demon kills / bananas as a bonus trigger. That was legacy presentation only.
+- Bonus entry is now decided by the game’s random trigger flow before `bonustransition`.
+- During main-game hero combat, meter growth can still level up visuals, but it must not show a `FREESPINS WON` award from hitting `5`.
+
 ## Config (`server_config.json` → `heavenHell.bonus.abilityUnlock`)
 
 ```json

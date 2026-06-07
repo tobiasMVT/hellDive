@@ -197,7 +197,6 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         const lightningBeeFeatureCollections = Array.isArray(huntBehavior?.lightningBeeFeatureCollections)
           ? huntBehavior.lightningBeeFeatureCollections
           : [];
-        const bonusEntryFreespins = Math.max(1, Math.floor(Number(huntBehavior?.bonusEntryFreespins) || 5));
         const heavenHellGameState = huntBehavior?.heavenHellGameState || null;
         const firstHeavenHellBonusEntryAttack = huntBehavior?.firstHeavenHellBonusEntryAttack === true;
         if (heavenHellGameState?.heavenHell?.bonus && heavenHellGameState?.isBonus === true) {
@@ -314,21 +313,6 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           if (growthHandled) {
             return;
           }
-    
-          const isInitialBonusWon = (
-            this.currentAction === "bananaHunt" &&
-            this.isInBonusMode !== true &&
-            nextThreshold === 5
-          );
-          if (!isInitialBonusWon) {
-            return;
-          }
-    
-          void this.playBonusWonFloatingLabel(`${bonusEntryFreespins} FREESPINS WON`, {
-            fontSize: "48px",
-            glowFontSize: "52px"
-          }).catch(() => {});
-          await this.playBonusWonCelebrationPause();
         };
         const retriggerThresholds = [10, 15, 20, 25, 30];
         const handleBonusRetriggerFromMeterProgress = (fromCount, toCount) => {
@@ -848,8 +832,14 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         if (!heroPath || heroPath.length === 0) return;
     
         const heroAlreadyPresent = this.heroSprite && !this.heroSprite.destroyed;
+        const heroHasBoardAnchor =
+          heroAlreadyPresent &&
+          this.currentHeroAnchor &&
+          Number.isFinite(Number(this.currentHeroAnchor.reel)) &&
+          Number.isFinite(Number(this.currentHeroAnchor.row));
+        const heroNeedsFreshEntrance = !heroHasBoardAnchor;
         const firstBananaIndex = heroPath.findIndex((step) => step?.banana);
-        const pathStartIndex = (!heroAlreadyPresent && firstBananaIndex >= 0) ? firstBananaIndex : 0;
+        const pathStartIndex = (heroNeedsFreshEntrance && firstBananaIndex >= 0) ? firstBananaIndex : 0;
         const startStep = heroPath[pathStartIndex] || heroPath[0];
         if (heroAlreadyPresent) {
           this.heroSprite.setTexture(heroTexture);
@@ -1097,6 +1087,11 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           return 0.88;
         };
         
+        const getMainGameRoundStartCenter = () => ({
+          x: GRID_OFFSET_X + (clientConfig.area.width * cellSize) / 2,
+          y: GRID_OFFSET_Y + (clientConfig.area.height * cellSize) / 2
+        });
+
         // Entry start position is first banana on fresh hunts, otherwise regular path start.
         const startPos = startStep;
         this.currentHeroAnchor = {
@@ -1119,7 +1114,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         const startWaitsForBananaUpgrade = startHasBanana && doesStepTriggerBananaUpgrade(startStep);
         const startHasFeatureActivation = hasFeatureActivationForPathIndex(pathStartIndex);
         const startSkipsImpactSlowMo = startWaitsForBananaUpgrade || startHasFeatureActivation;
-    
+
         const playEntryImpactFx = async (x, y, { heavenHellEntry = false } = {}) => {
           if (heavenHellEntry) {
             this.playSfx?.("lightning_at_lvl_up", { volume: 0.52 });
@@ -1206,13 +1201,15 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         };
     
         const runLinearFlightEntrance = async () => {
-          let entryX = -110;
-          let entryY = startY + Phaser.Math.Between(-40, 40);
-          let duration = 430;
-          let ease = 'Cubic.easeOut';
+          const isMainGameFreshHunt = !isHeavenHellBonusHunt;
+          const roundStartCenter = getMainGameRoundStartCenter();
+          let entryX = isMainGameFreshHunt ? roundStartCenter.x : -110;
+          let entryY = isMainGameFreshHunt ? roundStartCenter.y : startY + Phaser.Math.Between(-40, 40);
+          let duration = isMainGameFreshHunt ? 260 : 430;
+          let ease = isMainGameFreshHunt ? 'Cubic.easeInOut' : 'Cubic.easeOut';
           let entryScale = heroBaseScale;
           let entryTexture = heroTexture;
-    
+
           if (isHeavenHellBonusHunt && firstHeavenHellBonusEntryAttack) {
             entryX = startX + Phaser.Math.Between(-14, 14);
             entryY = -170;
@@ -1235,12 +1232,24 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
               entryY = -110;
             }
           }
-    
-          this.heroSprite = this.add.image(entryX, entryY, entryTexture)
-            .setOrigin(0.5)
-            .setScale(entryScale)
-            .setDepth(DEPTH_HERO)
-            .setAlpha(1);
+
+          if (this.heroSprite && !this.heroSprite.destroyed) {
+            this.tweens.killTweensOf(this.heroSprite);
+            this.heroSprite
+              .setTexture(entryTexture)
+              .setOrigin(0.5)
+              .setScale(entryScale)
+              .setDepth(DEPTH_HERO)
+              .setAlpha(1)
+              .setVisible(true)
+              .setPosition(entryX, entryY);
+          } else {
+            this.heroSprite = this.add.image(entryX, entryY, entryTexture)
+              .setOrigin(0.5)
+              .setScale(entryScale)
+              .setDepth(DEPTH_HERO)
+              .setAlpha(1);
+          }
     
           if (isHeavenHellBonusHunt && firstHeavenHellBonusEntryAttack) {
             this.startAngelMovementLightEmitter({ tint: 0xFFE39C, intervalMs: 12, burstScale: 1.12 });
@@ -1264,6 +1273,10 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             this.heroSprite.setTexture(heroTexture);
             this.heroSprite.setScale(heroBaseScale);
           }
+          this.currentHeroAnchor = {
+            reel: Number(startPos?.reel || 0),
+            row: Number(startPos?.row || 0)
+          };
           this.heroSprite.setPosition(startX, startY);
           await playEntryImpactFx(startX, startY, {
             heavenHellEntry: isHeavenHellBonusHunt && firstHeavenHellBonusEntryAttack
@@ -1630,7 +1643,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           }
         };
     
-        if (!heroAlreadyPresent) {
+        if (heroNeedsFreshEntrance) {
           // FRESH ENTRANCE - direct linear flight into the board.
           if (this.heroSprite && this.heroSprite.destroyed) {
             this.heroSprite = null;
@@ -3291,14 +3304,6 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           });
         }
         
-        // Clear hero sprite
-        if (this.heroSprite && !this.heroSprite.destroyed) {
-          this.heroSprite.destroy();
-          this.clearMonkeyWildStrengthBadge();
-          this.clearHeroWildActiveBadge();
-          this.clearHeroWildTrailMarks();
-          this.heroSprite = null;
-        }
         this.clearMonkeyWildStrengthBadge();
         this.clearHeroWildActiveBadge();
         this.clearHeroWildTrailMarks();
@@ -3308,6 +3313,9 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         this.currentHeroTextureKey = HERO_STAGE_TEXTURE_KEYS.base;
         this.heavenHellBonusEntryAngelArrivalPlayed = false;
         this.resetBonusFruitPile();
+        if (!this.isInBonusMode) {
+          this.showMainGameHeroAtCenter?.(this.currentHeroWeapon || "staff");
+        }
         
         // Clean up ALL banana backplates from current sprites
         if (this.reelSprites) {
@@ -4337,6 +4345,42 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           }
         });
         
+      },
+
+    showMainGameHeroAtCenter(weapon = "staff") {
+        const heroX = GRID_OFFSET_X + (clientConfig.area.width * 70) / 2;
+        const heroY = GRID_OFFSET_Y + (clientConfig.area.height * 70) / 2;
+        const heroTexture = getHeroTexture(weapon, { footprintSize: 1, rushActive: false, bonusStage: 0 });
+        const heroScale = getHeroScaleForFootprint(1, heroTexture);
+
+        this.currentHeroWeapon = weapon;
+        this.currentHeroFootprintSize = 1;
+        this.currentHeroRushActive = false;
+        this.currentBonusStage = 0;
+        this.currentHeroTextureKey = heroTexture;
+        this.currentHeroAnchor = null;
+
+        this.clearMonkeyWildStrengthBadge();
+        this.clearHeroWildActiveBadge();
+        this.clearHeroWildTrailMarks?.();
+
+        if (!this.heroSprite || this.heroSprite.destroyed) {
+          this.heroSprite = this.add.image(heroX, heroY, heroTexture)
+            .setOrigin(0.5)
+            .setDepth(DEPTH_HERO)
+            .setAlpha(1);
+        } else {
+          this.tweens.killTweensOf(this.heroSprite);
+          this.heroSprite
+            .setVisible(true)
+            .setAlpha(1)
+            .setPosition(heroX, heroY);
+        }
+
+        this.heroSprite
+          .setTexture(heroTexture)
+          .setScale(heroScale)
+          .setDepth(DEPTH_HERO);
       }
   };
 }
