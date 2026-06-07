@@ -1968,6 +1968,11 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
               { x: startX, y: startY },
               { waitForLootDrop: startStep?.divineStrikeProc !== true }
             );
+            this.playHeavenHellAbilityComboPopup?.(startStep, { x: startX, y: startY }, { stepQuickStop: false });
+          } else if (isHeavenHellBonusHunt && startStep?.divineStrikeProc === true) {
+            this.playHeavenHellAbilityComboPopup?.(startStep, { x: startX, y: startY }, { stepQuickStop: false });
+          } else if (isHeavenHellBonusHunt && startDivineXImpactPromise) {
+            this.playHeavenHellAbilityComboPopup?.(startStep, { x: startX, y: startY }, { stepQuickStop: false });
           }
           if (isHeavenHellBonusHunt && startStep?.divineStrikeProc === true) {
             await this.playHeavenHellDivineStrikeAtStep?.(startStep, heavenHellGameState, {
@@ -2079,7 +2084,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             step?.divineStrikeProc === true &&
             !stepQuickStop;
           const stepBananaMeterArrivalPromises = [];
-    
+
           if (isBananaStep && isHeavenHellBonusHunt && step?.divineChargeProc === true && !stepQuickStop) {
             const chargeRushTexture = getHeroTexture(weapon, {
               footprintSize: heroFootprintSize,
@@ -2695,6 +2700,11 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
                 { x: targetX, y: targetY },
                 { waitForLootDrop: step?.divineStrikeProc !== true }
               );
+              this.playHeavenHellAbilityComboPopup?.(step, { x: targetX, y: targetY }, { stepQuickStop });
+            } else if (isHeavenHellBonusHunt && step?.divineStrikeProc === true) {
+              this.playHeavenHellAbilityComboPopup?.(step, { x: targetX, y: targetY }, { stepQuickStop });
+            } else if (isHeavenHellBonusHunt && stepDivineXImpactPromise) {
+              this.playHeavenHellAbilityComboPopup?.(step, { x: targetX, y: targetY }, { stepQuickStop });
             }
             if (isHeavenHellBonusHunt && step?.divineStrikeProc === true) {
               await this.playHeavenHellDivineStrikeAtStep?.(step, heavenHellGameState, {

@@ -1705,6 +1705,137 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         return label;
       },
 
+    getHeavenHellTriggeredStepAbilities(step = {}) {
+        const ordered = [];
+        if (step?.divineXProc === true) ordered.push("divineX");
+        if (step?.divineChargeProc === true) ordered.push("divineCharge");
+        if (step?.divineStrikeProc === true) ordered.push("divineStrike");
+        return ordered;
+      },
+
+    getHeavenHellComboAbilityBadgeLabel(abilityKey = "") {
+        if (abilityKey === "divineX") return "X";
+        if (abilityKey === "divineCharge") return "CHARGE";
+        if (abilityKey === "divineStrike") return "STRIKE";
+        return this.getHeavenHellChestTickerLabel?.(abilityKey) || String(abilityKey || "").toUpperCase();
+      },
+
+    createHeavenHellGradientLetterRow(x, y, text, colors = [], {
+        depth = DEPTH_HERO + 58,
+        fontSize = "16px",
+        stroke = "#2B0C0C",
+        strokeThickness = 4,
+        letterSpacing = 1
+      } = {}) {
+        const chars = Array.from(String(text || ""));
+        if (chars.length === 0) return [];
+
+        const palette = Array.isArray(colors) && colors.length > 0
+          ? colors.map((color) => Phaser.Display.Color.IntegerToRGB(Number(color) || 0xFFFFFF))
+          : [Phaser.Display.Color.IntegerToRGB(0xFFFFFF)];
+        const totalSteps = Math.max(1, chars.filter((char) => char !== " ").length - 1);
+        let paintedIndex = 0;
+        const letters = chars.map((char) => {
+          const isSpace = char === " ";
+          let fillHex = "#FFFFFF";
+          if (!isSpace) {
+            const progress = totalSteps <= 0 ? 0 : paintedIndex / totalSteps;
+            const scaled = progress * Math.max(0, palette.length - 1);
+            const leftIndex = Math.floor(scaled);
+            const rightIndex = Math.min(palette.length - 1, leftIndex + 1);
+            const mix = scaled - leftIndex;
+            const left = palette[leftIndex];
+            const right = palette[rightIndex];
+            const r = Math.round(left.r + (right.r - left.r) * mix);
+            const g = Math.round(left.g + (right.g - left.g) * mix);
+            const b = Math.round(left.b + (right.b - left.b) * mix);
+            fillHex = Phaser.Display.Color.RGBToString(r, g, b, 0, "#");
+            paintedIndex += 1;
+          }
+
+          return this.add.text(0, 0, char, {
+            fontSize,
+            fontFamily: '"Cinzel", "Times New Roman", serif',
+            fontStyle: "bold",
+            color: fillHex,
+            stroke,
+            strokeThickness
+          }).setOrigin(0.5).setDepth(depth);
+        });
+
+        let width = 0;
+        letters.forEach((letter, index) => {
+          width += Number(letter.width || 0);
+          if (index < letters.length - 1) {
+            width += letterSpacing;
+          }
+        });
+
+        let cursorX = Number(x) - width * 0.5;
+        letters.forEach((letter, index) => {
+          const letterWidth = Number(letter.width || 0);
+          letter.setPosition(cursorX + letterWidth * 0.5, Number(y));
+          cursorX += letterWidth;
+          if (index < letters.length - 1) {
+            cursorX += letterSpacing;
+          }
+        });
+
+        return letters;
+      },
+
+    playHeavenHellAbilityComboPopup(step = {}, anchor = null, { stepQuickStop = false } = {}) {
+        if (stepQuickStop) return null;
+        const triggeredAbilities = this.getHeavenHellTriggeredStepAbilities?.(step) || [];
+        if (triggeredAbilities.length < 2) return null;
+
+        const originX = Number(anchor?.x ?? this.heroSprite?.x ?? 0);
+        const originY = Number(anchor?.y ?? this.heroSprite?.y ?? 0);
+        const comboColors = triggeredAbilities.map((abilityKey) => {
+          const palette = this.getHeavenHellChestRewardPalette?.(abilityKey, null);
+          return Number(palette?.fill || 0xFFFFFF);
+        });
+        const titleLetters = this.createHeavenHellGradientLetterRow?.(originX, originY - 74, "COMBO STRIKE!", comboColors, {
+          depth: DEPTH_HERO + 58,
+          fontSize: "17px",
+          stroke: "#22070F",
+          strokeThickness: 4,
+          letterSpacing: 1
+        }) || [];
+
+        const popupParts = [...titleLetters].filter(Boolean);
+        popupParts.forEach((part) => {
+          part.setAlpha?.(0);
+          part.setScale?.(0.92);
+        });
+
+        this.tweens.add({
+          targets: popupParts,
+          alpha: 1,
+          scaleX: 1,
+          scaleY: 1,
+          duration: 110,
+          ease: "Sine.easeOut"
+        });
+        this.tweens.add({
+          targets: popupParts,
+          y: "-=12",
+          alpha: 0,
+          delay: 620,
+          duration: 680,
+          ease: "Sine.easeIn",
+          onComplete: () => {
+            popupParts.forEach((part) => {
+              if (part && !part.destroyed) {
+                part.destroy();
+              }
+            });
+          }
+        });
+
+        return popupParts;
+      },
+
     async playHeavenHellLootDropPattern(gameState = {}, { source = null, from = null, jitterStrength = 6, filterCells = null, persistToGround = false, launchFromDropCell = false } = {}) {
         const drops = Array.isArray(gameState?.heavenHell?.bonus?.lootGround)
           ? gameState.heavenHell.bonus.lootGround
