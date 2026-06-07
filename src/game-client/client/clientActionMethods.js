@@ -25,7 +25,7 @@ export function createClientActionMethods(deps = {}) {
       this.scene.resetBonusFruitPile?.();
       this.scene.hideFreespinCounter();
       this.scene.createOrUpdateHouse(gameState.multiplier || 1);
-      this.scene.renderHeavenHellLootGround?.([]);
+      this.scene.clearHeavenHellLootGround?.();
       this.scene.updateHeavenHellAbilityText?.(gameState);
 
       await this.runSegmentFlow(gameState);

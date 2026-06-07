@@ -638,6 +638,7 @@ export class GameScene extends Phaser.Scene {
     this._soundVolumeToolPreview = null;
     this._soundVolumeTrackedInstances = new Set();
     this.heavenHellLootSprites = [];
+    this.heavenHellRenderedLootKeys = new Set();
     this.heavenHellPortalAura = null;
     this.heavenHellAbilityPanel = null;
     this._heavenHellMeterUi = null;

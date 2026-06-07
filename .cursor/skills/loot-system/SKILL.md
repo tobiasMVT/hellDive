@@ -48,6 +48,8 @@ Example: loot `[0.2, 0.4, 0.5]`, multiplier `×10` → `2 + 4 + 5 = 11.0`
 
 Orchestration timing in `Client.js`; animations in `GameScene.js`.
 
+**Client sprite lifecycle:** `syncHeavenHellLootGround` only **adds** missing tokens (tracked via `heavenHellRenderedLootKeys`). Never destroy/rebuild the full ground between bonus actions. Loot sprites are cleared only in `clearHeavenHellLootGround` — called after Collect Phase vortex and when exiting bonus back to main spin.
+
 Divine Charge guaranteed loot + multipliers: see `ability-system`.
 
 If multiple loot drops due to divinecharge the loot should be scattered more so its visually clear that, multiplier from divine charge did something.

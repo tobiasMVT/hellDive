@@ -15,13 +15,15 @@ Owns the Hell bonus presentation layer.
 - `updateHellDiveBackground(...)`
 - `playHeavenHellBonusEntryPortalTransition(...)`
 - `playHeavenHellRippleSpawn(...)`
-- `renderHeavenHellLootGround(...)`
+- `syncHeavenHellLootGround(...)` / `renderHeavenHellLootGround(...)` (incremental add only)
+- `clearHeavenHellLootGround(...)` (bonus exit + collect phase only)
 - `playHeavenHellCollectPhase(...)`
 - `updateHeavenHellAbilityText(...)`
 
 ## Shared State
 
 - `heavenHellLootSprites`
+- `heavenHellRenderedLootKeys`
 - `heavenHellPortalAura`
 - `_heavenHellMeterUi`
 - `_heavenHellMeterRuntime`

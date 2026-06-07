@@ -742,26 +742,75 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         return true;
       },
 
-    renderHeavenHellLootGround(drops = []) {
+    getHeavenHellLootDropKey(drop = {}, index = 0) {
+        const reel = Math.floor(Number(drop?.reel));
+        const row = Math.floor(Number(drop?.row));
+        const offsetX = Number.isFinite(Number(drop?.offsetX)) ? Number(drop.offsetX) : 0;
+        const offsetY = Number.isFinite(Number(drop?.offsetY)) ? Number(drop.offsetY) : 0;
+        const baseValue = Number(drop?.baseValue ?? drop?.value ?? 0);
+        const source = String(drop?.source || "");
+        return `${reel},${row},${offsetX},${offsetY},${baseValue},${source},${Math.max(0, Math.floor(Number(index) || 0))}`;
+      },
+
+    isHeavenHellLootDropRendered(drop = {}, index = 0) {
+        const key = this.getHeavenHellLootDropKey(drop, index);
+        if (this.heavenHellRenderedLootKeys?.has(key)) return true;
+        return (Array.isArray(this.heavenHellLootSprites) ? this.heavenHellLootSprites : []).some((entry) => (
+          entry &&
+          !entry.destroyed &&
+          entry.heavenHellLootDropKey === key
+        ));
+      },
+
+    registerHeavenHellLootSprite(token, drop = {}, index = 0) {
+        if (!token || token.destroyed) return token;
         if (!Array.isArray(this.heavenHellLootSprites)) {
           this.heavenHellLootSprites = [];
         }
-        this.heavenHellLootSprites.forEach((entry) => {
-          if (entry && !entry.destroyed) entry.destroy();
+        if (!this.heavenHellRenderedLootKeys) {
+          this.heavenHellRenderedLootKeys = new Set();
+        }
+        const key = this.getHeavenHellLootDropKey(drop, index);
+        token.heavenHellLootDropKey = key;
+        this.heavenHellRenderedLootKeys.add(key);
+        this.heavenHellLootSprites.push(token);
+        return token;
+      },
+
+    clearHeavenHellLootGround() {
+        (Array.isArray(this.heavenHellLootSprites) ? this.heavenHellLootSprites : []).forEach((entry) => {
+          if (!entry || entry.destroyed) return;
+          this.tweens.killTweensOf(entry);
+          entry.destroy();
         });
         this.heavenHellLootSprites = [];
+        this.heavenHellRenderedLootKeys = new Set();
+      },
+
+    syncHeavenHellLootGround(drops = []) {
+        if (!Array.isArray(this.heavenHellLootSprites)) {
+          this.heavenHellLootSprites = [];
+        }
+        if (!this.heavenHellRenderedLootKeys) {
+          this.heavenHellRenderedLootKeys = new Set();
+        }
         const list = Array.isArray(drops) ? drops : [];
         const maxRender = Math.min(64, list.length);
         for (let i = 0; i < maxRender; i++) {
           const drop = list[i];
+          if (this.isHeavenHellLootDropRendered(drop, i)) continue;
           const reel = Math.floor(Number(drop?.reel));
           const row = Math.floor(Number(drop?.row));
           if (!Number.isFinite(reel) || !Number.isFinite(row)) continue;
           const position = this.getHeavenHellLootGroundPosition(drop, i);
           const token = this.createHeavenHellLootToken(position.x, position.y, drop, i, { scale: 0.34 });
           token.setDepth(DEPTH_HERO - 1);
-          this.heavenHellLootSprites.push(token);
+          this.registerHeavenHellLootSprite(token, drop, i);
         }
+      },
+
+    renderHeavenHellLootGround(drops = []) {
+        this.syncHeavenHellLootGround(drops);
       },
 
     syncHeavenHellLootSpriteDepths(frontOfHero = false) {
@@ -1367,13 +1416,14 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const drops = Array.isArray(gameState?.heavenHell?.bonus?.lootGround)
           ? gameState.heavenHell.bonus.lootGround
           : [];
-        let scoped = drops;
+        let scoped = drops.map((entry, index) => ({ entry, index }));
         if (Array.isArray(filterCells) && filterCells.length > 0) {
           const cellKeys = new Set(filterCells.map((cell) => `${Math.floor(Number(cell?.reel))},${Math.floor(Number(cell?.row))}`));
-          scoped = scoped.filter((entry) => cellKeys.has(`${Math.floor(Number(entry?.reel))},${Math.floor(Number(entry?.row))}`));
+          scoped = scoped.filter(({ entry }) => cellKeys.has(`${Math.floor(Number(entry?.reel))},${Math.floor(Number(entry?.row))}`));
         } else if (source) {
-          scoped = scoped.filter((entry) => entry?.source === source);
+          scoped = scoped.filter(({ entry }) => entry?.source === source);
         }
+        scoped = scoped.filter(({ entry, index }) => !this.isHeavenHellLootDropRendered(entry, index));
         if (scoped.length === 0) return;
     
         const fallbackStartX = Number(from?.x || (GRID_OFFSET_X + (clientConfig.area.width * 70) * 0.5));
@@ -1382,7 +1432,8 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const promises = [];
     
         for (let i = 0; i < maxDrops; i++) {
-          const drop = scoped[i];
+          const drop = scoped[i].entry;
+          const dropIndex = scoped[i].index;
           const reel = Math.floor(Number(drop?.reel));
           const row = Math.floor(Number(drop?.row));
           if (!Number.isFinite(reel) || !Number.isFinite(row)) continue;
@@ -1393,7 +1444,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
             : { x: fallbackStartX, y: fallbackStartY };
           const startX = Number(launchPoint?.x || fallbackStartX);
           const startY = Number(launchPoint?.y || fallbackStartY);
-          const token = this.createHeavenHellLootToken(startX, startY, drop, i, { scale: 0.42 });
+          const token = this.createHeavenHellLootToken(startX, startY, drop, dropIndex, { scale: 0.42 });
           token.setDepth(DEPTH_HERO + 55);
           token.setAlpha(0);
           token.setAngle(Phaser.Math.Between(-18, 18));
@@ -1410,9 +1461,9 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
               const jitterY = hasStoredOffsets
                 ? 0
                 : Phaser.Math.Between(-Math.max(0, Math.floor(jitterStrength * 0.7)), Math.max(0, Math.floor(jitterStrength * 0.7)));
-              const storedPosition = this.getHeavenHellLootGroundPosition(drop, i);
-              const landX = hasStoredOffsets ? storedPosition.x : target.x + (((i % 3) - 1) * 5) + jitterX;
-              const landY = hasStoredOffsets ? storedPosition.y : target.y + 14 + ((((i / 3) | 0) % 2) * 4) + jitterY;
+              const storedPosition = this.getHeavenHellLootGroundPosition(drop, dropIndex);
+              const landX = hasStoredOffsets ? storedPosition.x : target.x + (((dropIndex % 3) - 1) * 5) + jitterX;
+              const landY = hasStoredOffsets ? storedPosition.y : target.y + 14 + ((((dropIndex / 3) | 0) % 2) * 4) + jitterY;
               const arcPeakY = Math.min(startY, landY) - Phaser.Math.Between(72, 116);
               const controlX = (startX + landX) * 0.5 + Phaser.Math.Between(-42, 42);
               const flightMs = Phaser.Math.Between(420, 540);
@@ -1494,10 +1545,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                         token.setScale(0.34, 0.34);
                         token.setAlpha(0.96);
                         token.setDepth(DEPTH_HERO + 1);
-                        if (!Array.isArray(this.heavenHellLootSprites)) {
-                          this.heavenHellLootSprites = [];
-                        }
-                        this.heavenHellLootSprites.push(token);
+                        this.registerHeavenHellLootSprite(token, drop, dropIndex);
                         resolve();
                         return;
                       }
@@ -2360,7 +2408,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         }));
     
         await Promise.all(swirlPromises);
-        this.heavenHellLootSprites = [];
+        this.clearHeavenHellLootGround();
         this.updateCountUp(finalTwa);
         this.playSfx?.("gold_drop", { volume: 0.18 });
         vortexGlow.destroy();
