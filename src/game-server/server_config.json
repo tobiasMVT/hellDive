@@ -985,31 +985,31 @@
             "abilityProc": {
                 "divineStrike": {
                     "1": {
-                        "chance": 0.93,
+                        "chance": 0.3,
                         "radius": 1
                     },
                     "2": {
-                        "chance": 0.94,
+                        "chance": 0.5,
                         "radius": 3
                     }
                 },
                 "divineX": {
                     "1": {
-                        "chance": 0.93,
+                        "chance": 0.3,
                         "distance": 2
                     },
                     "2": {
-                        "chance": 0.94,
+                        "chance": 0.5,
                         "distance": 4
                     }
                 },
                 "divineCharge": {
                     "1": {
-                        "chance": 0.92,
+                        "chance": 0.3,
                         "lootMultiplier": 5
                     },
                     "2": {
-                        "chance": 0.93,
+                        "chance": 0.3,
                         "lootMultiplier": 10
                     }
                 }
