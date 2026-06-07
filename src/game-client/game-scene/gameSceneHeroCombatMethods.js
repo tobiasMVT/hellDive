@@ -240,6 +240,8 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         const HUNT_MOMENTUM_GAIN = 0.24;
         const HUNT_MOMENTUM_MAX = 3.2;
         const HUNT_MOMENTUM_IMPACT_DECAY = 0.24;
+        const DIVINE_STRIKE_SLOWMO_REAL_MS = 850;
+        const DIVINE_STRIKE_SLOWMO_FACTOR = 0.18;
         let huntMomentum = 1.0;
         const applyMomentumToDuration = (duration) => Math.max(
           minRushDuration,
@@ -1347,7 +1349,136 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             }
           }
         };
-    
+
+        const buildDivineStrikeApproachPlan = (fromX, fromY, targetX, targetY, totalDuration, { chargeLaunch = false } = {}) => {
+          const totalDistance = Phaser.Math.Distance.Between(fromX, fromY, targetX, targetY);
+          if (!Number.isFinite(totalDistance) || totalDistance <= 1) {
+            return null;
+          }
+
+          let releaseDistance = Phaser.Math.Clamp(
+            totalDistance * (chargeLaunch ? 0.12 : 0.09),
+            chargeLaunch ? 14 : 10,
+            chargeLaunch ? 32 : 24
+          );
+          let slowDistance = Phaser.Math.Clamp(
+            totalDistance * (chargeLaunch ? 0.38 : 0.3),
+            chargeLaunch ? 28 : 20,
+            chargeLaunch ? 120 : 86
+          );
+          const maxReservedDistance = Math.max(0, totalDistance - 2);
+
+          if (slowDistance + releaseDistance > maxReservedDistance) {
+            const scale = maxReservedDistance / Math.max(1, slowDistance + releaseDistance);
+            slowDistance *= scale;
+            releaseDistance *= scale;
+          }
+
+          const preSlowDistance = Math.max(0, totalDistance - slowDistance - releaseDistance);
+          const unitX = (targetX - fromX) / totalDistance;
+          const unitY = (targetY - fromY) / totalDistance;
+          const slowStart = {
+            x: fromX + unitX * preSlowDistance,
+            y: fromY + unitY * preSlowDistance
+          };
+          const releaseStart = {
+            x: targetX - unitX * releaseDistance,
+            y: targetY - unitY * releaseDistance
+          };
+          const safeTotalDuration = Math.max(1, Number(totalDuration) || 1);
+          const preSlowDuration = preSlowDistance > 1
+            ? Math.max(1, safeTotalDuration * (preSlowDistance / totalDistance))
+            : 0;
+          const releaseDuration = releaseDistance > 1
+            ? Math.max(
+                18 * huntSpeedFactor,
+                Math.min(
+                  (chargeLaunch ? 68 : 56) * huntSpeedFactor,
+                  (chargeLaunch ? 12 : 10) * huntSpeedFactor + releaseDistance * (chargeLaunch ? 0.34 : 0.28)
+                )
+              )
+            : 0;
+
+          return {
+            slowStart,
+            releaseStart,
+            preSlowDuration,
+            slowSegmentSceneDuration: Math.max(1, DIVINE_STRIKE_SLOWMO_REAL_MS * DIVINE_STRIKE_SLOWMO_FACTOR),
+            releaseDuration
+          };
+        };
+
+        const moveHeroThroughDivineStrikeSlowMo = async (
+          step,
+          targetX,
+          targetY,
+          totalDuration,
+          {
+            chargeLaunch = false,
+            featureApproach = false
+          } = {}
+        ) => {
+          if (!this.heroSprite || this.heroSprite.destroyed) return;
+
+          const fromX = Number(this.heroSprite.x || targetX);
+          const fromY = Number(this.heroSprite.y || targetY);
+          const plan = buildDivineStrikeApproachPlan(fromX, fromY, targetX, targetY, totalDuration, { chargeLaunch });
+
+          if (!plan) {
+            await this.playHeavenHellDivineStrikeAnticipation?.(
+              step,
+              { x: targetX, y: targetY },
+              {
+                stepQuickStop: false,
+                durationMs: DIVINE_STRIKE_SLOWMO_REAL_MS,
+                slowMoFactor: DIVINE_STRIKE_SLOWMO_FACTOR
+              }
+            );
+            this.heroSprite.setPosition(targetX, targetY);
+            return;
+          }
+
+          if (plan.preSlowDuration > 0) {
+            await moveHeroLinearlyToTarget(
+              plan.slowStart.x,
+              plan.slowStart.y,
+              plan.preSlowDuration,
+              chargeLaunch ? 'Cubic.easeIn' : 'Power2.easeIn',
+              { featureApproach }
+            );
+          }
+
+          const slowApproachPromise = moveHeroLinearlyToTarget(
+            plan.releaseStart.x,
+            plan.releaseStart.y,
+            plan.slowSegmentSceneDuration,
+            chargeLaunch ? 'Cubic.easeIn' : 'Sine.easeInOut'
+          );
+
+          await this.playHeavenHellDivineStrikeAnticipation?.(
+            step,
+            { x: targetX, y: targetY },
+            {
+              stepQuickStop: false,
+              durationMs: DIVINE_STRIKE_SLOWMO_REAL_MS,
+              slowMoFactor: DIVINE_STRIKE_SLOWMO_FACTOR
+            }
+          );
+          await slowApproachPromise;
+
+          if (plan.releaseDuration > 0) {
+            await moveHeroLinearlyToTarget(
+              targetX,
+              targetY,
+              plan.releaseDuration,
+              chargeLaunch ? 'Cubic.easeIn' : 'Power2.easeIn'
+            );
+            return;
+          }
+
+          this.heroSprite.setPosition(targetX, targetY);
+        };
+
         const applySkippedTrailState = (endExclusive) => {
           if (!Number.isFinite(endExclusive) || endExclusive <= 0) return;
           if (is3x3Troll) return;
@@ -1572,11 +1703,16 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
                   // Banana at starting position - remove immediately on contact.
                   // Blood splash at start (temporary particles)
                   if (isHeavenHellBonusHunt && firstHeavenHellBonusEntryAttack) {
+                    const divineXKillWeight = startStep?.divineXProc === true
+                      ? Math.max(1, Number(this.getHeavenHellKillWeightForCell?.(startPos.reel, startPos.row, heavenHellGameState) || 1)) * 2
+                      : null;
                     this.playHeavenHellDemonDeathFx(startPos.reel, startPos.row, {
                       center: { x: startX, y: startY },
                       intensity: 1.65,
                       destroySprite: true,
-                      gameState: heavenHellGameState
+                      gameState: heavenHellGameState,
+                      killWeight: divineXKillWeight,
+                      divineXDoubleKill: startStep?.divineXProc === true
                     });
                   } else {
                     this.createBloodSplash(startX, startY);
@@ -1671,11 +1807,16 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             // Drop orbs if starting position was a banana with orbs
             if (startHasBanana && startOrbs > 0) {
               if (isHeavenHellBonusHunt && firstHeavenHellBonusEntryAttack) {
+                const divineXKillWeight = startStep?.divineXProc === true
+                  ? Math.max(1, Number(this.getHeavenHellKillWeightForCell?.(startPos.reel, startPos.row, heavenHellGameState) || 1)) * 2
+                  : null;
                 this.playHeavenHellDemonDeathFx(startPos.reel, startPos.row, {
                   center: { x: startX, y: startY },
                   intensity: 1.65,
                   destroySprite: true,
-                  gameState: heavenHellGameState
+                  gameState: heavenHellGameState,
+                  killWeight: divineXKillWeight,
+                  divineXDoubleKill: startStep?.divineXProc === true
                 });
               } else {
                 this.createBloodSplash(startX, startY);
@@ -1709,11 +1850,16 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
     
             if (startHasBanana) {
               if (isHeavenHellBonusHunt && firstHeavenHellBonusEntryAttack) {
+                const divineXKillWeight = startStep?.divineXProc === true
+                  ? Math.max(1, Number(this.getHeavenHellKillWeightForCell?.(startPos.reel, startPos.row, heavenHellGameState) || 1)) * 2
+                  : null;
                 this.playHeavenHellDemonDeathFx(startPos.reel, startPos.row, {
                   center: { x: startX, y: startY },
                   intensity: 1.65,
                   destroySprite: true,
-                  gameState: heavenHellGameState
+                  gameState: heavenHellGameState,
+                  killWeight: divineXKillWeight,
+                  divineXDoubleKill: startStep?.divineXProc === true
                 });
               } else {
                 this.createBloodSplash(startX, startY);
@@ -1741,6 +1887,18 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           await this.playHeavenHellDivineChargeWindup(startStep, { stepQuickStop: false });
           startChargeLaunch = true;
           huntMomentum = HUNT_MOMENTUM_MAX;
+        }
+
+        if (startHasBanana && isHeavenHellBonusHunt && startStep?.divineStrikeProc === true) {
+          await this.playHeavenHellDivineStrikeAnticipation?.(
+            startStep,
+            { x: startX, y: startY },
+            {
+              stepQuickStop: false,
+              durationMs: DIVINE_STRIKE_SLOWMO_REAL_MS,
+              slowMoFactor: DIVINE_STRIKE_SLOWMO_FACTOR
+            }
+          );
         }
     
         if (startHasBanana && !is3x3Troll) {
@@ -1782,10 +1940,36 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           }
         }
     
+        let startDivineXImpactPromise = null;
         if (startHasBanana) {
           const startWildPositions = Array.isArray(startStep?.footprintCells) && startStep.footprintCells.length > 0
             ? startStep.footprintCells
             : [{ reel: startPos.reel, row: startPos.row }];
+          applyImpactWinCountUp(startStep);
+          if (isHeavenHellBonusHunt && startStep?.divineXProc === true && startStep?.divineStrikeProc !== true) {
+            startDivineXImpactPromise = this.playHeavenHellDivineXAtStep?.(startStep, heavenHellGameState, {
+              stepQuickStop: false,
+              origin: { x: startX, y: startY },
+              strikeAtTargets: true
+            });
+          }
+          if (isHeavenHellBonusHunt && startChargeLaunch) {
+            await this.playHeavenHellDivineChargeImpact(
+              startStep,
+              heavenHellGameState,
+              { x: startX, y: startY },
+              { waitForLootDrop: startStep?.divineStrikeProc !== true }
+            );
+          }
+          if (isHeavenHellBonusHunt && startStep?.divineStrikeProc === true) {
+            await this.playHeavenHellDivineStrikeAtStep?.(startStep, heavenHellGameState, {
+              stepQuickStop: false,
+              origin: { x: startX, y: startY }
+            });
+          }
+          if (startDivineXImpactPromise) {
+            await startDivineXImpactPromise;
+          }
           await this.resolveBananaImpactClusters(
             { reel: startPos.reel, row: startPos.row },
             resolvedBananaMeterLevel,
@@ -1803,13 +1987,6 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
               ...pendingBananaMeterArrivalPromises,
               ...startBananaMeterArrivalPromises
             ]);
-          }
-          applyImpactWinCountUp(startStep);
-          if (isHeavenHellBonusHunt && startStep?.divineWrathProc === true) {
-            await this.playHeavenHellDivineWrathAtStep(startStep, heavenHellGameState, { stepQuickStop: false });
-          }
-          if (isHeavenHellBonusHunt && startChargeLaunch) {
-            await this.playHeavenHellDivineChargeImpact(startStep, heavenHellGameState, { x: startX, y: startY });
           }
           const startGrowthHandled = startStep?.giantMonkeyActivated === true;
           if (startGrowthHandled) {
@@ -1852,7 +2029,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           for (let i = pathStartIndex + 1; i < heroPath.length; i++) {
           let stepQuickStop = this.consumeQuickStop();
           const step = heroPath[i];
-          if (step?.wrathPreKilled === true) {
+          if (step?.abilityPreKilled === true) {
             continue;
           }
           let stepChargeLaunch = false;
@@ -1888,6 +2065,11 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           const stepHasFeatureActivation = hasFeatureActivationForPathIndex(i);
           const stepSkipsImpactSlowMo = stepWaitsForBananaUpgrade || stepHasFeatureActivation;
           const useFeatureApproachCue = stepHasFeatureActivation && !stepQuickStop;
+          const useDivineStrikeSlowApproach =
+            isBananaStep &&
+            isHeavenHellBonusHunt &&
+            step?.divineStrikeProc === true &&
+            !stepQuickStop;
           const stepBananaMeterArrivalPromises = [];
     
           if (isBananaStep && isHeavenHellBonusHunt && step?.divineChargeProc === true && !stepQuickStop) {
@@ -2162,6 +2344,17 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
               if (stepQuickStop) {
                 this.tweens.killTweensOf(this.heroSprite);
                 this.heroSprite.setPosition(targetX, targetY);
+              } else if (useDivineStrikeSlowApproach) {
+                await moveHeroThroughDivineStrikeSlowMo(
+                  step,
+                  targetX,
+                  targetY,
+                  currentDuration,
+                  {
+                    chargeLaunch: stepChargeLaunch,
+                    featureApproach: useFeatureApproachCue
+                  }
+                );
               } else {
                 await moveHeroLinearlyToTarget(
                   targetX,
@@ -2219,6 +2412,27 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
               if (stepQuickStop) {
                 this.tweens.killTweensOf(this.heroSprite);
                 this.heroSprite.setPosition(targetX, targetY);
+              } else if (useDivineStrikeSlowApproach) {
+                await moveHeroThroughDivineStrikeSlowMo(
+                  step,
+                  targetX,
+                  targetY,
+                  attackAnimDuration,
+                  {
+                    chargeLaunch: stepChargeLaunch,
+                    featureApproach: useFeatureApproachCue
+                  }
+                );
+                if (this.heroSprite && !this.heroSprite.destroyed) {
+                  this.tweens.add({
+                    targets: this.heroSprite,
+                    scaleX: heroBaseScale * 1.3,
+                    scaleY: heroBaseScale * 1.3,
+                    duration: 40,
+                    yoyo: true,
+                    ease: 'Power2.easeOut'
+                  });
+                }
               } else {
                 await moveHeroLinearlyToTarget(
                   targetX,
@@ -2363,6 +2577,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           }
           
           // Blood splatter and banana handling (only if banana step)
+          let stepDivineXImpactPromise = null;
           if (isBananaStep) {
             const isLastBananaBlood = (bananasEncountered + bananaTargets.length) === totalBananas;
     
@@ -2421,10 +2636,29 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
                     this.playHeavenHellAngelStrikeSlash?.(strikeFrom, bananaCellCenter, {
                       scale: rushActive ? 0.9 : 0.72
                     });
+                    if (
+                      !stepDivineXImpactPromise &&
+                      isHeavenHellBonusHunt &&
+                      step?.divineXProc === true &&
+                      step?.divineStrikeProc !== true &&
+                      !stepQuickStop
+                    ) {
+                      stepDivineXImpactPromise = this.playHeavenHellDivineXAtStep?.(step, heavenHellGameState, {
+                        stepQuickStop,
+                        origin: strikeFrom,
+                        strikeAtTargets: true
+                      });
+                    }
+                    const divineXKillWeight = isHeavenHellBonusHunt && step?.divineXProc === true
+                      ? Math.max(1, Number(this.getHeavenHellKillWeightForCell?.(bananaTarget.reel, bananaTarget.row, heavenHellGameState) || 1)) * 2
+                      : null;
                     this.playHeavenHellDemonDeathFx?.(bananaTarget.reel, bananaTarget.row, {
                       center: bananaCellCenter,
                       intensity: rushActive ? 1.18 : 0.92,
-                      destroySprite: true
+                      destroySprite: true,
+                      gameState: heavenHellGameState,
+                      killWeight: divineXKillWeight,
+                      divineXDoubleKill: isHeavenHellBonusHunt && step?.divineXProc === true
                     });
                   } else {
                     this.createBloodSplatter(bananaCellCenter.x, bananaCellCenter.y);
@@ -2444,9 +2678,37 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
                   }
                 }
               }
+            });
     
+            if (isHeavenHellBonusHunt && stepChargeLaunch) {
+              await this.playHeavenHellDivineChargeImpact(
+                step,
+                heavenHellGameState,
+                { x: targetX, y: targetY },
+                { waitForLootDrop: step?.divineStrikeProc !== true }
+              );
+            }
+            if (isHeavenHellBonusHunt && step?.divineStrikeProc === true) {
+              await this.playHeavenHellDivineStrikeAtStep?.(step, heavenHellGameState, {
+                stepQuickStop,
+                origin: { x: targetX, y: targetY }
+              });
+            }
+            if (stepDivineXImpactPromise) {
+              await stepDivineXImpactPromise;
+            }
+
+            bananaTargets.forEach((bananaTarget) => {
+              const bananaSprite = resolveBananaSpriteAtCell(bananaTarget.reel, bananaTarget.row);
+              const multiplierDemonId = Number(clientConfig?.symbolsMapping?.zombie2 || 12);
+              const targetSymbolId = Number(
+                bananaTarget?.bananaId ??
+                bananaSprite?.symbolKey ??
+                this.reelSprites?.[bananaTarget.reel]?.[bananaTarget.row]?.symbolKey
+              );
+              const bananaCellCenter = getCellCenter(bananaTarget.reel, bananaTarget.row);
               const configuredOrbs = Math.max(0, Number(bananaTarget?.orbs || 0));
-              const guaranteedMultiplierOrb = targetSymbolId === multiplierDemonId ? 1 : 0;
+              const guaranteedMultiplierOrb = isHeavenHellBonusHunt ? 0 : (targetSymbolId === multiplierDemonId ? 1 : 0);
               const totalOrbsToSpawn = Math.max(configuredOrbs, guaranteedMultiplierOrb);
               if (totalOrbsToSpawn > 0 && !is3x3Troll) {
                 this.dropEnergyOrbs(
@@ -2460,16 +2722,9 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
                 );
               }
             });
-    
+
             if (step.goldpile && step.goldpile.value > 0 && !is3x3Troll) {
               this.dropGoldPile(targetX, targetY, step.goldpile.value, step.goldpile.tier);
-            }
-    
-            if (isHeavenHellBonusHunt && step?.divineWrathProc === true) {
-              await this.playHeavenHellDivineWrathAtStep(step, heavenHellGameState, { stepQuickStop });
-            }
-            if (isHeavenHellBonusHunt && stepChargeLaunch) {
-              await this.playHeavenHellDivineChargeImpact(step, heavenHellGameState, { x: targetX, y: targetY });
             }
             
             // Bonus hunt keeps ordinary banana hits fluid; upgrade hits still wait for the banana meter arrival.

@@ -10,6 +10,7 @@ Owns presentation timing and sound behavior.
 - music lifecycle: main theme / bonus theme
 - sound-volume debug tool
 - pause / slow-mo helpers
+- `_recalcScales(...)` for combining baseline, slow-mo, and soft-pause timescales
 
 ## Called From
 

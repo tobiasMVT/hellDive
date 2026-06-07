@@ -234,18 +234,23 @@
                 "killsTotal": 0,
                 "nextAbilityKillThreshold": 30,
                 "killsTowardsUnlock": 0,
-                "portalLevel": 0,
+                "portalBonus": false,
                 "abilities": {
-                    "portal": 0,
-                    "divineWrath": 0,
+                    "divineX": 0,
+                    "divineStrike": 0,
                     "divineCharge": 0
                 },
                 "freerespinChain": 0,
+                "pendingChests": [],
+                "nextChestId": 1,
+                "chestsRewarded": 0,
+                "chestRewardResumeAction": null,
                 "lootGround": [],
                 "abilityProcsThisAction": [],
                 "rippleInjectionsThisAction": [],
                 "bossEventsThisAction": [],
                 "chestEventsThisAction": [],
+                "chestActionSummary": null,
                 "killsThisAction": 0,
                 "demonWaveThisAction": null
             }
@@ -932,18 +937,19 @@
     "heavenHell": {
         "enabled": true,
         "main": {
-            "portalTriggerChancePerKill": 0.01,
-            "portalTriggerChancePerHuntAction": 0.01
+            "portalTriggerChancePerKill": 1,
+            "portalTriggerChancePerHuntAction": 0
         },
         "bonus": {
             "entryFreespins": 5,
+            "portalBonusChanceOnEntry": 0.0,
             "maxFreespinsCap": 0,
             "maxBonusActionsPerRound": 0,
             "spawnDampeningAfterFreerespins": 3,
             "spawnDampeningFactorPerStep": 0.75,
             "maxFreerespinDampeningSteps": 0,
             "spawnChanceByStage": {
-                "freespin": 0.03,
+                "freespin": 0.10,
                 "1": 0.02,
                 "2": 0.013,
                 "3": 0.009,
@@ -957,65 +963,59 @@
                 "maxNoSpawnChance": 0.98,
                 "forceNoSpawnAtChain": 12
             },
-            "baseSpawnChancePerSlot": 0.03,
+            "baseSpawnChancePerSlot": 0.06,
             "respinSpawnDecayPerChain": 0.15,
-            "portalSpawnByLevel": {
-                "0": {
-                    "extraSpawnChancePerSlot": 0,
-                    "guaranteedNormalDemons": 0,
-                    "guaranteedMultiplierDemons": 0,
-                    "multiplierGainPerKill": 1
-                },
-                "1": {
-                    "extraSpawnChancePerSlot": 0.02,
-                    "guaranteedNormalMinDemons": 1,
-                    "guaranteedNormalMaxDemons": 2,
-                    "guaranteedNormalDemons": 1,
-                    "guaranteedMultiplierDemons": 1,
-                    "multiplierGainPerKill": 1
-                },
-                "2": {
-                    "extraSpawnChancePerSlot": 0.04,
-                    "guaranteedNormalMinDemons": 2,
-                    "guaranteedNormalMaxDemons": 4,
-                    "guaranteedNormalDemons": 2,
-                    "guaranteedMultiplierDemons": 2,
-                    "multiplierGainPerKill": 2
-                }
+            "portalBonusSpawn": {
+                "extraSpawnChancePerSlot": 0.04,
+                "guaranteedNormalMinDemons": 2,
+                "guaranteedNormalMaxDemons": 4,
+                "guaranteedNormalDemons": 2,
+                "guaranteedMultiplierDemons": 2,
+                "multiplierGainPerKill": 2
             },
             "abilityUnlock": {
-                "killsPerUnlock": 30,
+                "killsPerUnlock": 20,
                 "freespinsAwardedPerUnlock": 2,
                 "entryUnlockPool": [
-                    "portal",
-                    "divineWrath",
+                    "divineX",
+                    "divineStrike",
                     "divineCharge"
                 ]
             },
             "abilityProc": {
-                "divineWrath": {
+                "divineStrike": {
                     "1": {
-                        "chance": 0.2,
+                        "chance": 0.93,
                         "radius": 1
                     },
                     "2": {
-                        "chance": 0.4,
-                        "radius": 2
+                        "chance": 0.94,
+                        "radius": 3
+                    }
+                },
+                "divineX": {
+                    "1": {
+                        "chance": 0.93,
+                        "distance": 2
+                    },
+                    "2": {
+                        "chance": 0.94,
+                        "distance": 4
                     }
                 },
                 "divineCharge": {
                     "1": {
-                        "chance": 0.2,
+                        "chance": 0.92,
                         "lootMultiplier": 5
                     },
                     "2": {
-                        "chance": 0.2,
+                        "chance": 0.93,
                         "lootMultiplier": 10
                     }
                 }
             },
             "loot": {
-                "baseDropChance": 0.3,
+                "baseDropChance": 0,
                 "multiplierDemonSpawnChance": 0.1,
                 "symbolLootTables": {
                     "11": "normal_demon",
@@ -1033,33 +1033,33 @@
                             "weight": 28
                         },
                         {
-                            "value": 0.5,
+                            "value": 0.3,
                             "weight": 20
                         },
                         {
-                            "value": 1,
+                            "value": 0.4,
                             "weight": 12
                         },
                         {
-                            "value": 5,
+                            "value": 0.5,
                             "weight": 5
                         }
                     ],
                     "multiplier_demon": [
                         {
+                            "value": 0.1,
+                            "weight": 30
+                        },
+                        {
                             "value": 0.2,
                             "weight": 30
                         },
                         {
-                            "value": 0.5,
-                            "weight": 30
-                        },
-                        {
-                            "value": 1,
+                            "value": 0.3,
                             "weight": 24
                         },
                         {
-                            "value": 5,
+                            "value": 0.5,
                             "weight": 16
                         }
                     ],
@@ -1100,6 +1100,179 @@
                         "weight": 5
                     }
                 ]
+            },
+            "chests": {
+                "initialReelCount": 1,
+                "maxReels": 6,
+                "dropChance": {
+                    "normal": 0.02,
+                    "multiplier": 0.08,
+                    "boss": 1.0
+                },
+                "respinChanceByReelCount": {
+                    "1": 0.5,
+                    "2": 0.4,
+                    "3": 0.3,
+                    "4": 0.2,
+                    "5": 0.1,
+                    "6": 0.05
+                }
+            },
+            "chestTypes": {
+                "wooden": {
+                    "dropWeight": 70,
+                    "presentation": {
+                        "tierLabel": "Wooden",
+                        "glowColor": "#D6A15D",
+                        "glowAlpha": 0.24,
+                        "glowScale": 1.1,
+                        "tint": "#F4D08D"
+                    },
+                    "symbolWeights": {
+                        "coin": 48,
+                        "diamond": 10,
+                        "freeSpin": 10,
+                        "multiplier": 5,
+                        "divineStrike": 7,
+                        "divineX": 6,
+                        "divineCharge": 5,
+                        "respin": 9,
+                        "respinReel": 4
+                    },
+                    "rewardTable": {
+                        "coin": [
+                            { "value": 0.1, "weight": 36 },
+                            { "value": 0.2, "weight": 34 },
+                            { "value": 0.3, "weight": 20 },
+                            { "value": 0.5, "weight": 10 }
+                        ],
+                        "diamond": [
+                            { "value": 0.5, "weight": 60 },
+                            { "value": 1, "weight": 40 }
+                        ],
+                        "freeSpin": [
+                            { "value": 1, "weight": 100 }
+                        ],
+                        "multiplier": [
+                            { "value": 1, "weight": 100 }
+                        ],
+                        "divineStrike": [
+                            { "value": 1, "weight": 100 }
+                        ],
+                        "divineX": [
+                            { "value": 1, "weight": 100 }
+                        ],
+                        "divineCharge": [
+                            { "value": 1, "weight": 100 }
+                        ]
+                    }
+                },
+                "gold": {
+                    "dropWeight": 22,
+                    "presentation": {
+                        "tierLabel": "Gold",
+                        "glowColor": "#FFE27A",
+                        "glowAlpha": 0.32,
+                        "glowScale": 1.22,
+                        "tint": "#FFF0B8"
+                    },
+                    "symbolWeights": {
+                        "coin": 34,
+                        "diamond": 18,
+                        "freeSpin": 13,
+                        "multiplier": 8,
+                        "divineStrike": 11,
+                        "divineX": 8,
+                        "divineCharge": 8,
+                        "respin": 5,
+                        "respinReel": 7
+                    },
+                    "rewardTable": {
+                        "coin": [
+                            { "value": 0.2, "weight": 35 },
+                            { "value": 0.3, "weight": 35 },
+                            { "value": 0.5, "weight": 20 },
+                            { "value": 1, "weight": 10 }
+                        ],
+                        "diamond": [
+                            { "value": 1, "weight": 60 },
+                            { "value": 5, "weight": 40 }
+                        ],
+                        "freeSpin": [
+                            { "value": 1, "weight": 74 },
+                            { "value": 2, "weight": 26 }
+                        ],
+                        "multiplier": [
+                            { "value": 1, "weight": 76 },
+                            { "value": 2, "weight": 24 }
+                        ],
+                        "divineStrike": [
+                            { "value": 1, "weight": 80 },
+                            { "value": 2, "weight": 20 }
+                        ],
+                        "divineX": [
+                            { "value": 1, "weight": 80 },
+                            { "value": 2, "weight": 20 }
+                        ],
+                        "divineCharge": [
+                            { "value": 1, "weight": 80 },
+                            { "value": 2, "weight": 20 }
+                        ]
+                    }
+                },
+                "divine": {
+                    "dropWeight": 8,
+                    "presentation": {
+                        "tierLabel": "Divine",
+                        "glowColor": "#7ED9FF",
+                        "glowAlpha": 0.42,
+                        "glowScale": 1.34,
+                        "tint": "#E6FBFF"
+                    },
+                    "symbolWeights": {
+                        "coin": 24,
+                        "diamond": 24,
+                        "freeSpin": 15,
+                        "multiplier": 10,
+                        "divineStrike": 12,
+                        "divineX": 10,
+                        "divineCharge": 10,
+                        "respin": 2,
+                        "respinReel": 11
+                    },
+                    "rewardTable": {
+                        "coin": [
+                            { "value": 0.5, "weight": 50 },
+                            { "value": 1, "weight": 35 },
+                            { "value": 5, "weight": 15 }
+                        ],
+                        "diamond": [
+                            { "value": 1, "weight": 44 },
+                            { "value": 5, "weight": 40 },
+                            { "value": 10, "weight": 16 }
+                        ],
+                        "freeSpin": [
+                            { "value": 2, "weight": 70 },
+                            { "value": 3, "weight": 30 }
+                        ],
+                        "multiplier": [
+                            { "value": 2, "weight": 72 },
+                            { "value": 3, "weight": 28 }
+                        ],
+                        "divineStrike": [
+                            { "value": 1, "weight": 55 },
+                            { "value": 2, "weight": 45 }
+                        ],
+                        "divineX": [
+                            { "value": 1, "weight": 55 },
+                            { "value": 2, "weight": 45 }
+                        ],
+                        "divineCharge": [
+                            { "value": 1, "weight": 55 },
+                            { "value": 2, "weight": 45 }
+                        ]
+                    }
+                }
             },
             "boss": {
                 "spawnChanceByAction": {

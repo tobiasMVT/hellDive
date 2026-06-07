@@ -208,6 +208,7 @@ export function createGameSceneBonusCollectionMethods(deps = {}) {
       },
 
     cleanupMultiplierEffects() {
+        this.destroyCollectPhaseLootCounter();
           if (this.multiplierText && !this.multiplierText.destroyed) {
             this.multiplierText.destroy();
             this.multiplierText = null;
@@ -234,6 +235,173 @@ export function createGameSceneBonusCollectionMethods(deps = {}) {
           this.multiplierGlintTimer.destroy();
           this.multiplierGlintTimer = null;
         }
+      },
+
+    getCollectPhaseLootCounterTarget() {
+        const center = this.getCenterCollectTarget();
+        return {
+          x: center.x,
+          y: center.y - 58
+        };
+      },
+
+    ensureCollectPhaseLootCounter(startValueTwa = 0) {
+        const target = this.getCollectPhaseLootCounterTarget();
+        const initialValue = Math.max(0, Number(startValueTwa) || 0);
+        let counter = this.collectPhaseLootCounter;
+
+        if (counter?.valueText?.destroyed || counter?.labelText?.destroyed) {
+          this.destroyCollectPhaseLootCounter();
+          counter = null;
+        }
+
+        if (!counter) {
+          const labelText = this.add.text(target.x, target.y - 30, "TOTALWIN", {
+            fontSize: "24px",
+            fontFamily: '"Cinzel", "Trajan Pro", "Times New Roman", serif',
+            fontStyle: "bold",
+            color: "#FFE8A3",
+            stroke: "#260D00",
+            strokeThickness: 5
+          })
+            .setOrigin(0.5)
+            .setDepth(104)
+            .setAlpha(0.95);
+
+          const glow = this.add.circle(target.x, target.y + 6, 44, 0xFFD36B, 0.12)
+            .setDepth(103)
+            .setBlendMode(Phaser.BlendModes.ADD);
+
+          const valueText = this.add.text(target.x, target.y + 6, this.formatBonusEndBoardValue(initialValue), {
+            fontSize: "34px",
+            fontFamily: '"Cinzel", "Trajan Pro", "Times New Roman", serif',
+            fontStyle: "bold",
+            color: "#FFF4C4",
+            stroke: "#7A3C00",
+            strokeThickness: 6,
+            shadow: {
+              offsetX: 0,
+              offsetY: 0,
+              color: "#FFB347",
+              blur: 10,
+              fill: true
+            }
+          })
+            .setOrigin(0.5)
+            .setDepth(105);
+
+          counter = {
+            glow,
+            labelText,
+            valueText,
+            displayedValue: initialValue,
+            targetValue: initialValue,
+            tween: null
+          };
+          this.collectPhaseLootCounter = counter;
+
+          this.tweens.add({
+            targets: glow,
+            scale: 1.16,
+            alpha: 0.2,
+            duration: 820,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.easeInOut"
+          });
+        } else {
+          counter.labelText.setPosition(target.x, target.y - 18).setVisible(true);
+          counter.glow.setPosition(target.x, target.y + 6).setVisible(true);
+          counter.valueText.setPosition(target.x, target.y + 6).setVisible(true);
+          counter.displayedValue = initialValue;
+          counter.targetValue = initialValue;
+          counter.valueText.setText(this.formatBonusEndBoardValue(initialValue));
+        }
+
+        return counter;
+      },
+
+    updateCollectPhaseLootCounter(valueTwa = 0, { animate = false } = {}) {
+        const counter = this.ensureCollectPhaseLootCounter(valueTwa);
+        if (!counter) return;
+
+        const nextValue = Math.max(0, Number(valueTwa) || 0);
+        const applyValue = (rawValue) => {
+          const resolvedValue = Math.max(0, Number(rawValue) || 0);
+          counter.displayedValue = resolvedValue;
+          if (counter.valueText && !counter.valueText.destroyed) {
+            counter.valueText.setText(this.formatBonusEndBoardValue(resolvedValue));
+          }
+        };
+
+        if (counter.tween) {
+          counter.tween.stop();
+          counter.tween = null;
+        }
+        this.tweens.killTweensOf(counter.valueText);
+        this.tweens.killTweensOf(counter.labelText);
+        this.tweens.killTweensOf(counter.glow);
+
+        counter.targetValue = nextValue;
+
+        if (!animate || Math.abs(nextValue - counter.displayedValue) < 0.0001) {
+          applyValue(nextValue);
+          return;
+        }
+
+        const tweenState = { value: counter.displayedValue };
+        counter.tween = this.tweens.add({
+          targets: tweenState,
+          value: nextValue,
+          duration: 170,
+          ease: "Cubic.easeOut",
+          onUpdate: () => applyValue(tweenState.value),
+          onComplete: () => {
+            applyValue(nextValue);
+            counter.tween = null;
+          }
+        });
+
+        this.tweens.add({
+          targets: counter.valueText,
+          scaleX: 1.12,
+          scaleY: 1.12,
+          duration: 90,
+          yoyo: true,
+          ease: "Sine.easeOut"
+        });
+        this.tweens.add({
+          targets: counter.labelText,
+          alpha: 1,
+          duration: 90,
+          yoyo: true,
+          ease: "Sine.easeOut"
+        });
+        this.tweens.add({
+          targets: counter.glow,
+          alpha: 0.28,
+          scale: 1.3,
+          duration: 120,
+          yoyo: true,
+          ease: "Sine.easeOut"
+        });
+      },
+
+    destroyCollectPhaseLootCounter() {
+        const counter = this.collectPhaseLootCounter;
+        if (!counter) return;
+
+        if (counter.tween) {
+          counter.tween.stop();
+        }
+        ["glow", "labelText", "valueText"].forEach((key) => {
+          const node = counter[key];
+          if (node && !node.destroyed) {
+            this.tweens.killTweensOf(node);
+            node.destroy();
+          }
+        });
+        this.collectPhaseLootCounter = null;
       },
 
     getCollectableBonusSymbolId(rawSymbol) {

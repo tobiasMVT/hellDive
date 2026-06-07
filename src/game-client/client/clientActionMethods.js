@@ -468,6 +468,7 @@ export function createClientActionMethods(deps = {}) {
       if (this.isHeavenHellEnabled(gameState)) {
         this.scene.syncSpritesToReelState?.(gameState?.reels || {});
         this.scene.hideNonHeavenHellBonusSymbols?.(gameState);
+        this.scene.createOrUpdateHouse?.(gameState?.multiplier || 1);
         this.scene.renderHeavenHellLootGround?.(gameState?.heavenHell?.bonus?.lootGround || []);
         this.scene.updateHeavenHellAbilityText?.(gameState, { allowRewardFx: true });
       }
@@ -478,8 +479,28 @@ export function createClientActionMethods(deps = {}) {
       }
     },
 
-    handleChestRewardAction() {
-      // Chest rewards are disabled for Thunderkong.
+    async handleChestRewardAction(gameState) {
+      if (!this.isHeavenHellEnabled(gameState)) {
+        return;
+      }
+
+      this.scene.setCurrentAction?.("chestreward");
+      this.scene.startBonusTheme?.();
+
+      await this.scene.playHeavenHellChestRewardSequence?.(gameState);
+
+      const playedCollectPhase = await this.playHeavenHellCollectPhaseIfNeeded(gameState);
+      this.scene.renderHeavenHellLootGround?.(gameState?.heavenHell?.bonus?.lootGround || []);
+      this.scene.updateHeavenHellAbilityText?.(gameState, { allowRewardFx: false });
+
+      if (!playedCollectPhase) {
+        this.scene.updateCountUp(gameState.twa || 0);
+      }
+
+      if (gameState.nextAction === "spin") {
+        this.scene.resetLightningCount?.();
+        this.scene.stopBonusTheme?.();
+      }
     },
 
     async playFreespinSmashSymbolClear(gameState = {}) {

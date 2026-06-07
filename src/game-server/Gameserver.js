@@ -2,6 +2,7 @@ import serverConfig from "./server_config.json" with { type: "json" };
 import { createGameServerMainActionMethods } from "./game-server/gameServerMainActionMethods";
 import { createGameServerBonusActionMethods } from "./game-server/gameServerBonusActionMethods";
 import { createGameServerFlowMethods } from "./game-server/gameServerFlowMethods";
+import { generateChest, resolveChestSequence } from "./lib/chestSystem.js";
 
 const originalConfig = JSON.parse(JSON.stringify(serverConfig))
 const MAX_ACTIONS_PER_ROUND = 10000;
@@ -3412,6 +3413,26 @@ export class GameServer {
     return entryFreespins;
   }
 
+  syncHeavenHellPortalBonusFlag(gameState) {
+    if (!gameState || typeof gameState !== "object") return false;
+    if (!gameState.bonusWon || typeof gameState.bonusWon !== "object") {
+      gameState.bonusWon = { won: true, enterBonusWith: {} };
+    }
+    if (!gameState.bonusWon.enterBonusWith || typeof gameState.bonusWon.enterBonusWith !== "object") {
+      gameState.bonusWon.enterBonusWith = {};
+    }
+
+    const existingFlag = gameState.bonusWon.enterBonusWith.portalBonus;
+    if (typeof existingFlag === "boolean") {
+      return existingFlag;
+    }
+
+    const chanceOnEntry = Number(this.getHeavenHellConfig()?.bonus?.portalBonusChanceOnEntry ?? 0.25);
+    const shouldGrantPortalBonus = this.rollChance(chanceOnEntry);
+    gameState.bonusWon.enterBonusWith.portalBonus = shouldGrantPortalBonus;
+    return shouldGrantPortalBonus;
+  }
+
   getBonusStageSuspenseChanceMultiplier(rawBananasAway = null, remainingFreespins = null) {
     const throttle = serverConfig.freespinConfig?.chestProximityThrottle;
     if (!throttle?.enabled) {
@@ -3456,27 +3477,8 @@ export class GameServer {
   }
 
   shouldTriggerBonusFromBananaMeter(gameState) {
-    if (this.isHeavenHellEnabled()) return false;
     if (!gameState || gameState.isBonus) return false;
     if (gameState.bonusTriggered) return true;
-    if (this.isHeavenHellEnabled()) {
-      gameState.bonusStage = 0;
-      gameState.heroFootprintSize = 1;
-      gameState.giantMonkeyActive = false;
-      gameState.rushActive = false;
-      gameState.bonusStageEvent = null;
-      if (gameState.heroPosition) {
-        gameState.heroPosition = this.normalizeHeroAnchorForSize(gameState.heroPosition, 1);
-      }
-      return {
-        previousStage: 0,
-        stage: 0,
-        freespinsAwarded: 0,
-        rushActive: false,
-        giantMonkeyActive: false,
-        heroFootprintSize: 1
-      };
-    }
 
     const meter = this.normalizeBananaMeter(gameState);
     return meter.count >= BANANA_BONUS_TRIGGER_COUNT;
@@ -8849,7 +8851,8 @@ export class GameServer {
           from: current.necromancer,
           to: current.necromancer
         },
-        freespins: BONUS_BASE_ENTRY_FREESPINS
+        freespins: BONUS_BASE_ENTRY_FREESPINS,
+        portalBonus: false
       }
     };
   }
@@ -8918,6 +8921,146 @@ export class GameServer {
     return Array.isArray(config?.values) ? config.values : [];
   }
 
+  getHeavenHellChestConfig() {
+    return this.getHeavenHellConfig()?.bonus?.chests || {};
+  }
+
+  getHeavenHellChestTypes() {
+    return this.getHeavenHellConfig()?.bonus?.chestTypes || {};
+  }
+
+  syncHeavenHellChestCounters(gameState) {
+    if (!gameState) return;
+    const bonusState = gameState?.heavenHell?.bonus;
+    if (!bonusState) return;
+    const pendingChests = Array.isArray(bonusState.pendingChests) ? bonusState.pendingChests : [];
+    const rewardedCount = Math.max(0, Math.floor(Number(bonusState.chestsRewarded || 0) || 0));
+    bonusState.pendingChests = pendingChests;
+    bonusState.chestsRewarded = rewardedCount;
+    if (gameState.bonusState && typeof gameState.bonusState === "object") {
+      gameState.bonusState.chestsPending = pendingChests.length;
+      gameState.bonusState.chestsRewarded = rewardedCount;
+    }
+  }
+
+  resolveHeavenHellChestDrops(gameState, killEntries = []) {
+    if (!gameState || !Array.isArray(killEntries) || killEntries.length === 0) {
+      return [];
+    }
+
+    const heavenHell = this.ensureHeavenHellState(gameState);
+    const bonusState = heavenHell?.bonus;
+    if (!bonusState) return [];
+
+    const chestConfig = this.getHeavenHellChestConfig();
+    const chestTypes = this.getHeavenHellChestTypes();
+    const createdChests = [];
+
+    killEntries.forEach((entry) => {
+      const nextChestId = Math.max(1, Math.floor(Number(bonusState.nextChestId || 1) || 1));
+      const chest = generateChest({
+        chestConfig,
+        chestTypes,
+        source: entry?.isBoss ? "boss" : (entry?.isMultiplierDemon ? "multiplier" : "normal"),
+        reel: entry?.reel,
+        row: entry?.row,
+        symbol: entry?.symbol,
+        isBoss: entry?.isBoss === true,
+        isMultiplierDemon: entry?.isMultiplierDemon === true,
+        pendingId: nextChestId
+      });
+      if (!chest) return;
+      bonusState.nextChestId = nextChestId + 1;
+      bonusState.pendingChests.push(chest);
+      createdChests.push(chest);
+    });
+
+    this.syncHeavenHellChestCounters(gameState);
+    return createdChests;
+  }
+
+  collectHeavenHellStepAttackKillKeys(step = {}) {
+    const keys = new Set();
+    const addKey = (reel, row) => {
+      const normalizedReel = Math.floor(Number(reel));
+      const normalizedRow = Math.floor(Number(row));
+      if (!Number.isFinite(normalizedReel) || !Number.isFinite(normalizedRow)) return;
+      keys.add(`${normalizedReel},${normalizedRow}`);
+    };
+    const bananaTargets =
+      Array.isArray(step?.eatenBananas) && step.eatenBananas.length > 0
+        ? step.eatenBananas
+        : (step?.banana === true ? [{ reel: step?.reel, row: step?.row }] : []);
+    bananaTargets.forEach((banana) => addKey(banana?.reel, banana?.row));
+    (Array.isArray(step?.divineStrikeTargets) ? step.divineStrikeTargets : []).forEach((target) => {
+      (Array.isArray(target?.hitCells) ? target.hitCells : []).forEach((cell) => {
+        if (cell?.killed === true) addKey(cell?.reel, cell?.row);
+      });
+    });
+    (Array.isArray(step?.divineXTargets) ? step.divineXTargets : []).forEach((target) => {
+      if (target?.killed === true) addKey(target?.reel, target?.row);
+    });
+    return keys;
+  }
+
+  applyHeavenHellChargeLootFromPath(heroPath = [], killEntries = []) {
+    if (!Array.isArray(heroPath) || !Array.isArray(killEntries)) return;
+    heroPath.forEach((step) => {
+      if (step?.divineChargeProc !== true) return;
+      const chargeLootMultiplier = Math.max(
+        1,
+        Math.floor(Number(step?.divineChargeLootMultiplier ?? 1) || 1)
+      );
+      this.collectHeavenHellStepAttackKillKeys(step).forEach((key) => {
+        const [reel, row] = key.split(",").map((value) => Math.floor(Number(value)));
+        const entry = killEntries.find((candidate) => (
+          Number(candidate?.reel) === reel && Number(candidate?.row) === row
+        ));
+        if (!entry) return;
+        entry.guaranteedLoot = true;
+        entry.lootMultiplier = Math.max(
+          1,
+          Math.floor(Number(entry?.lootMultiplier ?? 1) || 1),
+          chargeLootMultiplier
+        );
+      });
+    });
+  }
+
+  applyHeavenHellDivineXKillCreditFromPath(heroPath = [], killEntries = []) {
+    if (!Array.isArray(heroPath) || !Array.isArray(killEntries)) return;
+    heroPath.forEach((step) => {
+      if (step?.divineXProc !== true) return;
+      this.collectHeavenHellStepAttackKillKeys(step).forEach((key) => {
+        const [reel, row] = key.split(",").map((value) => Math.floor(Number(value)));
+        const entry = killEntries.find((candidate) => (
+          Number(candidate?.reel) === reel && Number(candidate?.row) === row
+        ));
+        if (!entry) return;
+        entry.divineXDoubleKill = true;
+      });
+    });
+  }
+
+  normalizeHeavenHellKillEntryCredit(entry = {}, { weightedBossKills = 1 } = {}) {
+    // Each demon counts once per attack. Divine X is ×2 max — never stacks impact + X into ×4.
+    const killCountMultiplier = entry?.divineXDoubleKill === true ? 2 : 1;
+    entry.killCountMultiplier = killCountMultiplier;
+    entry.weightedKills = (entry?.isBoss === true ? weightedBossKills : 1) * killCountMultiplier;
+    return entry;
+  }
+
+  dedupeHeavenHellKillEntries(killEntries = []) {
+    if (!Array.isArray(killEntries)) return [];
+    const seenKeys = new Set();
+    return killEntries.filter((entry) => {
+      const key = `${Number(entry?.reel)},${Number(entry?.row)}`;
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    });
+  }
+
   getHeavenHellLootScatterOffsets(entry = {}, pieceIndex = 0, pieceCount = 1) {
     const normalizedCount = Math.max(1, Math.floor(Number(pieceCount) || 1));
     const chargeMultiplier = Math.max(1, Math.floor(Number(entry?.lootMultiplier ?? 1) || 1));
@@ -8971,17 +9114,17 @@ export class GameServer {
       0,
       Math.floor(Number(bonusState.killsTowardsUnlock) || (bonusState.killsTotal % killsPerUnlock))
     );
-    bonusState.portalLevel = Math.max(0, Math.min(2, Math.floor(Number(bonusState.portalLevel) || 0)));
+    bonusState.portalBonus = bonusState.portalBonus === true;
     if (!bonusState.abilities || typeof bonusState.abilities !== "object") {
       bonusState.abilities = {};
     }
-    bonusState.abilities.portal = Math.max(
+    bonusState.abilities.divineX = Math.max(
       0,
-      Math.min(2, Math.floor(Number(bonusState.abilities.portal || 0)))
+      Math.min(2, Math.floor(Number(bonusState.abilities.divineX || 0)))
     );
-    bonusState.abilities.divineWrath = Math.max(
+    bonusState.abilities.divineStrike = Math.max(
       0,
-      Math.min(2, Math.floor(Number(bonusState.abilities.divineWrath || 0)))
+      Math.min(2, Math.floor(Number(bonusState.abilities.divineStrike || 0)))
     );
     bonusState.abilities.divineCharge = Math.max(
       0,
@@ -8990,13 +9133,21 @@ export class GameServer {
     bonusState.freerespinChain = Math.max(0, Math.floor(Number(bonusState.freerespinChain) || 0));
     bonusState.actionCount = Math.max(0, Math.floor(Number(bonusState.actionCount) || 0));
     bonusState.lootGround = Array.isArray(bonusState.lootGround) ? bonusState.lootGround : [];
+    bonusState.pendingChests = Array.isArray(bonusState.pendingChests) ? bonusState.pendingChests : [];
+    bonusState.nextChestId = Math.max(1, Math.floor(Number(bonusState.nextChestId || 1) || 1));
+    bonusState.chestsRewarded = Math.max(0, Math.floor(Number(bonusState.chestsRewarded || 0) || 0));
+    bonusState.chestRewardResumeAction = typeof bonusState.chestRewardResumeAction === "string"
+      ? bonusState.chestRewardResumeAction
+      : null;
     bonusState.abilityProcsThisAction = [];
     bonusState.rippleInjectionsThisAction = [];
     bonusState.demonWaveThisAction = null;
     bonusState.bossEventsThisAction = [];
     bonusState.chestEventsThisAction = [];
+    bonusState.chestActionSummary = null;
     bonusState.killsThisAction = 0;
     bonusState.killMeterSettledThisAction = false;
+    this.syncHeavenHellChestCounters(gameState);
     return gameState.heavenHell;
   }
 
@@ -9061,7 +9212,7 @@ export class GameServer {
     const bonus = heavenHell.bonus;
     const unlockPool = Array.isArray(this.getHeavenHellConfig()?.bonus?.abilityUnlock?.entryUnlockPool)
       ? this.getHeavenHellConfig().bonus.abilityUnlock.entryUnlockPool
-      : ["portal", "divineWrath", "divineCharge"];
+      : ["divineX", "divineStrike", "divineCharge"];
 
     const candidates = unlockPool.filter((ability) => {
       const current = Math.max(0, Math.floor(Number(bonus.abilities?.[ability] || 0)));
@@ -9070,9 +9221,6 @@ export class GameServer {
     if (candidates.length === 0) return null;
     const picked = candidates[Math.floor(Math.random() * candidates.length)];
     bonus.abilities[picked] = Math.max(1, Math.min(2, Math.floor(Number(bonus.abilities[picked] || 0) + 1)));
-    if (picked === "portal") {
-      bonus.portalLevel = bonus.abilities.portal;
-    }
     return {
       ability: picked,
       level: bonus.abilities[picked],
@@ -9092,8 +9240,8 @@ export class GameServer {
     const chain = Math.max(0, Math.floor(Number(bonusState?.freerespinChain || 0)));
     const isFirstBonusAction = Math.max(0, Math.floor(Number(bonusState?.actionCount || 0))) <= 1;
 
-    const portalLevel = Math.max(0, Math.min(2, Math.floor(Number(bonusState?.portalLevel || 0))));
-    const portalSpawn = bonusConfig?.portalSpawnByLevel?.[String(portalLevel)] || bonusConfig?.portalSpawnByLevel?.["0"] || {};
+    const hasPortalBonus = bonusState?.portalBonus === true;
+    const portalSpawn = hasPortalBonus ? (bonusConfig?.portalBonusSpawn || {}) : {};
 
     // HellDive bonus spawning is intentionally decided at the spin-event level.
     // This keeps all board positions available, but avoids weak 1-demon spins:
@@ -9200,19 +9348,11 @@ export class GameServer {
       }
     }
 
-    const defaultPortalGuaranteesByLevel = {
-      0: { normalMin: 0, normalMax: 0, multiplier: 0 },
-      1: { normalMin: 1, normalMax: 2, multiplier: 1 },
-      2: { normalMin: 2, normalMax: 4, multiplier: 2 }
-    };
     const portalGuaranteeActions = Array.isArray(demonWaveConfig?.portalGuaranteeActions)
       ? demonWaveConfig.portalGuaranteeActions
       : ["freespin"];
-    const portalGuaranteesEnabledForAction = portalLevel > 0 && portalGuaranteeActions.includes(actionWaveKey);
+    const portalGuaranteesEnabledForAction = hasPortalBonus && portalGuaranteeActions.includes(actionWaveKey);
     const activePortalSpawn = portalGuaranteesEnabledForAction ? portalSpawn : {};
-    const fallbackGuarantees = portalGuaranteesEnabledForAction
-      ? (defaultPortalGuaranteesByLevel[portalLevel] || defaultPortalGuaranteesByLevel[0])
-      : defaultPortalGuaranteesByLevel[0];
     const configuredNormalExact = Number(activePortalSpawn?.guaranteedNormalDemons ?? activePortalSpawn?.guaranteedDemons);
     const configuredNormalMin = Number(activePortalSpawn?.guaranteedNormalMinDemons ?? activePortalSpawn?.guaranteedNormalMin);
     const configuredNormalMax = Number(activePortalSpawn?.guaranteedNormalMaxDemons ?? activePortalSpawn?.guaranteedNormalMax);
@@ -9221,23 +9361,23 @@ export class GameServer {
       ? (
         Number.isFinite(configuredNormalMin)
           ? Math.max(0, Math.floor(configuredNormalMin))
-          : fallbackGuarantees.normalMin
+          : 0
       )
       : (
         Number.isFinite(configuredNormalExact)
           ? Math.max(0, Math.floor(configuredNormalExact))
-          : fallbackGuarantees.normalMin
+          : 0
       );
     const guaranteedNormalMax = hasConfiguredNormalRange
       ? (
         Number.isFinite(configuredNormalMax)
           ? Math.max(guaranteedNormalMin, Math.floor(configuredNormalMax))
-          : Math.max(guaranteedNormalMin, fallbackGuarantees.normalMax)
+          : guaranteedNormalMin
       )
       : (
         Number.isFinite(configuredNormalExact)
           ? Math.max(guaranteedNormalMin, Math.floor(configuredNormalExact))
-          : Math.max(guaranteedNormalMin, fallbackGuarantees.normalMax)
+          : guaranteedNormalMin
       );
     const guaranteedNormalDemons = guaranteedNormalMax <= guaranteedNormalMin
       ? guaranteedNormalMin
@@ -9245,7 +9385,7 @@ export class GameServer {
     const configuredMultiplier = Number(activePortalSpawn?.guaranteedMultiplierDemons);
     const guaranteedMultiplierDemons = Number.isFinite(configuredMultiplier)
       ? Math.max(0, Math.floor(configuredMultiplier))
-      : Math.max(0, Math.floor(Number(fallbackGuarantees.multiplier) || 0));
+      : 0;
 
     const placements = [];
     const occupied = new Set();
@@ -9443,11 +9583,72 @@ export class GameServer {
     return drops;
   }
 
+  buildHeavenHellDivineXTargets(originReel, originRow, distance = 0) {
+    const targets = [];
+    const maxDistance = Math.max(0, Math.floor(Number(distance) || 0));
+    if (!Number.isFinite(Number(originReel)) || !Number.isFinite(Number(originRow)) || maxDistance <= 0) {
+      return targets;
+    }
+
+    for (let wave = 1; wave <= maxDistance; wave++) {
+      const candidates = [
+        { reel: originReel - wave, row: originRow - wave },
+        { reel: originReel + wave, row: originRow - wave },
+        { reel: originReel - wave, row: originRow + wave },
+        { reel: originReel + wave, row: originRow + wave }
+      ];
+      candidates.forEach((target) => {
+        if (
+          target.reel < 0 ||
+          target.reel >= this.width ||
+          target.row < 0 ||
+          target.row >= this.height
+        ) {
+          return;
+        }
+        // Keep house-center cells in the payload so the client can render
+        // Divine X through the middle even though demons never spawn there.
+        targets.push({ ...target, wave });
+      });
+    }
+    return targets;
+  }
+
+  buildHeavenHellDivineStrikeCells(originReel, originRow, radius = 0) {
+    const targets = [];
+    const maxRadius = Math.max(0, Math.floor(Number(radius) || 0));
+    if (!Number.isFinite(Number(originReel)) || !Number.isFinite(Number(originRow))) {
+      return targets;
+    }
+
+    for (let reel = originReel - maxRadius; reel <= originReel + maxRadius; reel++) {
+      for (let row = originRow - maxRadius; row <= originRow + maxRadius; row++) {
+        if (
+          reel < 0 ||
+          reel >= this.width ||
+          row < 0 ||
+          row >= this.height
+        ) {
+          continue;
+        }
+        // Include house cells for VFX reach markers / impact visuals.
+        // Combat resolution still won't kill anything there because the
+        // house symbol is not treated as a demon.
+        targets.push({
+          reel,
+          row,
+          distance: Math.max(Math.abs(reel - originReel), Math.abs(row - originRow))
+        });
+      }
+    }
+    return targets;
+  }
+
   annotateHeavenHellHuntAbilities(gameState, huntResult, preHuntReels = null) {
     const heavenHell = this.ensureHeavenHellState(gameState);
     const bonusState = heavenHell?.bonus;
     if (!bonusState || !huntResult || gameState?.isBonus !== true) {
-      return { wrathExtraKills: [], chargeBoosts: [], wrathPreKilledKeys: new Set() };
+      return { divineAbilityExtraKills: [], preKilledKeys: new Set() };
     }
 
     const bonusConfig = this.getHeavenHellConfig()?.bonus || {};
@@ -9455,17 +9656,19 @@ export class GameServer {
     const multiplierDemonId = Number(symbolConfig?.multiplierDemon ?? serverConfig.symbolsMapping?.banana2 ?? 12);
     const bossDemonId = Number(symbolConfig?.bossDemon ?? serverConfig.symbolsMapping?.banana3 ?? 13);
     const weightedBossKills = Math.max(1, Math.floor(Number(bonusConfig?.boss?.killsGranted ?? 9) || 9));
-    const wrathLevel = Math.max(0, Math.floor(Number(bonusState?.abilities?.divineWrath || 0)));
+    const divineXKillCountMultiplier = 2;
+    const divineStrikeLevel = Math.max(0, Math.floor(Number(bonusState?.abilities?.divineStrike || 0)));
+    const divineXLevel = Math.max(0, Math.floor(Number(bonusState?.abilities?.divineX || 0)));
     const chargeLevel = Math.max(0, Math.floor(Number(bonusState?.abilities?.divineCharge || 0)));
-    const wrathConfig = bonusConfig?.abilityProc?.divineWrath?.[String(wrathLevel)] || null;
+    const divineStrikeConfig = bonusConfig?.abilityProc?.divineStrike?.[String(divineStrikeLevel)] || null;
+    const divineXConfig = bonusConfig?.abilityProc?.divineX?.[String(divineXLevel)] || null;
     const chargeConfig = bonusConfig?.abilityProc?.divineCharge?.[String(chargeLevel)] || null;
 
     const board = JSON.parse(JSON.stringify(preHuntReels && typeof preHuntReels === "object" ? preHuntReels : {}));
     const killedKeys = new Set();
     const abilityProcs = [];
-    const wrathExtraKills = [];
-    const chargeBoosts = [];
-    const wrathPreKilledKeys = new Set();
+    const divineAbilityExtraKills = [];
+    const preKilledKeys = new Set();
     const heroPath = Array.isArray(huntResult.heroPath) ? huntResult.heroPath : [];
 
     const getSymbolAt = (reel, row) => Number(board?.[reel]?.[row]);
@@ -9481,8 +9684,8 @@ export class GameServer {
         ? step.eatenBananas
         : [{ reel: step?.reel, row: step?.row }]
     );
-    const markStepWrathPreKilled = (step, targets = []) => {
-      step.wrathPreKilled = true;
+    const markStepAbilityPreKilled = (step, targets = []) => {
+      step.abilityPreKilled = true;
       step.banana = false;
       step.orbs = 0;
       step.eatenBananas = [];
@@ -9490,7 +9693,7 @@ export class GameServer {
         const reel = Number(banana?.reel);
         const row = Number(banana?.row);
         if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
-        wrathPreKilledKeys.add(`${reel},${row}`);
+        preKilledKeys.add(`${reel},${row}`);
       });
     };
 
@@ -9498,14 +9701,14 @@ export class GameServer {
       if (step?.banana !== true) return;
 
       const bananaTargets = getStepBananaTargets(step);
-      const allPreKilledByWrath = bananaTargets.every((banana) => {
+      const allPreKilled = bananaTargets.every((banana) => {
         const reel = Number(banana?.reel);
         const row = Number(banana?.row);
         if (!Number.isFinite(reel) || !Number.isFinite(row)) return true;
         return killedKeys.has(`${reel},${row}`);
       });
-      if (allPreKilledByWrath) {
-        markStepWrathPreKilled(step, bananaTargets);
+      if (allPreKilled) {
+        markStepAbilityPreKilled(step, bananaTargets);
         return;
       }
 
@@ -9522,11 +9725,6 @@ export class GameServer {
           row: Number(step.row),
           lootMultiplier: chargeLootMultiplier
         });
-        chargeBoosts.push({
-          reel: Number(step.reel),
-          row: Number(step.row),
-          lootMultiplier: chargeLootMultiplier
-        });
       }
 
       bananaTargets.forEach((banana) => {
@@ -9536,89 +9734,199 @@ export class GameServer {
         markKilled(reel, row);
       });
 
-      const wrathOriginReel = Number(step.reel);
-      const wrathOriginRow = Number(step.row);
-      if (
-        wrathLevel > 0 &&
-        wrathConfig &&
-        Number.isFinite(wrathOriginReel) &&
-        Number.isFinite(wrathOriginRow) &&
-        this.rollChance(Number(wrathConfig?.chance ?? 0))
-      ) {
-        const radius = Math.max(1, Math.floor(Number(wrathConfig?.radius ?? 1) || 1));
-        const affectedCells = [];
-        const wrathKillCells = [];
-        const affectedCellKeys = new Set();
+      const originReel = Number(step.reel);
+      const originRow = Number(step.row);
+      const divineStrikeProc =
+        divineStrikeLevel > 0 &&
+        divineStrikeConfig &&
+        Number.isFinite(originReel) &&
+        Number.isFinite(originRow) &&
+        this.rollChance(Number(divineStrikeConfig?.chance ?? 0));
+      const divineXProc =
+        divineXLevel > 0 &&
+        divineXConfig &&
+        Number.isFinite(originReel) &&
+        Number.isFinite(originRow) &&
+        this.rollChance(Number(divineXConfig?.chance ?? 0));
+      const divineXDistance = divineXProc
+        ? Math.max(0, Math.floor(Number(divineXConfig?.distance ?? 0) || 0))
+        : 0;
+      const divineStrikeRadius = divineStrikeProc
+        ? Math.max(0, Math.floor(Number(divineStrikeConfig?.radius ?? 0) || 0))
+        : 0;
+      const divineXTargets = divineXProc
+        ? this.buildHeavenHellDivineXTargets(originReel, originRow, divineXDistance)
+        : [];
+      const divineStrikeTargets = [];
 
-        for (let dr = -radius; dr <= radius; dr++) {
-          for (let dc = -radius; dc <= radius; dc++) {
-            const affectedReel = wrathOriginReel + dc;
-            const affectedRow = wrathOriginRow + dr;
-            if (affectedReel < 0 || affectedReel >= this.width || affectedRow < 0 || affectedRow >= this.height) continue;
-            if (this.isHouse(affectedReel, affectedRow)) continue;
-            const affectedKey = `${affectedReel},${affectedRow}`;
-            if (!affectedCellKeys.has(affectedKey)) {
-              affectedCellKeys.add(affectedKey);
-              affectedCells.push({ reel: affectedReel, row: affectedRow });
+      if (divineStrikeProc) {
+        step.divineStrikeProc = true;
+        const strikeOrigins = [
+          { reel: originReel, row: originRow, wave: 0, center: true },
+          ...(divineXProc ? divineXTargets.map((target) => ({
+            reel: target.reel,
+            row: target.row,
+            wave: target.wave,
+            center: false
+          })) : [])
+        ];
+        strikeOrigins.forEach((originTarget) => {
+          const hitCells = this.buildHeavenHellDivineStrikeCells(
+            originTarget.reel,
+            originTarget.row,
+            divineStrikeRadius
+          ).map((cell) => {
+            const symbol = getSymbolAt(cell.reel, cell.row);
+            const isOriginCell = cell.reel === originTarget.reel && cell.row === originTarget.row;
+            const hadDemon =
+              isOriginCell && originTarget.center === true
+                ? true
+                : this.isBanana(symbol);
+            let killed = false;
+            if (this.isBanana(symbol)) {
+              killed = markKilled(cell.reel, cell.row);
             }
-            if (killedKeys.has(affectedKey)) continue;
-            const nearbySymbol = getSymbolAt(affectedReel, affectedRow);
-            if (!this.isBanana(nearbySymbol)) continue;
-            if (!markKilled(affectedReel, affectedRow)) continue;
-            wrathKillCells.push({ reel: affectedReel, row: affectedRow, symbol: nearbySymbol });
-            wrathExtraKills.push({
-              reel: affectedReel,
-              row: affectedRow,
-              symbol: nearbySymbol,
-              source: "divineWrath",
-              isBoss: nearbySymbol === bossDemonId,
-              isMultiplierDemon: nearbySymbol === multiplierDemonId,
-              weightedKills: nearbySymbol === bossDemonId ? weightedBossKills : 1,
+            const isDivineXOriginCellKill = divineXProc === true && isOriginCell;
+            const isPrimaryImpactCell = isOriginCell && originTarget.center === true;
+            const countsAsDivineXDoubleKill =
+              divineXProc === true &&
+              (killed || (hadDemon === true && isPrimaryImpactCell));
+            if (killed) {
+              divineAbilityExtraKills.push({
+                reel: cell.reel,
+                row: cell.row,
+                symbol,
+                source: isDivineXOriginCellKill ? "divineX" : "divineStrike",
+                isBoss: symbol === bossDemonId,
+                isMultiplierDemon: symbol === multiplierDemonId,
+                weightedKills: symbol === bossDemonId ? weightedBossKills : 1,
+                killCountMultiplier: 1,
+                divineXDoubleKill: false,
+                guaranteedLoot: true,
+                lootMultiplier: step.divineChargeProc === true ? chargeLootMultiplier : 1
+              });
+            }
+            return {
+              reel: cell.reel,
+              row: cell.row,
+              distance: cell.distance,
+              hadDemon,
+              killed,
+              origin: isOriginCell,
+              killCountMultiplier: countsAsDivineXDoubleKill ? divineXKillCountMultiplier : 1,
+              divineXDoubleKill: countsAsDivineXDoubleKill,
+              isMultiplierDemon: killed && symbol === multiplierDemonId
+            };
+          });
+          divineStrikeTargets.push({
+            reel: originTarget.reel,
+            row: originTarget.row,
+            wave: originTarget.wave,
+            center: originTarget.center,
+            hitCells
+          });
+        });
+        step.divineStrikeTargets = divineStrikeTargets;
+        abilityProcs.push({
+          type: "divineStrike",
+          pathIndex,
+          level: divineStrikeLevel,
+          reel: originReel,
+          row: originRow,
+          radius: divineStrikeRadius,
+          targets: divineStrikeTargets
+        });
+      }
+
+      if (divineXProc) {
+        step.divineXProc = true;
+        const xTargetEntries = divineXTargets.map((target) => {
+          const linkedStrikeTarget = divineStrikeTargets.find((entry) => (
+            entry.reel === target.reel && entry.row === target.row
+          ));
+          if (linkedStrikeTarget) {
+            const originHit = linkedStrikeTarget.hitCells.find((cell) => cell.origin === true);
+            return {
+              reel: target.reel,
+              row: target.row,
+              wave: target.wave,
+              hadDemon: originHit?.hadDemon === true,
+              killed: originHit?.killed === true,
+              killCountMultiplier: Math.max(1, Math.floor(Number(originHit?.killCountMultiplier ?? 1) || 1)),
+              divineXDoubleKill: originHit?.divineXDoubleKill === true,
+              isMultiplierDemon: originHit?.isMultiplierDemon === true
+            };
+          }
+
+          const symbol = getSymbolAt(target.reel, target.row);
+          const hadDemon = this.isBanana(symbol);
+          let killed = false;
+          if (hadDemon) {
+            killed = markKilled(target.reel, target.row);
+          }
+          if (killed) {
+            divineAbilityExtraKills.push({
+              reel: target.reel,
+              row: target.row,
+              symbol,
+              source: "divineX",
+              isBoss: symbol === bossDemonId,
+              isMultiplierDemon: symbol === multiplierDemonId,
+              weightedKills: symbol === bossDemonId ? weightedBossKills : 1,
+              killCountMultiplier: 1,
+              divineXDoubleKill: false,
               guaranteedLoot: true,
               lootMultiplier: step.divineChargeProc === true ? chargeLootMultiplier : 1
             });
           }
-        }
-
-        step.divineWrathProc = true;
-        step.divineWrathAffectedCells = affectedCells;
-        step.divineWrathKillCells = wrathKillCells;
+          return {
+            reel: target.reel,
+            row: target.row,
+            wave: target.wave,
+            hadDemon,
+            killed,
+            killCountMultiplier: killed && divineXProc === true ? divineXKillCountMultiplier : 1,
+            divineXDoubleKill: killed && divineXProc === true,
+            isMultiplierDemon: killed && symbol === multiplierDemonId
+          };
+        });
+        step.divineXTargets = xTargetEntries;
         abilityProcs.push({
-          type: "divineWrath",
+          type: "divineX",
           pathIndex,
-          level: wrathLevel,
-          radius,
-          originReel: wrathOriginReel,
-          originRow: wrathOriginRow,
-          affectedCells,
-          killCells: wrathKillCells
+          level: divineXLevel,
+          distance: divineXDistance,
+          originReel,
+          originRow,
+          targets: xTargetEntries,
+          killCells: xTargetEntries.filter((entry) => entry.killed === true)
         });
       }
     });
 
-    wrathExtraKills.forEach((entry) => {
+    divineAbilityExtraKills.forEach((entry) => {
       if (huntResult.reels?.[entry.reel]) {
         huntResult.reels[entry.reel][entry.row] = 0;
       }
     });
 
-    if (wrathPreKilledKeys.size > 0 && Array.isArray(huntResult.orbDrops)) {
+    if (preKilledKeys.size > 0 && Array.isArray(huntResult.orbDrops)) {
       huntResult.orbDrops = huntResult.orbDrops.filter((orb) => (
-        !wrathPreKilledKeys.has(`${Number(orb?.reel)},${Number(orb?.row)}`)
+        !preKilledKeys.has(`${Number(orb?.reel)},${Number(orb?.row)}`)
       ));
     }
 
     this.pruneWrathPreKilledHuntPath(huntResult, gameState);
 
     bonusState.abilityProcsThisAction = abilityProcs;
-    return { wrathExtraKills, chargeBoosts, wrathPreKilledKeys };
+    return { divineAbilityExtraKills, preKilledKeys };
   }
 
   pruneWrathPreKilledHuntPath(huntResult, gameState = null) {
     const path = Array.isArray(huntResult?.heroPath) ? huntResult.heroPath : [];
-    if (!path.some((step) => step?.wrathPreKilled === true)) return;
+    if (!path.some((step) => step?.abilityPreKilled === true)) return;
 
-    huntResult.heroPath = path.filter((step) => step?.wrathPreKilled !== true);
+    huntResult.heroPath = path.filter((step) => step?.abilityPreKilled !== true);
     if (huntResult.heroPath.length === 0) return;
 
     const lastStep = huntResult.heroPath[huntResult.heroPath.length - 1];
@@ -9658,21 +9966,66 @@ export class GameServer {
     const bossDemonId = Number(symbolConfig?.bossDemon ?? serverConfig.symbolsMapping?.banana3 ?? 13);
     const weightedBossKills = Math.max(1, Math.floor(Number(bonusConfig?.boss?.killsGranted ?? 9) || 9));
     const bossMultiplierGain = Math.max(0, Math.floor(Number(bonusConfig?.boss?.multiplierGain ?? 2) || 2));
-    const portalSpawnByLevel = bonusConfig?.portalSpawnByLevel || {};
-    const portalLevel = Math.max(0, Math.min(2, Math.floor(Number(bonusState?.portalLevel || 0))));
+    const portalBonusSpawn = bonusConfig?.portalBonusSpawn || {};
+    const hasPortalBonus = bonusState?.portalBonus === true;
     const portalMultiplierGain = Math.max(
       1,
       Math.floor(
         Number(
-          portalSpawnByLevel?.[String(portalLevel)]?.multiplierGainPerKill ??
-            portalSpawnByLevel?.["0"]?.multiplierGainPerKill ??
+          (hasPortalBonus ? portalBonusSpawn?.multiplierGainPerKill : 1) ??
             1
         ) || 1
       )
     );
 
     const killed = new Map();
+    const abilityGuaranteedKillBoosts = new Map();
     const source = sourceReels && typeof sourceReels === "object" ? sourceReels : {};
+    let divineAbilityExtraKills = [];
+    if (isBonus) {
+      const abilityResult = this.annotateHeavenHellHuntAbilities(gameState, huntResult, source);
+      divineAbilityExtraKills = abilityResult.divineAbilityExtraKills || [];
+
+      const heroPath = Array.isArray(huntResult.heroPath) ? huntResult.heroPath : [];
+      heroPath.forEach((step) => {
+        const bananaTargets =
+          Array.isArray(step?.eatenBananas) && step.eatenBananas.length > 0
+            ? step.eatenBananas
+            : [{ reel: step?.reel, row: step?.row }];
+        const hasGuaranteedLootProc =
+          step?.banana === true &&
+          (step?.divineChargeProc === true || step?.divineStrikeProc === true || step?.divineXProc === true);
+        const chargeLootMultiplier = step?.divineChargeProc === true
+          ? Math.max(1, Math.floor(Number(step?.divineChargeLootMultiplier ?? 1) || 1))
+          : 1;
+        bananaTargets.forEach((banana) => {
+          const reel = Number(banana?.reel);
+          const row = Number(banana?.row);
+          if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
+          const key = `${reel},${row}`;
+          if (hasGuaranteedLootProc) {
+            const abilitySource = step?.divineChargeProc === true
+              ? "divineCharge"
+              : step?.divineStrikeProc === true
+                ? "divineStrike"
+                : "divineX";
+            const existingBoost = abilityGuaranteedKillBoosts.get(key);
+            if (!existingBoost || chargeLootMultiplier > existingBoost.lootMultiplier) {
+              abilityGuaranteedKillBoosts.set(key, {
+                guaranteedLoot: true,
+                lootMultiplier: chargeLootMultiplier,
+                source: abilitySource
+              });
+            } else if (!existingBoost.source) {
+              abilityGuaranteedKillBoosts.set(key, {
+                ...existingBoost,
+                source: abilitySource
+              });
+            }
+          }
+        });
+      });
+    }
     (huntResult.orbDrops || []).forEach((orb) => {
       const key = `${orb.reel},${orb.row}`;
       if (killed.has(key)) return;
@@ -9689,42 +10042,41 @@ export class GameServer {
       const symbol = Number(entry.symbol);
       const isBoss = symbol === bossDemonId;
       const isMultiplierDemon = symbol === multiplierDemonId;
-      const weightedKills = isBoss ? weightedBossKills : 1;
+      const killKey = `${Number(entry.reel)},${Number(entry.row)}`;
+      const abilityBoost = abilityGuaranteedKillBoosts.get(killKey);
       return {
         ...entry,
         symbol,
         isBoss,
         isMultiplierDemon,
-        weightedKills,
-        lootMultiplier: 1,
-        guaranteedLoot: false
+        weightedKills: isBoss ? weightedBossKills : 1,
+        killCountMultiplier: 1,
+        divineXDoubleKill: false,
+        lootMultiplier: abilityBoost?.lootMultiplier ?? 1,
+        guaranteedLoot: abilityBoost?.guaranteedLoot === true,
+        source: abilityBoost?.source ?? entry.source
       };
     });
 
-    let wrathExtraKills = [];
-    let chargeBoosts = [];
     if (isBonus) {
-      const abilityResult = this.annotateHeavenHellHuntAbilities(gameState, huntResult, source);
-      wrathExtraKills = abilityResult.wrathExtraKills || [];
-      chargeBoosts = abilityResult.chargeBoosts || [];
-      const wrathKillKeys = new Set(
-        wrathExtraKills.map((entry) => `${Number(entry?.reel)},${Number(entry?.row)}`)
+      const divineAbilityKillKeys = new Set(
+        divineAbilityExtraKills.map((entry) => `${Number(entry?.reel)},${Number(entry?.row)}`)
       );
       const dedupedKillEntries = killEntries.filter((entry) => {
         const key = `${Number(entry?.reel)},${Number(entry?.row)}`;
-        return !(entry?.source === "baseHunt" && wrathKillKeys.has(key));
+        return !(entry?.source === "baseHunt" && divineAbilityKillKeys.has(key));
       });
       killEntries.length = 0;
-      killEntries.push(...dedupedKillEntries, ...wrathExtraKills);
-      chargeBoosts.forEach((boost) => {
-        const entry = killEntries.find((candidate) => (
-          candidate.reel === boost.reel && candidate.row === boost.row
-        ));
-        if (!entry) return;
-        entry.guaranteedLoot = true;
-        entry.lootMultiplier = boost.lootMultiplier;
-        entry.source = "divineCharge";
+      killEntries.push(...dedupedKillEntries, ...divineAbilityExtraKills);
+      const heroPath = Array.isArray(huntResult.heroPath) ? huntResult.heroPath : [];
+      this.applyHeavenHellChargeLootFromPath(heroPath, killEntries);
+      this.applyHeavenHellDivineXKillCreditFromPath(heroPath, killEntries);
+      killEntries.forEach((entry) => {
+        this.normalizeHeavenHellKillEntryCredit(entry, { weightedBossKills });
       });
+      const uniqueKillEntries = this.dedupeHeavenHellKillEntries(killEntries);
+      killEntries.length = 0;
+      killEntries.push(...uniqueKillEntries);
     } else if (bonusState) {
       bonusState.abilityProcsThisAction = [];
     }
@@ -9742,6 +10094,9 @@ export class GameServer {
 
     const lootDrops = isBonus
       ? this.resolveHeavenHellLootDrops(gameState, killEntries, { guaranteed: false, lootMultiplier: 1 })
+      : [];
+    const chestDrops = isBonus
+      ? this.resolveHeavenHellChestDrops(gameState, killEntries)
       : [];
 
     if (isBonus) {
@@ -9765,7 +10120,8 @@ export class GameServer {
       totalKills: killEntries.length,
       weightedKills,
       killEntries,
-      lootDrops
+      lootDrops,
+      chestDrops
     };
   }
 
@@ -9859,8 +10215,11 @@ export class GameServer {
     gameState.winAmount = totalTbm;
     gameState.heavenHell.bonus.lootGroundSettled = settledDrops;
     gameState.heavenHell.bonus.lootGround = [];
+    gameState.heavenHell.bonus.pendingChests = [];
+    gameState.heavenHell.bonus.chestRewardResumeAction = null;
     gameState.heavenHell.bonus.globalMultiplier = 1;
     gameState.multiplier = 1;
+    this.syncHeavenHellChestCounters(gameState);
     return totalTbm;
   }
 
@@ -10141,6 +10500,7 @@ Object.assign(
     ACTION_TROLL_TEASE,
     BASE_MONKEY_STATE,
     LEGACY_ACTION_FREESPIN_BANANA_HUNT,
+    resolveChestSequence,
     resolveNextBonusRetriggerThreshold,
     serverConfig
   }),
@@ -10249,7 +10609,8 @@ function resetGameState(gameState) {
               step: {from: "destroy", to: "X"},
               weapon: {from: "staff", to: "X"},
               necromancer: {from: "0", to: "X"},
-              freespins: BONUS_BASE_ENTRY_FREESPINS
+              freespins: BONUS_BASE_ENTRY_FREESPINS,
+              portalBonus: false
           },
           chestRewards: {
               weapon: "staff",
@@ -10367,23 +10728,30 @@ function resetGameState(gameState) {
             killsTotal: 0,
             nextAbilityKillThreshold: 20,
             killsTowardsUnlock: 0,
-            portalLevel: 0,
+            portalBonus: false,
             abilities: {
-              portal: 0,
-              divineWrath: 0,
+              divineX: 0,
+              divineStrike: 0,
               divineCharge: 0
             },
             freerespinChain: 0,
             actionCount: 0,
             lootGround: [],
             lootGroundSettled: [],
+            pendingChests: [],
+            nextChestId: 1,
+            chestsRewarded: 0,
+            chestRewardResumeAction: null,
             abilityProcsThisAction: [],
             rippleInjectionsThisAction: [],
             bossEventsThisAction: [],
             chestEventsThisAction: [],
+            chestActionSummary: null,
             killsThisAction: 0
           }
         };
+        gameState.bonusState.chestsPending = 0;
+        gameState.bonusState.chestsRewarded = 0;
 }
 
 // Export resetGameState so it can be used externally

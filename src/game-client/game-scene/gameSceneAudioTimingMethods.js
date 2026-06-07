@@ -1439,6 +1439,37 @@ export function createGameSceneAudioTimingMethods(deps = {}) {
       this._recalcScales(); // ← recompute final (respects pause if active)
       },
 
+    _recalcScales() {
+      const baselineTweens = this._baseline?.tweens ?? ONE;
+      const baselineTime = this._baseline?.time ?? ONE;
+      const baselineAnims = this._baseline?.anims ?? ONE;
+
+      if (this._softPaused) {
+        this.tweens.timeScale = EPS;
+        if (this._softAffectTimers) {
+          this.time.timeScale = EPS;
+        } else {
+          this.time.timeScale = baselineTime;
+        }
+        if (this.anims) {
+          this.anims.globalTimeScale = EPS;
+        }
+        return;
+      }
+
+      const slowMoScale = this._slowMoActive
+        ? Math.max(0.05, Number(this._slowMoCurrent) || 1)
+        : 1;
+
+      this.tweens.timeScale = baselineTweens * slowMoScale;
+      this.time.timeScale = this._slowMoAffectTimers
+        ? baselineTime * slowMoScale
+        : baselineTime;
+      if (this.anims) {
+        this.anims.globalTimeScale = baselineAnims * slowMoScale;
+      }
+    },
+
     pauseGame({ timers = true, audio = true, input = true } = {}) {
       this.installSoftPause();
       if (this._softPaused) return;

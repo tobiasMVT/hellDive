@@ -6,6 +6,7 @@ export function createGameServerBonusActionMethods(deps = {}) {
     ACTION_TROLL_TEASE,
     BASE_MONKEY_STATE,
     LEGACY_ACTION_FREESPIN_BANANA_HUNT,
+    resolveChestSequence,
     resolveNextBonusRetriggerThreshold,
     serverConfig
   } = deps;
@@ -508,10 +509,19 @@ export function createGameServerBonusActionMethods(deps = {}) {
         ? this.processHeavenHellPostHunt(gameState, huntResult, preHuntReels, { isBonus: true })
         : { totalKills: 0, weightedKills: 0, lootDrops: [] };
       if (heavenHellEnabled) {
+        const bonusState = this.ensureHeavenHellState(gameState)?.bonus;
         gameState.reels = huntResult.reels;
         gameState.heroPath = huntResult.heroPath;
         gameState.heroPosition = huntResult.heroFinalPosition || gameState.heroPosition;
         gameState.orbDrops = huntResult.orbDrops;
+        if (bonusState) {
+          bonusState.chestEventsThisAction = Array.isArray(heavenHellPostHunt?.chestDrops)
+            ? heavenHellPostHunt.chestDrops.map((entry) => ({
+                type: "dropQueued",
+                ...entry
+              }))
+            : [];
+        }
         const correctedKillCount = Math.max(0, Math.floor(Number(heavenHellPostHunt?.totalKills) || 0));
         if (correctedKillCount !== demonsKilledThisAction) {
           gameState.demonsKilled = Math.max(
@@ -564,12 +574,17 @@ export function createGameServerBonusActionMethods(deps = {}) {
       }
       if (heavenHellEnabled) {
         const heavenHell = this.ensureHeavenHellState(gameState);
+        const bonusState = heavenHell?.bonus;
         const remainingDemons = this.countHeavenHellDemons(gameState.reels);
         if (remainingDemons === 0) {
           this.settleHeavenHellKillMeterUnlocks(gameState);
         }
         if (remainingDemons > 0) {
           heavenHellOverrideNextAction = ACTION_FREESPIN_BANANA_HUNT;
+          gameState.nextAction = heavenHellOverrideNextAction;
+        } else if ((bonusState?.pendingChests?.length || 0) > 0) {
+          bonusState.chestRewardResumeAction = gameState.bonusState.finalFreespins > 0 ? "freerespin" : "spin";
+          heavenHellOverrideNextAction = "chestreward";
           gameState.nextAction = heavenHellOverrideNextAction;
         } else if (gameState.bonusState.finalFreespins > 0) {
           heavenHell.bonus.freerespinChain = Math.max(
@@ -620,7 +635,70 @@ export function createGameServerBonusActionMethods(deps = {}) {
     },
 
     handleChestRewardAction(gameState) {
-      gameState.nextAction = "freespin";
+      const heavenHell = this.ensureHeavenHellState(gameState);
+      const bonusState = heavenHell?.bonus;
+      if (!bonusState) {
+        gameState.nextAction = "spin";
+        return;
+      }
+
+      const pendingChests = Array.isArray(bonusState.pendingChests) ? bonusState.pendingChests.slice() : [];
+      const resumeActionBeforeRewards = bonusState.chestRewardResumeAction === "freerespin"
+        ? "freerespin"
+        : "spin";
+
+      if (pendingChests.length === 0) {
+        if (resumeActionBeforeRewards === "freerespin" || Number(gameState.bonusState?.finalFreespins || 0) > 0) {
+          bonusState.chestRewardResumeAction = null;
+          gameState.nextAction = "freerespin";
+          return;
+        }
+        this.settleHeavenHellBonus(gameState, gameState.betSize);
+        gameState.isBonus = false;
+        gameState.nextAction = "spin";
+        return;
+      }
+
+      const chestResult = resolveChestSequence({
+        gameState,
+        pendingChests,
+        chestConfig: this.getHeavenHellChestConfig(),
+        chestTypes: this.getHeavenHellChestTypes()
+      });
+
+      bonusState.pendingChests = [];
+      bonusState.chestsRewarded = Math.max(
+        0,
+        Math.floor(Number(bonusState.chestsRewarded || 0) + Number(chestResult?.summary?.totalChestsOpened || 0))
+      );
+      bonusState.chestEventsThisAction = chestResult?.chests || [];
+
+      const continueBonus = resumeActionBeforeRewards === "freerespin" || Number(gameState.bonusState?.finalFreespins || 0) > 0;
+      const resumeActionAfterRewards = continueBonus ? "freerespin" : "spin";
+      bonusState.chestActionSummary = {
+        ...(chestResult?.summary || {}),
+        resumeActionBeforeRewards,
+        resumeActionAfterRewards
+      };
+      bonusState.chestRewardResumeAction = null;
+      gameState.multiplier = Math.max(1, Math.floor(Number(bonusState.globalMultiplier || 1)));
+      this.syncHeavenHellChestCounters(gameState);
+
+      if (continueBonus) {
+        if (resumeActionAfterRewards === "freerespin") {
+          bonusState.freerespinChain = Math.max(
+            0,
+            Math.floor(Number(bonusState.freerespinChain || 0) + 1)
+          );
+        }
+        gameState.nextAction = resumeActionAfterRewards;
+        return;
+      }
+
+      this.settleHeavenHellBonus(gameState, gameState.betSize);
+      bonusState.freerespinChain = 0;
+      gameState.isBonus = false;
+      gameState.nextAction = "spin";
     },
 
     handleTrollTeaseAction(gameState) {

@@ -798,7 +798,12 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         return colorByBaseValue[String(Number(baseValue || 0))] || 0xFDD76A;
       },
 
-    getHeavenHellLootTexture(baseValue = 0, index = 0) {
+    getHeavenHellLootTexture(dropOrValue = 0, index = 0) {
+        const drop = dropOrValue && typeof dropOrValue === "object" ? dropOrValue : null;
+        const lootKind = String(drop?.lootKind || "").toLowerCase();
+        if (lootKind === "diamond") return "helldive_loot_diamond";
+        if (lootKind === "coin") return "helldive_loot_coin";
+        const baseValue = drop ? drop?.baseValue : dropOrValue;
         const normalized = Number(baseValue || 0);
         if (normalized >= 5) return "helldive_loot_diamond";
         if (normalized >= 1) return "helldive_loot_ruby";
@@ -813,7 +818,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         if (isBoss) {
           return this.add.image(x, y, "13").setScale(0.28).setAlpha(0.96);
         }
-        const textureKey = this.getHeavenHellLootTexture(drop?.baseValue, index);
+        const textureKey = this.getHeavenHellLootTexture(drop, index);
         if (this.textures?.exists?.(textureKey)) {
           return this.add.image(x, y, textureKey).setScale(scale).setAlpha(0.96);
         }
@@ -856,13 +861,59 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         }
       },
 
-    playHeavenHellDemonDeathFx(reel, row, { center = null, intensity = 1, destroySprite = true, gameState = null } = {}) {
+    getHeavenHellMultiplierDemonId() {
+        return Number(
+          clientConfig?.heavenHell?.bonus?.symbols?.multiplierDemon ??
+          clientConfig?.symbolsMapping?.zombie2 ??
+          12
+        );
+      },
+
+    dropHeavenHellMultiplierDemonOrb(x, y) {
+        const orbSize = 12;
+        const orbColors = [0x00D1CE, 0x1EFF90, 0x41E169, 0x00D1CE];
+        this.dropEnergyOrbs?.(x, y, 1, orbSize, orbColors, 150, 600);
+      },
+
+    getHeavenHellChargeLootJitter(step = {}, { base = 18 } = {}) {
+        const lootMultiplier = Math.max(1, Math.floor(Number(step?.divineChargeLootMultiplier ?? 1) || 1));
+        if (lootMultiplier >= 10) return 18;
+        if (lootMultiplier > 1) return 14;
+        return base;
+      },
+
+    pushHeavenHellStepBananaLootCells(step = {}, pushLootCell = () => {}) {
+        if (step?.banana !== true || typeof pushLootCell !== "function") return;
+        const bananaTargets = Array.isArray(step?.eatenBananas) && step.eatenBananas.length > 0
+          ? step.eatenBananas
+          : [{ reel: step?.reel, row: step?.row }];
+        bananaTargets.forEach((banana) => pushLootCell(banana?.reel, banana?.row));
+      },
+
+    playHeavenHellDemonDeathFx(reel, row, {
+        center = null,
+        intensity = 1,
+        destroySprite = true,
+        gameState = null,
+        killWeight = null,
+        divineXDoubleKill = false,
+        isMultiplierDemon = null
+      } = {}) {
         const target = center || this.getGridCellCenter(reel, row);
         const sprite = this.reelSprites?.[reel]?.[row];
         const power = Math.max(0.7, Math.min(2.2, Number(intensity) || 1));
         const resolvedGameState = gameState || this._heavenHellActiveGameState;
+        const multiplierDemonId = this.getHeavenHellMultiplierDemonId();
+        const symbolId = Number(sprite?.symbolKey);
+        const isMultiplierDemonKill =
+          resolvedGameState?.heavenHell?.bonus &&
+          resolvedGameState?.isBonus === true &&
+          (isMultiplierDemon === true || (Number.isFinite(symbolId) && symbolId === multiplierDemonId));
         if (resolvedGameState?.heavenHell?.bonus && resolvedGameState?.isBonus === true) {
-          this.tickHeavenHellKillMeterOnKill(reel, row, resolvedGameState);
+          this.tickHeavenHellKillMeterOnKill(reel, row, resolvedGameState, { killWeight });
+        }
+        if (isMultiplierDemonKill) {
+          this.dropHeavenHellMultiplierDemonOrb(target.x, target.y);
         }
     
         const hitSound = `banana_hit_${Phaser.Math.Between(1, 4)}`;
@@ -888,6 +939,25 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const soulFlash = this.add.circle(target.x, target.y - 12, 10 * power, 0xD6F5FF, 0.55)
           .setDepth(DEPTH_HERO + 50)
           .setBlendMode(Phaser.BlendModes.ADD);
+        let divineXRing = null;
+        let divineXLabel = null;
+        if (divineXDoubleKill) {
+          divineXRing = this.add.circle(target.x, target.y, 18 * power, 0x9B4DFF, 0.18)
+            .setDepth(DEPTH_HERO + 49)
+            .setStrokeStyle(4, 0xE8D7FF, 0.92)
+            .setBlendMode(Phaser.BlendModes.ADD)
+            .setScale(0.42);
+          divineXLabel = this.add.text(target.x, target.y - 26, "x2", {
+            fontSize: "20px",
+            fontFamily: '"Cinzel", "Times New Roman", serif',
+            fontStyle: "bold",
+            color: "#F4E6FF",
+            stroke: "#34115C",
+            strokeThickness: 5
+          }).setOrigin(0.5).setDepth(DEPTH_HERO + 56).setAlpha(0.94);
+          fireBurst.setFillStyle?.(0x9B4DFF, 0.54);
+          soulFlash.setFillStyle?.(0xF1D8FF, 0.72);
+        }
     
         this.tweens.add({
           targets: corpseShadow,
@@ -922,6 +992,28 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           ease: "Sine.easeOut",
           onComplete: () => soulFlash.destroy()
         });
+        if (divineXRing) {
+          this.tweens.add({
+            targets: divineXRing,
+            scale: 3.2 * power,
+            alpha: 0,
+            duration: 360,
+            ease: "Cubic.easeOut",
+            onComplete: () => divineXRing.destroy()
+          });
+        }
+        if (divineXLabel) {
+          this.tweens.add({
+            targets: divineXLabel,
+            y: divineXLabel.y - 28,
+            scaleX: 1.2,
+            scaleY: 1.2,
+            alpha: 0,
+            duration: 520,
+            ease: "Cubic.easeOut",
+            onComplete: () => divineXLabel.destroy()
+          });
+        }
     
         for (let i = 0; i < 12; i++) {
           const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
@@ -1060,7 +1152,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
     
         const heroX = Number(this.heroSprite.x);
         const heroY = Number(this.heroSprite.y);
-        const chargeText = this.add.text(heroX, heroY - 78, "DIVINE STRIKE", {
+        const chargeText = this.add.text(heroX, heroY - 78, "DIVINE CHARGE", {
           fontSize: "20px",
           fontFamily: '"Cinzel", "Times New Roman", serif',
           fontStyle: "bold",
@@ -1101,7 +1193,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           });
         }
     
-        await this.waitForPresentation(2000, { skippable: true });
+        await this.waitForPresentation(1500, { skippable: true });
         chargeObjects.forEach((obj) => { if (obj && !obj.destroyed) obj.destroy(); });
     
         this.playSfx?.("attack_swing", { volume: 0.48 });
@@ -1172,7 +1264,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         }
       },
 
-    async playHeavenHellDivineChargeImpact(step = {}, gameState = {}, targetCenter = null) {
+    async playHeavenHellDivineChargeImpact(step = {}, gameState = {}, targetCenter = null, { waitForLootDrop = true } = {}) {
         if (step?.divineChargeProc !== true) return;
         const reel = Math.floor(Number(step?.reel));
         const row = Math.floor(Number(step?.row));
@@ -1210,13 +1302,16 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         ).catch(() => {});
     
         const lootMultiplier = Math.max(1, Math.floor(Number(step?.divineChargeLootMultiplier ?? 1) || 1));
-        await this.playHeavenHellLootDropPattern(gameState, {
+        const lootDropPromise = this.playHeavenHellLootDropPattern(gameState, {
           source: "divineCharge",
           from: { x: target.x, y: target.y - 70 },
           jitterStrength: lootMultiplier >= 10 ? 18 : 14,
           filterCells: [{ reel, row }],
           persistToGround: true
         });
+        if (waitForLootDrop) {
+          await lootDropPromise;
+        }
       },
 
     async playHeavenHellDivineChargeSequence(gameState = {}) {
@@ -1268,19 +1363,21 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         return label;
       },
 
-    async playHeavenHellLootDropPattern(gameState = {}, { source = null, from = null, jitterStrength = 6, filterCells = null, persistToGround = false } = {}) {
+    async playHeavenHellLootDropPattern(gameState = {}, { source = null, from = null, jitterStrength = 6, filterCells = null, persistToGround = false, launchFromDropCell = false } = {}) {
         const drops = Array.isArray(gameState?.heavenHell?.bonus?.lootGround)
           ? gameState.heavenHell.bonus.lootGround
           : [];
-        let scoped = source ? drops.filter((entry) => entry?.source === source) : drops;
+        let scoped = drops;
         if (Array.isArray(filterCells) && filterCells.length > 0) {
           const cellKeys = new Set(filterCells.map((cell) => `${Math.floor(Number(cell?.reel))},${Math.floor(Number(cell?.row))}`));
           scoped = scoped.filter((entry) => cellKeys.has(`${Math.floor(Number(entry?.reel))},${Math.floor(Number(entry?.row))}`));
+        } else if (source) {
+          scoped = scoped.filter((entry) => entry?.source === source);
         }
         if (scoped.length === 0) return;
     
-        const startX = Number(from?.x || (GRID_OFFSET_X + (clientConfig.area.width * 70) * 0.5));
-        const startY = Number(from?.y || (GRID_OFFSET_Y - 40));
+        const fallbackStartX = Number(from?.x || (GRID_OFFSET_X + (clientConfig.area.width * 70) * 0.5));
+        const fallbackStartY = Number(from?.y || (GRID_OFFSET_Y - 40));
         const maxDrops = Math.min(28, scoped.length);
         const promises = [];
     
@@ -1291,6 +1388,11 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           if (!Number.isFinite(reel) || !Number.isFinite(row)) continue;
     
           const target = this.getGridCellCenter(reel, row);
+          const launchPoint = launchFromDropCell
+            ? target
+            : { x: fallbackStartX, y: fallbackStartY };
+          const startX = Number(launchPoint?.x || fallbackStartX);
+          const startY = Number(launchPoint?.y || fallbackStartY);
           const token = this.createHeavenHellLootToken(startX, startY, drop, i, { scale: 0.42 });
           token.setDepth(DEPTH_HERO + 55);
           token.setAlpha(0);
@@ -1424,6 +1526,631 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         await Promise.all(promises);
       },
 
+    clearHeavenHellChestPresentation() {
+        const cleanupTargets = [
+          this.heavenHellChestSprite,
+          this.heavenHellChestGlow,
+          this.heavenHellChestShadow,
+          this.heavenHellChestPulseRing,
+          ...(Array.isArray(this.heavenHellChestReelPanels) ? this.heavenHellChestReelPanels : []),
+          ...(Array.isArray(this.heavenHellChestRewardSprites) ? this.heavenHellChestRewardSprites : [])
+        ].filter(Boolean);
+
+        cleanupTargets.forEach((entry) => {
+          if (!entry || entry.destroyed) return;
+          if (entry.chestTickerEvent) {
+            entry.chestTickerEvent.remove(false);
+            entry.chestTickerEvent = null;
+          }
+          this.tweens.killTweensOf(entry);
+          entry.destroy();
+        });
+
+        this.heavenHellChestSprite = null;
+        this.heavenHellChestGlow = null;
+        this.heavenHellChestShadow = null;
+        this.heavenHellChestPulseRing = null;
+        this.heavenHellChestReelPanels = [];
+        this.heavenHellChestRewardSprites = [];
+      },
+
+    getHeavenHellChestSpinStageCenter() {
+        const cellSize = 70;
+        const gridWidth = clientConfig.area.width * cellSize;
+        const gridHeight = clientConfig.area.height * cellSize;
+        return {
+          x: GRID_OFFSET_X + gridWidth / 2,
+          y: GRID_OFFSET_Y + gridHeight * 0.44
+        };
+      },
+
+    getHeavenHellChestColor(rawColor = null, fallback = 0xF6D58D) {
+        if (typeof rawColor === "number" && Number.isFinite(rawColor)) {
+          return rawColor;
+        }
+        if (typeof rawColor === "string" && rawColor.trim()) {
+          const normalized = rawColor.startsWith("#") ? rawColor : `#${rawColor}`;
+          try {
+            return Phaser.Display.Color.HexStringToColor(normalized).color;
+          } catch (_error) {
+            return fallback;
+          }
+        }
+        return fallback;
+      },
+
+    getHeavenHellChestRewardLabel(symbol = "", resolvedReward = null) {
+        if (symbol === "respin") return "RESPIN";
+        if (symbol === "respinReel") return "+ REEL";
+        if (symbol === "coin" || symbol === "diamond") {
+          const value = Number(resolvedReward?.baseValue ?? resolvedReward?.rewardValue ?? 0);
+          return value > 0 ? `${symbol.toUpperCase()} ${value}` : symbol.toUpperCase();
+        }
+        if (symbol === "freeSpin") {
+          const amount = Math.max(1, Math.floor(Number(resolvedReward?.appliedValue ?? resolvedReward?.rewardValue ?? 1) || 1));
+          return `+${amount} SPIN${amount === 1 ? "" : "S"}`;
+        }
+        if (symbol === "multiplier") {
+          const gained = Math.max(0, Math.floor(Number(resolvedReward?.appliedValue ?? resolvedReward?.rewardValue ?? 0) || 0));
+          return gained > 0 ? `MULTI +${gained}` : "MULTI";
+        }
+        if (symbol === "divineStrike") {
+          const gained = Math.max(0, Math.floor(Number(resolvedReward?.appliedValue ?? 0) || 0));
+          return gained > 0 ? `STRIKE +${gained}` : "STRIKE MAX";
+        }
+        if (symbol === "divineX") {
+          const gained = Math.max(0, Math.floor(Number(resolvedReward?.appliedValue ?? 0) || 0));
+          return gained > 0 ? `DIVINE X +${gained}` : "DIVINE X MAX";
+        }
+        if (symbol === "divineCharge") {
+          const gained = Math.max(0, Math.floor(Number(resolvedReward?.appliedValue ?? 0) || 0));
+          return gained > 0 ? `CHARGE +${gained}` : "CHARGE MAX";
+        }
+        return String(symbol || "").replace(/([A-Z])/g, " $1").trim().toUpperCase();
+      },
+
+    getHeavenHellChestTickerLabel(symbol = "") {
+        if (symbol === "respin") return "RESPIN";
+        if (symbol === "respinReel") return "+ REEL";
+        if (symbol === "coin") return "COIN";
+        if (symbol === "diamond") return "DIAMOND";
+        if (symbol === "freeSpin") return "+ SPIN";
+        if (symbol === "multiplier") return "MULTI";
+        if (symbol === "divineStrike") return "STRIKE";
+        if (symbol === "divineX") return "DIVINE X";
+        if (symbol === "divineCharge") return "CHARGE";
+        return String(symbol || "").replace(/([A-Z])/g, " $1").trim().toUpperCase();
+      },
+
+    getHeavenHellChestRewardPalette(symbol = "", resolvedReward = null) {
+        if (symbol === "diamond") return { fill: 0x66E9FF, stroke: 0xE6FCFF, text: "#EFFFFF" };
+        if (symbol === "coin") return { fill: 0xE2A93A, stroke: 0xFFF0B8, text: "#FFF5DA" };
+        if (symbol === "freeSpin") return { fill: 0xFFD75E, stroke: 0xFFF3C4, text: "#FFF7DA" };
+        if (symbol === "multiplier") return { fill: 0x33C17A, stroke: 0xD9FFE9, text: "#F3FFF8" };
+        if (symbol === "divineStrike") return { fill: 0xD85B39, stroke: 0xFFD4B0, text: "#FFF0E7" };
+        if (symbol === "divineX") return { fill: 0x845DFF, stroke: 0xE6DBFF, text: "#F7F3FF" };
+        if (symbol === "divineCharge") return { fill: 0x45B9FF, stroke: 0xD8F4FF, text: "#F2FBFF" };
+        if (symbol === "respinReel") return { fill: 0x8AD7FF, stroke: 0xF0FBFF, text: "#F4FDFF" };
+        if (symbol === "respin") return { fill: 0xF0A95A, stroke: 0xFFF0CC, text: "#FFF7E5" };
+        return resolvedReward?.kind === "loot"
+          ? { fill: 0xE2A93A, stroke: 0xFFF0B8, text: "#FFF5DA" }
+          : { fill: 0x443321, stroke: 0xE9CB8A, text: "#FFF6DA" };
+      },
+
+    createHeavenHellChestReelPanel(x, y, width = 102, height = 54) {
+        const bg = this.add.rectangle(0, 0, width, height, 0x140D07, 0.94)
+          .setStrokeStyle(2, 0xE3B468, 0.95);
+        const shine = this.add.rectangle(0, -(height * 0.22), width - 10, Math.max(8, height * 0.22), 0xFFF0C0, 0.12);
+        const label = this.add.text(0, 0, "?", {
+          fontFamily: '"Cinzel", "Times New Roman", serif',
+          fontSize: "16px",
+          fontStyle: "bold",
+          color: "#FFF3D4",
+          stroke: "#2D1706",
+          strokeThickness: 4,
+          align: "center"
+        }).setOrigin(0.5);
+        const container = this.add.container(x, y, [bg, shine, label]).setDepth(DEPTH_HERO + 36);
+        container.panelBg = bg;
+        container.panelLabel = label;
+        return container;
+      },
+
+    startHeavenHellChestReelTicker(panel, tickLabels = [], { startIndex = 0, intervalMs = 95 } = {}) {
+        if (!panel || panel.destroyed) return;
+        if (panel.chestTickerEvent) {
+          panel.chestTickerEvent.remove(false);
+          panel.chestTickerEvent = null;
+        }
+
+        const labels = Array.isArray(tickLabels) && tickLabels.length > 0 ? tickLabels : ["?"];
+        let tickIndex = Math.max(0, Math.floor(Number(startIndex) || 0));
+        const applyTickLabel = () => {
+          const label = labels[tickIndex % labels.length] || "?";
+          panel.panelLabel?.setText(label);
+          panel.panelLabel?.setColor("#F7E8C6");
+          panel.panelBg?.setFillStyle(0x24160C, 0.92);
+          panel.panelBg?.setStrokeStyle(2, 0xE3B468, 0.95);
+          tickIndex += 1;
+        };
+
+        applyTickLabel();
+        panel.chestTickerEvent = this.time.addEvent({
+          delay: Math.max(60, Math.floor(Number(intervalMs) || 95)),
+          loop: true,
+          callback: () => {
+            if (!panel || panel.destroyed) return;
+            applyTickLabel();
+            this.playSfx?.(tickIndex % 2 === 0 ? "coin3" : "coin4", { volume: 0.035 });
+          }
+        });
+      },
+
+    async tickHeavenHellChestReel(panel, reveal = {}, tickLabels = []) {
+        if (!panel || panel.destroyed) return;
+        this.startHeavenHellChestReelTicker(panel, tickLabels, {
+          startIndex: Number(reveal?.reelIndex || 0),
+          intervalMs: 95
+        });
+
+        await this.waitForPresentation(720, { skippable: true });
+        if (panel.chestTickerEvent) {
+          panel.chestTickerEvent.remove(false);
+          panel.chestTickerEvent = null;
+        }
+
+        const resolvedReward = reveal?.resolvedReward || null;
+        const symbol = String(reveal?.symbol || "");
+        const palette = this.getHeavenHellChestRewardPalette(symbol, resolvedReward);
+        const finalLabel = this.getHeavenHellChestRewardLabel(symbol, resolvedReward);
+
+        panel.panelLabel?.setText(finalLabel);
+        panel.panelLabel?.setColor(palette.text);
+        panel.panelBg?.setFillStyle(palette.fill, 0.96);
+        panel.panelBg?.setStrokeStyle(2, palette.stroke, 1);
+        this.tweens.add({
+          targets: panel,
+          scaleX: 1.08,
+          scaleY: 1.08,
+          duration: 110,
+          yoyo: true,
+          ease: "Back.easeOut"
+        });
+        this.playSfx?.("wins_highlight", { volume: (symbol === "respin" || symbol === "respinReel") ? 0.12 : 0.16 });
+        await this.waitForPresentation(150, { skippable: true });
+      },
+
+    layoutHeavenHellChestPanels(panels = [], reelCount = 1, centerX = 0, centerY = 0, { animate = true } = {}) {
+        const activeCount = Math.max(1, Math.floor(Number(reelCount) || 1));
+        const spacing = 112;
+        const baseX = centerX - ((activeCount - 1) * spacing * 0.5);
+        panels.forEach((panel, panelIndex) => {
+          if (!panel || panel.destroyed) return;
+          const targetX = baseX + (panelIndex * spacing);
+          const tweenConfig = {
+            targets: panel,
+            x: targetX,
+            y: centerY,
+            duration: animate ? 180 : 0,
+            ease: "Sine.easeOut"
+          };
+          if (animate) {
+            this.tweens.add(tweenConfig);
+          } else {
+            panel.setPosition(targetX, centerY);
+          }
+          panel.setVisible(panelIndex < activeCount);
+          panel.setAlpha(panelIndex < activeCount ? 1 : 0);
+        });
+      },
+
+    async flyAngelToHeavenHellChest(chest = {}) {
+        const reel = Math.floor(Number(chest?.reel));
+        const row = Math.floor(Number(chest?.row));
+        const target = this.getGridCellCenter(reel, row);
+        this.previewHeroModel?.(HERO_STAGE_TEXTURE_KEYS.base, {
+          reel: Number.isFinite(Number(this.currentHeroAnchor?.reel)) ? Number(this.currentHeroAnchor.reel) : reel,
+          row: Number.isFinite(Number(this.currentHeroAnchor?.row)) ? Number(this.currentHeroAnchor.row) : row
+        });
+        if (!this.heroSprite || this.heroSprite.destroyed) return target;
+
+        this.playSfx?.("attack_swing", { volume: 0.18, rate: 1.18 });
+        this.tweens.add({
+          targets: this.heroSprite,
+          x: target.x,
+          y: target.y + 10,
+          duration: 420,
+          ease: "Sine.easeInOut"
+        });
+        await this.waitForPresentation(430, { skippable: true });
+        this.currentHeroAnchor = { reel, row };
+        return target;
+      },
+
+    async animateHeavenHellChestRewardBursts(chestCenter, spin = {}, uiState = null) {
+        const reveals = Array.isArray(spin?.reveals) ? spin.reveals : [];
+        const rewardAnimations = reveals
+          .filter((reveal) => reveal?.resolvedReward?.kind && reveal.resolvedReward.kind !== "none")
+          .map((reveal, revealIndex) => new Promise((resolve) => {
+            const resolvedReward = reveal.resolvedReward;
+            const symbol = String(reveal?.symbol || "");
+            const palette = this.getHeavenHellChestRewardPalette(symbol, resolvedReward);
+            const label = this.getHeavenHellChestRewardLabel(symbol, resolvedReward);
+
+            if (resolvedReward.kind === "loot" && resolvedReward.lootDrop) {
+              const drop = resolvedReward.lootDrop;
+              const target = this.getHeavenHellLootGroundPosition(drop, revealIndex);
+              const token = this.createHeavenHellLootToken(chestCenter.x, chestCenter.y - 22, drop, revealIndex, { scale: 0.3 })
+                .setDepth(DEPTH_HERO + 40)
+                .setAlpha(0)
+                .setScale(0.1);
+              this.heavenHellChestRewardSprites.push(token);
+              this.playHeavenHellLootLaunchSfx?.(revealIndex);
+              this.tweens.add({
+                targets: token,
+                alpha: 1,
+                scaleX: 0.54,
+                scaleY: 0.54,
+                y: chestCenter.y - 82,
+                duration: 180,
+                ease: "Back.easeOut",
+                onComplete: () => {
+                  this.tweens.add({
+                    targets: token,
+                    x: target.x,
+                    y: target.y,
+                    duration: 360,
+                    ease: "Cubic.easeIn",
+                    onComplete: () => {
+                      this.playHeavenHellLootLandSfx?.(revealIndex, { drop });
+                      const glow = this.add.circle(target.x, target.y, 12, 0xFFF2B2, 0.26)
+                        .setDepth(DEPTH_HERO + 38)
+                        .setBlendMode(Phaser.BlendModes.ADD);
+                      this.tweens.add({
+                        targets: glow,
+                        scale: 2.1,
+                        alpha: 0,
+                        duration: 260,
+                        ease: "Cubic.easeOut",
+                        onComplete: () => glow.destroy()
+                      });
+                      this.createHeavenHellLootValueLabel(target.x, target.y - 18, resolvedReward.baseValue, {
+                        depth: DEPTH_HERO + 58,
+                        duration: 1180,
+                        rise: 54,
+                        driftX: Phaser.Math.Between(-8, 8),
+                        driftY: Phaser.Math.Between(-4, 4)
+                      });
+                      this.tweens.add({
+                        targets: token,
+                        alpha: 0,
+                        duration: 140,
+                        delay: 180,
+                        onComplete: () => {
+                          token.destroy();
+                          resolve();
+                        }
+                      });
+                    }
+                  });
+                }
+              });
+              return;
+            }
+
+            const badge = this.add.container(chestCenter.x, chestCenter.y - 30).setDepth(DEPTH_HERO + 42).setAlpha(0);
+            const bg = this.add.rectangle(0, 0, Math.max(110, label.length * 10), 34, palette.fill, 0.95)
+              .setStrokeStyle(2, palette.stroke, 1);
+            const text = this.add.text(0, 0, label, {
+              fontFamily: '"Cinzel", "Times New Roman", serif',
+              fontSize: "15px",
+              fontStyle: "bold",
+              color: palette.text,
+              stroke: "#2A1406",
+              strokeThickness: 4
+            }).setOrigin(0.5);
+            badge.add([bg, text]);
+            this.heavenHellChestRewardSprites.push(badge);
+
+            this.tweens.add({
+              targets: badge,
+              alpha: 1,
+              y: chestCenter.y - 96,
+              duration: 220,
+              ease: "Cubic.easeOut",
+              onComplete: () => {
+                if (resolvedReward.kind === "freespin" && uiState) {
+                  uiState.freespins = Math.max(0, uiState.freespins + Math.max(0, Math.floor(Number(resolvedReward.appliedValue || 0))));
+                  this.updateFreespinCounter?.(uiState.freespins, { deferRingConsume: true });
+                }
+                if (resolvedReward.kind === "ability" && uiState && resolvedReward.abilityKey) {
+                  uiState.abilities[resolvedReward.abilityKey] = Math.max(
+                    Number(uiState.abilities[resolvedReward.abilityKey] || 0),
+                    Number(resolvedReward.after || 0)
+                  );
+                  uiState.gameState.heavenHell.bonus.abilities = { ...uiState.abilities };
+                  this.updateHeavenHellAbilityText?.(uiState.gameState, { allowRewardFx: false });
+                }
+                if (resolvedReward.kind === "multiplier" && uiState) {
+                  const targetX = Number(this.multiplierText?.x ?? this.houseSprite?.x ?? chestCenter.x);
+                  const targetY = Number(this.multiplierText?.y ?? this.houseSprite?.y ?? (chestCenter.y - 110));
+                  const orb = this.add.circle(chestCenter.x, chestCenter.y - 68, 12, palette.fill, 0.95)
+                    .setDepth(DEPTH_HERO + 48)
+                    .setStrokeStyle(2, palette.stroke, 1)
+                    .setBlendMode(Phaser.BlendModes.ADD);
+                  const trail = this.add.circle(chestCenter.x, chestCenter.y - 68, 20, palette.fill, 0.24)
+                    .setDepth(DEPTH_HERO + 47)
+                    .setBlendMode(Phaser.BlendModes.ADD);
+                  this.tweens.add({
+                    targets: [orb, trail],
+                    x: targetX,
+                    y: targetY,
+                    scaleX: 0.7,
+                    scaleY: 0.7,
+                    alpha: { from: 1, to: 0.2 },
+                    duration: 340,
+                    ease: "Cubic.easeIn",
+                    onComplete: () => {
+                      orb.destroy();
+                      trail.destroy();
+                      uiState.multiplier = Math.max(
+                        1,
+                        Number(uiState.multiplier || 1),
+                        Number(resolvedReward.after || 1)
+                      );
+                      uiState.gameState.multiplier = uiState.multiplier;
+                      uiState.gameState.heavenHell.bonus.globalMultiplier = uiState.multiplier;
+                      this.createOrUpdateHouse?.(uiState.multiplier);
+                    }
+                  });
+                }
+                this.tweens.add({
+                  targets: badge,
+                  alpha: 0,
+                  y: badge.y - 34,
+                  duration: 320,
+                  delay: 260,
+                  ease: "Sine.easeIn",
+                  onComplete: () => {
+                    badge.destroy();
+                    resolve();
+                  }
+                });
+              }
+            });
+            this.playSfx?.("wins_highlight", { volume: 0.16 });
+          }));
+
+        await Promise.all(rewardAnimations);
+      },
+
+    async playHeavenHellChestRewardSequence(gameState = {}) {
+        const chestEvents = Array.isArray(gameState?.heavenHell?.bonus?.chestEventsThisAction)
+          ? gameState.heavenHell.bonus.chestEventsThisAction
+          : [];
+        if (chestEvents.length === 0) {
+          this.updateFreespinCounter?.(gameState?.bonusState?.finalFreespins || 0, { deferRingConsume: true });
+          return false;
+        }
+
+        const chestSummary = gameState?.heavenHell?.bonus?.chestActionSummary || {};
+        const uiState = {
+          freespins: Math.max(
+            0,
+            Number(gameState?.bonusState?.finalFreespins || 0) - Math.max(0, Number(chestSummary?.freeSpinsAdded || 0))
+          ),
+          multiplier: Math.max(
+            1,
+            Number(gameState?.multiplier || 1) - Math.max(0, Number(chestSummary?.multiplierAdded || 0))
+          ),
+          abilities: {
+            divineStrike: Math.max(0, Number(gameState?.heavenHell?.bonus?.abilities?.divineStrike || 0) - Math.max(0, Number(chestSummary?.abilityGains?.divineStrike || 0))),
+            divineX: Math.max(0, Number(gameState?.heavenHell?.bonus?.abilities?.divineX || 0) - Math.max(0, Number(chestSummary?.abilityGains?.divineX || 0))),
+            divineCharge: Math.max(0, Number(gameState?.heavenHell?.bonus?.abilities?.divineCharge || 0) - Math.max(0, Number(chestSummary?.abilityGains?.divineCharge || 0)))
+          },
+          gameState: JSON.parse(JSON.stringify(gameState))
+        };
+
+        uiState.gameState.bonusState.finalFreespins = uiState.freespins;
+        uiState.gameState.multiplier = uiState.multiplier;
+        uiState.gameState.heavenHell.bonus.globalMultiplier = uiState.multiplier;
+        uiState.gameState.heavenHell.bonus.abilities = { ...uiState.abilities };
+
+        this.createOrUpdateHouse?.(uiState.multiplier);
+        this.updateFreespinCounter?.(uiState.freespins, { deferRingConsume: true });
+        this.updateHeavenHellAbilityText?.(uiState.gameState, { allowRewardFx: false });
+        this.clearHeavenHellChestPresentation();
+
+        for (let chestIndex = 0; chestIndex < chestEvents.length; chestIndex++) {
+          const chest = chestEvents[chestIndex] || {};
+          const chestCenter = this.getGridCellCenter(Math.floor(Number(chest?.reel)), Math.floor(Number(chest?.row)));
+          const chestSpinStageCenter = this.getHeavenHellChestSpinStageCenter();
+          const glowColor = this.getHeavenHellChestColor(chest?.highlight?.glowColor, 0xF6D58D);
+          const glowAlpha = Number.isFinite(Number(chest?.highlight?.glowAlpha)) ? Number(chest.highlight.glowAlpha) : 0.28;
+          const glowScale = Number.isFinite(Number(chest?.highlight?.glowScale)) ? Number(chest.highlight.glowScale) : 1.16;
+
+          this.heavenHellChestShadow = this.add.ellipse(chestCenter.x, chestCenter.y + 24, 58, 18, 0x000000, 0.34)
+            .setDepth(DEPTH_HERO + 28);
+          this.heavenHellChestGlow = this.add.circle(chestCenter.x, chestCenter.y, 38, glowColor, glowAlpha)
+            .setDepth(DEPTH_HERO + 29)
+            .setBlendMode(Phaser.BlendModes.ADD)
+            .setScale(0.7);
+          this.heavenHellChestPulseRing = this.add.circle(chestCenter.x, chestCenter.y, 24, glowColor, Math.min(0.42, glowAlpha + 0.08))
+            .setDepth(DEPTH_HERO + 30)
+            .setStrokeStyle(3, 0xFFF2D0, 0.95)
+            .setBlendMode(Phaser.BlendModes.ADD)
+            .setScale(0.65)
+            .setAlpha(0.3);
+          this.heavenHellChestSprite = this.add.image(chestCenter.x, chestCenter.y - 110, "bonus_chest")
+            .setDepth(DEPTH_HERO + 31)
+            .setScale(0.52)
+            .setAlpha(0);
+
+          this.tweens.add({
+            targets: this.heavenHellChestGlow,
+            scale: glowScale,
+            alpha: Math.min(0.5, glowAlpha + 0.08),
+            duration: 360,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.easeInOut"
+          });
+          this.tweens.add({
+            targets: this.heavenHellChestPulseRing,
+            scale: glowScale + 0.24,
+            alpha: 0,
+            duration: 760,
+            repeat: -1,
+            ease: "Sine.easeOut"
+          });
+
+          this.playSfx?.("wins_highlight", { volume: 0.18 });
+          this.tweens.add({
+            targets: this.heavenHellChestSprite,
+            y: chestCenter.y - 4,
+            alpha: 1,
+            duration: 260,
+            ease: "Cubic.easeIn",
+            onComplete: () => {
+              this.tweens.add({
+                targets: this.heavenHellChestSprite,
+                y: chestCenter.y + 6,
+                duration: 180,
+                yoyo: true,
+                ease: "Bounce.easeOut"
+              });
+            }
+          });
+          await this.waitForPresentation(420, { skippable: true });
+
+          await this.flyAngelToHeavenHellChest(chest);
+
+          this.tweens.add({
+            targets: this.heavenHellChestSprite,
+            scaleX: 0.66,
+            scaleY: 0.66,
+            angle: -7,
+            duration: 120,
+            yoyo: true,
+            repeat: 1,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: this.heavenHellChestGlow,
+            scale: glowScale + 0.28,
+            alpha: Math.min(0.62, glowAlpha + 0.18),
+            duration: 180,
+            yoyo: true,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: this.heavenHellChestPulseRing,
+            scale: glowScale + 0.5,
+            alpha: 0,
+            duration: 240,
+            ease: "Cubic.easeOut"
+          });
+          if (this.heroSprite && !this.heroSprite.destroyed) {
+            this.tweens.add({
+              targets: this.heroSprite,
+              y: this.heroSprite.y - 12,
+              duration: 140,
+              yoyo: true,
+              ease: "Sine.easeInOut"
+            });
+          }
+          const spinStageFlash = this.add.circle(chestSpinStageCenter.x, chestSpinStageCenter.y - 18, 26, 0xFFF0B8, 0.22)
+            .setDepth(DEPTH_HERO + 34)
+            .setBlendMode(Phaser.BlendModes.ADD);
+          this.tweens.add({
+            targets: spinStageFlash,
+            scale: 2.4,
+            alpha: 0,
+            duration: 260,
+            ease: "Cubic.easeOut",
+            onComplete: () => spinStageFlash.destroy()
+          });
+          await this.waitForPresentation(280, { skippable: true });
+
+          this.playSfx?.("gold_drop", { volume: 0.16 });
+          this.tweens.add({
+            targets: this.heavenHellChestSprite,
+            scaleX: 0.6,
+            scaleY: 0.6,
+            angle: -4,
+            duration: 110,
+            yoyo: true,
+            repeat: 1,
+            ease: "Sine.easeOut"
+          });
+          await this.waitForPresentation(180, { skippable: true });
+
+          const spins = Array.isArray(chest?.spins) ? chest.spins : [];
+          const panels = [];
+          for (let spinIndex = 0; spinIndex < spins.length; spinIndex++) {
+            const spin = spins[spinIndex] || {};
+            const reelCount = Math.max(1, Math.floor(Number(spin?.reelCount || 1)));
+            const reelY = chestSpinStageCenter.y - 104;
+
+            while (panels.length < reelCount) {
+              const panel = this.createHeavenHellChestReelPanel(chestCenter.x, chestCenter.y - 74, 102, 54);
+              panel.setScale(0.2);
+              panel.setAlpha(0);
+              panels.push(panel);
+              this.heavenHellChestReelPanels.push(panel);
+              this.tweens.add({
+                targets: panel,
+                scaleX: 1,
+                scaleY: 1,
+                alpha: 1,
+                duration: 180,
+                ease: "Back.easeOut"
+              });
+            }
+
+            this.layoutHeavenHellChestPanels(panels, reelCount, chestSpinStageCenter.x, reelY, { animate: true });
+
+            const reveals = Array.isArray(spin?.reveals) ? spin.reveals : [];
+            const tickLabels = (Array.isArray(spin?.availableTickSymbols) ? spin.availableTickSymbols : [])
+              .map((symbol) => this.getHeavenHellChestTickerLabel(symbol))
+              .filter(Boolean);
+            panels.slice(0, reelCount).forEach((panel, revealIndex) => {
+              this.startHeavenHellChestReelTicker(panel, tickLabels, {
+                startIndex: revealIndex + spinIndex,
+                intervalMs: 90
+              });
+            });
+
+            await this.waitForPresentation(260, { skippable: true });
+            for (let revealIndex = 0; revealIndex < reelCount; revealIndex++) {
+              const panel = panels[revealIndex];
+              const reveal = reveals[revealIndex] || { reelIndex: revealIndex, symbol: "coin" };
+              if (panel?.chestTickerEvent) {
+                panel.chestTickerEvent.remove(false);
+                panel.chestTickerEvent = null;
+              }
+              await this.tickHeavenHellChestReel(panel, reveal, tickLabels);
+            }
+
+            await this.animateHeavenHellChestRewardBursts(chestSpinStageCenter, spin, uiState);
+            await this.waitForPresentation(spinIndex < spins.length - 1 ? 220 : 140, { skippable: true });
+          }
+
+          this.tweens.add({
+            targets: [this.heavenHellChestSprite, this.heavenHellChestGlow, this.heavenHellChestShadow],
+            alpha: 0,
+            duration: 220,
+            ease: "Sine.easeIn"
+          });
+          await this.waitForPresentation(240, { skippable: true });
+          this.clearHeavenHellChestPresentation();
+        }
+
+        this.updateFreespinCounter?.(gameState?.bonusState?.finalFreespins || 0, { deferRingConsume: true });
+        this.updateHeavenHellAbilityText?.(gameState, { allowRewardFx: false });
+        return true;
+      },
+
     async playHeavenHellCollectPhase(gameState = {}) {
         const settledDrops = Array.isArray(gameState?.heavenHell?.bonus?.lootGroundSettled)
           ? gameState.heavenHell.bonus.lootGroundSettled
@@ -1448,6 +2175,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const targetX = Number(this.multiplierText?.x ?? this.houseSprite?.x ?? (GRID_OFFSET_X + (clientConfig.area.width * 70) * 0.5));
         const targetY = Number(this.multiplierText?.y ?? this.houseSprite?.y ?? (GRID_OFFSET_Y + (clientConfig.area.height * 70) * 0.5));
         let runningTwa = baseTwa;
+        let collectedLootTwa = 0;
         const pulseCountUpHit = () => {
           if (!this.countUpText || this.countUpText.destroyed || this.countUpText.visible !== true) return;
           this.tweens.killTweensOf(this.countUpText);
@@ -1517,7 +2245,9 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         };
     
         this.updateCountUp(baseTwa);
+        this.ensureCollectPhaseLootCounter?.(0);
     
+        // COLLECT PHASE HIDE
         const title = this.add.text(targetX, targetY - 96, "COLLECT PHASE", {
           fontSize: "22px",
           fontFamily: '"Cinzel", "Times New Roman", serif',
@@ -1526,7 +2256,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           stroke: "#260D00",
           strokeThickness: 6
         }).setOrigin(0.5).setDepth(DEPTH_HERO + 52).setAlpha(0);
-        this.tweens.add({ targets: title, alpha: 1, y: targetY - 114, duration: 220, ease: "Sine.easeOut" });
+        this.tweens.add({ targets: title, alpha: 0, y: targetY - 114, duration: 220, ease: "Sine.easeOut" });
     
         const vortexGlow = this.add.circle(targetX, targetY, 34, 0xFFE08A, 0.18)
           .setDepth(DEPTH_HERO + 48)
@@ -1595,7 +2325,9 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
               },
               onComplete: () => {
                 if (payoutTwa > 0) {
+                  collectedLootTwa += payoutTwa;
                   runningTwa += payoutTwa;
+                  this.updateCollectPhaseLootCounter?.(collectedLootTwa, { animate: true });
                   this.updateCountUp(Math.min(finalTwa, runningTwa));
                   pulseCountUpHit();
                   blinkMultiplierHit();
@@ -1642,130 +2374,956 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           onComplete: () => title.destroy()
         });
         await this.waitForPresentation(180, { skippable: true });
+        this.destroyCollectPhaseLootCounter?.();
       },
 
-    async playHeavenHellDivineWrathAtStep(step = {}, gameState = {}, { stepQuickStop = false } = {}) {
-        if (stepQuickStop || step?.divineWrathProc !== true) return;
-        if (gameState?.heavenHell?.bonus && gameState?.isBonus === true) {
-          this._heavenHellActiveGameState = gameState;
-        }
-    
-        const affectedCells = Array.isArray(step?.divineWrathAffectedCells) ? step.divineWrathAffectedCells : [];
-        const killCells = Array.isArray(step?.divineWrathKillCells) ? step.divineWrathKillCells : [];
-        if (affectedCells.length === 0) return;
-    
-        this.clearHeavenHellDivineGroundFx?.({ fade: true });
-    
-        const heroX = Number(this.heroSprite?.x || (GRID_OFFSET_X + (clientConfig.area.width * 70) * 0.5));
-        const heroY = Number(this.heroSprite?.y || (GRID_OFFSET_Y + (clientConfig.area.height * 70) * 0.5));
-        const title = this.add.text(heroX, heroY - 96, "DIVINE WRATH", {
-          fontSize: "22px",
-          fontFamily: '"Cinzel", "Times New Roman", serif',
-          fontStyle: "bold",
-          color: "#FFF0AA",
-          stroke: "#260D00",
-          strokeThickness: 6
-        }).setOrigin(0.5).setDepth(DEPTH_HERO + 52).setAlpha(0);
-        this.tweens.add({ targets: title, alpha: 1, y: heroY - 116, duration: 220, ease: "Sine.easeOut" });
-    
-        const chargeOrb = this.add.circle(heroX, heroY - 16, 18, 0xFFF1AD, 0.5)
-          .setDepth(DEPTH_HERO + 50)
+    async playHeavenHellDivineStrikeAnticipation(
+        step = {},
+        targetCenter = null,
+        {
+          stepQuickStop = false,
+          durationMs = 850,
+          slowMoFactor = 0.18,
+          showTitle = true
+        } = {}
+      ) {
+        if (stepQuickStop || step?.divineStrikeProc !== true) return false;
+        if (!this.heroSprite || this.heroSprite.destroyed) return false;
+
+        const target = targetCenter || this.getGridCellCenter(
+          Math.floor(Number(step?.reel)),
+          Math.floor(Number(step?.row))
+        );
+        const heroX = Number(this.heroSprite.x || target.x);
+        const heroY = Number(this.heroSprite.y || target.y);
+        const safeDuration = Math.max(1, Math.floor(Number(durationMs) || 850));
+        const clampedSlowMoFactor = Phaser.Math.Clamp(Number(slowMoFactor) || 0.18, 0.08, 0.95);
+        const title = showTitle
+          ? this.add.text(heroX, heroY - 92, "DIVINE STRIKE", {
+              fontSize: "22px",
+              fontFamily: '"Cinzel", "Times New Roman", serif',
+              fontStyle: "bold",
+              color: "#FFF0AA",
+              stroke: "#260D00",
+              strokeThickness: 6
+            }).setOrigin(0.5).setDepth(DEPTH_HERO + 52).setAlpha(0)
+          : null;
+        const targetRing = this.add.circle(target.x, target.y, 22, 0xFFE6B0, 0.24)
+          .setDepth(DEPTH_HERO + 48)
+          .setStrokeStyle(4, 0xFFF7D0, 0.95)
           .setBlendMode(Phaser.BlendModes.ADD)
-          .setScale(0.55);
-        const halo = this.add.circle(heroX, heroY, 46, 0xFFE082, 0.12)
+          .setScale(0.72);
+        const targetFlash = this.add.circle(target.x, target.y, 14, 0xFFF6CE, 0.38)
           .setDepth(DEPTH_HERO + 49)
           .setBlendMode(Phaser.BlendModes.ADD)
-          .setScale(0.5);
-        this.tweens.add({ targets: chargeOrb, scale: 2.7, alpha: 0.88, duration: 420, ease: "Cubic.easeOut" });
-        this.tweens.add({ targets: halo, scale: 2.1, alpha: 0.3, duration: 420, ease: "Cubic.easeOut" });
+          .setScale(0.52);
+
+        if (title) {
+          this.tweens.add({ targets: title, alpha: 1, y: heroY - 112, duration: 180, ease: "Sine.easeOut" });
+        }
+        this.tweens.add({
+          targets: targetRing,
+          scale: 2.8,
+          alpha: 0.88,
+          duration: safeDuration,
+          ease: "Sine.easeInOut"
+        });
+        this.tweens.add({
+          targets: targetFlash,
+          scale: 3.8,
+          alpha: 0.08,
+          duration: safeDuration,
+          ease: "Sine.easeInOut"
+        });
         if (this.heroSprite && !this.heroSprite.destroyed) {
           this.tweens.add({
             targets: this.heroSprite,
-            y: this.heroSprite.y - 10,
-            duration: 180,
+            scaleX: (this.heroSprite.scaleX || 1) * 1.08,
+            scaleY: (this.heroSprite.scaleY || 1) * 0.96,
+            duration: Math.max(180, Math.floor(safeDuration * 0.32)),
             yoyo: true,
-            repeat: 1,
+            repeat: 2,
             ease: "Sine.easeInOut"
           });
         }
-        await this.waitForPresentation(480, { skippable: true });
-    
-        this.playSfx?.("lightning_thor", { volume: 0.68 });
-        this.cameras?.main?.shake?.(320, 0.009);
-    
-        const sortedCells = [...affectedCells].sort((a, b) => (Number(a.reel) + Number(a.row)) - (Number(b.reel) + Number(b.row)));
-    
-        sortedCells.forEach((cell) => {
-          const reel = Math.floor(Number(cell?.reel));
-          const row = Math.floor(Number(cell?.row));
-          if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
-          const center = this.getGridCellCenter(reel, row);
-          const ground = this.textures?.exists?.("helldive_divine_ground")
-            ? this.add.image(center.x, center.y, "helldive_divine_ground").setScale(0.7).setAlpha(0.9)
-            : this.add.rectangle(center.x, center.y, 66, 66, 0xFFF1A8, 0.36);
-          ground.setDepth(DEPTH_SYMBOLS + 11).setBlendMode(Phaser.BlendModes.ADD);
-          const rune = this.add.rectangle(center.x, center.y, 60, 60)
-            .setStrokeStyle(3, 0xFFE07A, 0.96)
-            .setDepth(DEPTH_SYMBOLS + 12)
-            .setBlendMode(Phaser.BlendModes.ADD)
-            .setAngle(45)
-            .setScale(0.72);
-          const beam = this.textures?.exists?.("helldive_divine_wrath_beam")
-            ? this.add.image(center.x, center.y - 72, "helldive_divine_wrath_beam")
-                .setDepth(DEPTH_HERO + 51)
-                .setBlendMode(Phaser.BlendModes.ADD)
-                .setScale(0.2, 0.38)
-                .setAlpha(0.78)
-            : this.add.rectangle(center.x, center.y - 82, 12, 164, 0xFFFBE0, 0.66)
-                .setDepth(DEPTH_HERO + 51)
-                .setBlendMode(Phaser.BlendModes.ADD)
-                .setScale(0.24, 0.22);
-          this.heavenHellDivineGroundFx.push(ground, rune);
-          this.tweens.add({ targets: [ground, rune], scale: 1.1, duration: 130, yoyo: true, repeat: 1, ease: "Cubic.easeOut" });
+
+        this.endSlowMo?.();
+        this.beginBriefSlowMo?.(clampedSlowMoFactor, safeDuration, { affectTimers: false });
+        await this.waitForPresentation(safeDuration, { skippable: true, useSceneTime: false });
+        this.endSlowMo?.();
+
+        if (targetRing && !targetRing.destroyed) targetRing.destroy();
+        if (targetFlash && !targetFlash.destroyed) targetFlash.destroy();
+        if (title) {
           this.tweens.add({
-            targets: beam,
-            scaleX: (beam.scaleX || 1) * 3.4,
-            scaleY: (beam.scaleY || 1) * 1.4,
+            targets: title,
             alpha: 0,
-            duration: 320,
-            ease: "Cubic.easeOut",
-            onComplete: () => beam.destroy()
+            y: title.y - 18,
+            duration: 160,
+            ease: "Sine.easeOut",
+            onComplete: () => title.destroy()
+          });
+        }
+        return true;
+      },
+
+    createHeavenHellDivineXWaveMarker(center = null, { wave = 1 } = {}) {
+        if (!center) return [];
+        if (!Array.isArray(this.heavenHellDivineGroundFx)) {
+          this.heavenHellDivineGroundFx = [];
+        }
+
+        const waveIndex = Math.max(1, Math.floor(Number(wave) || 1));
+        const lineLength = 70 + waveIndex * 8;
+        const lineThickness = 7 + Math.min(3, waveIndex);
+        const ringRadius = 15 + waveIndex * 2;
+        const haloRadius = 24 + waveIndex * 4;
+        const lineA = this.add.rectangle(center.x, center.y, lineLength, lineThickness, 0xE8C4FF, 0.92)
+          .setAngle(45)
+          .setDepth(DEPTH_SYMBOLS + 12)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAlpha(0)
+          .setScale(0.18, 0.26);
+        const lineB = this.add.rectangle(center.x, center.y, lineLength, lineThickness, 0xFFF3FF, 0.96)
+          .setAngle(-45)
+          .setDepth(DEPTH_SYMBOLS + 13)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAlpha(0)
+          .setScale(0.18, 0.26);
+        const ring = this.add.circle(center.x, center.y, ringRadius, 0xB669FF, 0.2)
+          .setDepth(DEPTH_SYMBOLS + 11)
+          .setStrokeStyle(3, 0xF4D7FF, 0.92)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAlpha(0)
+          .setScale(0.24);
+        const halo = this.add.circle(center.x, center.y, haloRadius, 0xDDA7FF, 0.12)
+          .setDepth(DEPTH_SYMBOLS + 10)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAlpha(0)
+          .setScale(0.18);
+        const core = this.add.circle(center.x, center.y, 8 + waveIndex, 0xFFF7FF, 0.34)
+          .setDepth(DEPTH_SYMBOLS + 14)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAlpha(0)
+          .setScale(0.22);
+
+        const fxParts = [lineA, lineB, ring, halo, core];
+        this.heavenHellDivineGroundFx.push(...fxParts);
+
+        this.tweens.add({
+          targets: [lineA, lineB],
+          alpha: 0.96,
+          scaleX: 1.06,
+          scaleY: 1.02,
+          duration: 110,
+          ease: "Cubic.easeOut"
+        });
+        this.tweens.add({
+          targets: ring,
+          alpha: 0.78,
+          scale: 1.36,
+          duration: 130,
+          ease: "Back.easeOut"
+        });
+        this.tweens.add({
+          targets: halo,
+          alpha: 0.34,
+          scale: 1.42,
+          duration: 140,
+          ease: "Sine.easeOut"
+        });
+        this.tweens.add({
+          targets: core,
+          alpha: 0.88,
+          scale: 1.18,
+          duration: 90,
+          ease: "Cubic.easeOut"
+        });
+
+        const holdMs = 140 + waveIndex * 36;
+        const fadeMs = 280 + waveIndex * 40;
+        this.time.delayedCall(holdMs, () => {
+          const activeFx = fxParts.filter((fx) => fx && !fx.destroyed);
+          if (activeFx.length === 0) return;
+
+          this.tweens.add({
+            targets: [lineA, lineB],
+            scaleX: 1.28,
+            scaleY: 1.14,
+            alpha: 0,
+            duration: fadeMs,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: ring,
+            scale: 2.35,
+            alpha: 0,
+            duration: fadeMs,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: halo,
+            scale: 3.2,
+            alpha: 0,
+            duration: fadeMs + 120,
+            ease: "Sine.easeOut",
+            onComplete: () => {
+              activeFx.forEach((fx) => {
+                if (fx && !fx.destroyed) fx.destroy();
+              });
+            }
+          });
+          this.tweens.add({
+            targets: core,
+            scale: 1.72,
+            alpha: 0,
+            duration: Math.max(320, fadeMs - 120),
+            ease: "Sine.easeOut"
           });
         });
-    
-        killCells.forEach((cell) => {
-          const reel = Math.floor(Number(cell?.reel));
-          const row = Math.floor(Number(cell?.row));
-          if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
-          const center = this.getGridCellCenter(reel, row);
-          const sprite = this.reelSprites?.[reel]?.[row];
-          if (sprite && !sprite.destroyed) {
-            this.playHeavenHellDemonDeathFx?.(reel, row, { center, intensity: 1.28, destroySprite: true });
-          }
-          if (this.reelSprites?.[reel]) {
-            this.reelSprites[reel][row] = null;
-          }
+
+        return fxParts;
+      },
+
+    createHeavenHellDivineStrikeSigil(center = null, { wave = 0, isCenter = false } = {}) {
+        if (!center) return [];
+        if (!Array.isArray(this.heavenHellDivineGroundFx)) {
+          this.heavenHellDivineGroundFx = [];
+        }
+
+        const waveIndex = Math.max(0, Math.floor(Number(wave) || 0));
+        const baseScale = isCenter ? 0.86 : 0.74 + waveIndex * 0.04;
+        const litPlate = this.add.rectangle(
+          center.x,
+          center.y + 4,
+          isCenter ? 74 : 68,
+          isCenter ? 74 : 68,
+          0xFFE39A,
+          isCenter ? 0.26 : 0.22
+        )
+          .setDepth(DEPTH_SYMBOLS + 9)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAngle(45)
+          .setScale(0.72)
+          .setAlpha(0);
+        const litPlateGlow = this.add.rectangle(
+          center.x,
+          center.y + 4,
+          isCenter ? 88 : 80,
+          isCenter ? 88 : 80,
+          0xFFF4CF,
+          0.12
+        )
+          .setDepth(DEPTH_SYMBOLS + 8)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAngle(45)
+          .setScale(0.66)
+          .setAlpha(0);
+        const ground = this.textures?.exists?.("helldive_divine_ground")
+          ? this.add.image(center.x, center.y, "helldive_divine_ground")
+              .setScale(baseScale)
+              .setAlpha(0.94)
+          : this.add.rectangle(center.x, center.y, 66, 66, 0xFFF1A8, 0.36);
+        ground
+          .setDepth(DEPTH_SYMBOLS + 11)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAlpha(0);
+
+        const rune = this.add.rectangle(center.x, center.y, isCenter ? 64 : 58, isCenter ? 64 : 58)
+          .setStrokeStyle(3, 0xFFE07A, 0.96)
+          .setDepth(DEPTH_SYMBOLS + 12)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAngle(45)
+          .setScale(0.72)
+          .setAlpha(0);
+
+        const pentagram = typeof this.add.star === "function"
+          ? this.add.star(
+              center.x,
+              center.y,
+              5,
+              isCenter ? 12 : 10,
+              isCenter ? 28 : 24,
+              0xFFF3C6,
+              0.18
+            )
+          : this.add.circle(center.x, center.y, isCenter ? 24 : 20, 0xFFF3C6, 0.18);
+        pentagram
+          .setDepth(DEPTH_SYMBOLS + 13)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAngle(-18)
+          .setScale(0.42)
+          .setAlpha(0);
+
+        const innerRune = this.add.rectangle(center.x, center.y, isCenter ? 42 : 38, isCenter ? 42 : 38)
+          .setStrokeStyle(2, 0xFFF7D8, 0.82)
+          .setDepth(DEPTH_SYMBOLS + 14)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAngle(45)
+          .setScale(0.58)
+          .setAlpha(0);
+
+        const beam = this.textures?.exists?.("helldive_divine_wrath_beam")
+          ? this.add.image(center.x, center.y - 72, "helldive_divine_wrath_beam")
+              .setDepth(DEPTH_HERO + 51)
+              .setBlendMode(Phaser.BlendModes.ADD)
+              .setScale(0.2, 0.38)
+              .setAlpha(0.78)
+          : this.add.rectangle(center.x, center.y - 82, 12, 164, 0xFFFBE0, 0.66)
+              .setDepth(DEPTH_HERO + 51)
+              .setBlendMode(Phaser.BlendModes.ADD)
+              .setScale(0.24, 0.22);
+        beam.setAlpha(0);
+
+        const sealGlow = this.add.circle(center.x, center.y, isCenter ? 30 : 24, 0xFFF2BC, 0.18)
+          .setDepth(DEPTH_SYMBOLS + 15)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.24)
+          .setAlpha(0);
+
+        const fxParts = [litPlate, litPlateGlow, ground, rune, pentagram, innerRune, beam, sealGlow];
+        this.heavenHellDivineGroundFx.push(...fxParts);
+
+        this.tweens.add({
+          targets: [litPlate, litPlateGlow, ground, rune, pentagram, innerRune],
+          alpha: 0.94,
+          duration: 110,
+          ease: "Sine.easeOut"
         });
-    
-        await this.waitForPresentation(520, { skippable: true });
-        if (chargeOrb && !chargeOrb.destroyed) chargeOrb.destroy();
-        if (halo && !halo.destroyed) halo.destroy();
-        this.tweens.add({ targets: title, alpha: 0, y: title.y - 18, duration: 260, ease: "Sine.easeOut", onComplete: () => title.destroy() });
-    
-        if (killCells.length > 0) {
+        this.tweens.add({
+          targets: [litPlate, litPlateGlow, ground, rune],
+          scale: (target, key, value) => (Number(value) || 1) * 1.1,
+          duration: 150,
+          yoyo: true,
+          repeat: 1,
+          ease: "Cubic.easeOut"
+        });
+        this.tweens.add({
+          targets: pentagram,
+          angle: pentagram.angle + 28,
+          scale: 1.12,
+          alpha: 0.82,
+          duration: 240,
+          ease: "Sine.easeOut"
+        });
+        this.tweens.add({
+          targets: innerRune,
+          angle: innerRune.angle + 25,
+          scale: 1.02,
+          duration: 240,
+          ease: "Sine.easeOut"
+        });
+        this.tweens.add({
+          targets: beam,
+          alpha: 0.92,
+          scaleX: (beam.scaleX || 1) * 3.4,
+          scaleY: (beam.scaleY || 1) * 1.4,
+          duration: 320,
+          ease: "Cubic.easeOut"
+        });
+        this.tweens.add({
+          targets: sealGlow,
+          alpha: 0.56,
+          scale: 2.4,
+          duration: 280,
+          ease: "Cubic.easeOut"
+        });
+
+        const holdMs = isCenter ? 520 : 460 + waveIndex * 80;
+        const fadeMs = isCenter ? 820 : 720 + waveIndex * 90;
+        const beamFadeStartMs = Math.max(140, Math.floor(holdMs * 0.5));
+        const beamFadeMs = Math.max(140, Math.floor((isCenter ? 430 : 360) * 0.5));
+        this.time.delayedCall(holdMs, () => {
+          const activeFx = fxParts.filter((fx) => fx && !fx.destroyed);
+          if (activeFx.length === 0) return;
+
+          this.tweens.add({
+            targets: [litPlate, litPlateGlow, ground, rune, pentagram, innerRune, sealGlow],
+            alpha: 0,
+            duration: fadeMs,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: litPlate,
+            scaleX: (litPlate.scaleX || 1) * 1.14,
+            scaleY: (litPlate.scaleY || 1) * 1.14,
+            duration: fadeMs,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: litPlateGlow,
+            scaleX: (litPlateGlow.scaleX || 1) * 1.22,
+            scaleY: (litPlateGlow.scaleY || 1) * 1.22,
+            duration: fadeMs,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: ground,
+            scaleX: (ground.scaleX || 1) * 1.18,
+            scaleY: (ground.scaleY || 1) * 1.18,
+            duration: fadeMs,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: rune,
+            angle: rune.angle + 18,
+            scale: 1.22,
+            duration: fadeMs,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: pentagram,
+            angle: pentagram.angle - 34,
+            scale: 1.24,
+            duration: fadeMs,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: innerRune,
+            angle: innerRune.angle - 28,
+            scale: 1.14,
+            duration: fadeMs,
+            ease: "Sine.easeOut"
+          });
+        });
+
+        this.time.delayedCall(beamFadeStartMs, () => {
+          if (!beam || beam.destroyed) return;
+          this.tweens.add({
+            targets: beam,
+            alpha: 0,
+            scaleX: (beam.scaleX || 1) * 1.25,
+            duration: beamFadeMs,
+            ease: "Sine.easeOut"
+          });
+        });
+
+        return fxParts;
+      },
+
+    createHeavenHellDivineStrikeReachMarker(center = null, { wave = 0, distance = 0, isOrigin = false, isKilled = false } = {}) {
+        if (!center) return [];
+        if (!Array.isArray(this.heavenHellDivineGroundFx)) {
+          this.heavenHellDivineGroundFx = [];
+        }
+
+        const waveIndex = Math.max(0, Math.floor(Number(wave) || 0));
+        const distanceIndex = Math.max(0, Math.floor(Number(distance) || 0));
+        const plateAlpha = isKilled ? 0.26 : (isOrigin ? 0.22 : 0.16);
+        const starAlpha = isKilled ? 0.2 : (isOrigin ? 0.16 : 0.12);
+        const plate = this.add.rectangle(center.x, center.y + 4, 62, 62, 0xFFE3A0, plateAlpha)
+          .setDepth(DEPTH_SYMBOLS + 8)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAngle(45)
+          .setScale(0.7)
+          .setAlpha(0);
+        const frame = this.add.rectangle(center.x, center.y + 4, 66, 66)
+          .setDepth(DEPTH_SYMBOLS + 9)
+          .setStrokeStyle(isKilled ? 3 : 2, isKilled ? 0xFFF4D0 : 0xFFE8B2, isKilled ? 0.86 : 0.62)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAngle(45)
+          .setScale(0.66)
+          .setAlpha(0);
+        const star = typeof this.add.star === "function"
+          ? this.add.star(center.x, center.y, 5, isKilled ? 9 : 8, isKilled ? 20 : 18, 0xFFF3C6, starAlpha)
+          : this.add.circle(center.x, center.y, isKilled ? 18 : 16, 0xFFF3C6, starAlpha);
+        star
+          .setDepth(DEPTH_SYMBOLS + 10)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAngle(isOrigin ? -18 : -10)
+          .setScale(isOrigin ? 0.46 : 0.4)
+          .setAlpha(0);
+        const pulse = this.add.circle(center.x, center.y, isKilled ? 16 : 14, isKilled ? 0xFFF0C2 : 0xFFE5AE, isKilled ? 0.22 : 0.14)
+          .setDepth(DEPTH_SYMBOLS + 11)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.22)
+          .setAlpha(0);
+        const beam = this.textures?.exists?.("helldive_divine_wrath_beam")
+          ? this.add.image(center.x, center.y - 68, "helldive_divine_wrath_beam")
+              .setDepth(DEPTH_HERO + 50)
+              .setBlendMode(Phaser.BlendModes.ADD)
+              .setScale(isKilled ? 0.16 : 0.12, isKilled ? 0.32 : 0.24)
+          : this.add.rectangle(
+              center.x,
+              center.y - 76,
+              isKilled ? 10 : 8,
+              isKilled ? 150 : 126,
+              0xFFFBE0,
+              isKilled ? 0.78 : 0.56
+            )
+              .setDepth(DEPTH_HERO + 50)
+              .setBlendMode(Phaser.BlendModes.ADD)
+              .setScale(0.22, 0.18);
+        beam.setAlpha(0);
+        const beamFlare = this.add.circle(center.x, center.y, isKilled ? 20 : 16, isKilled ? 0xFFF2C2 : 0xFFE5AE, isKilled ? 0.28 : 0.18)
+          .setDepth(DEPTH_SYMBOLS + 12)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.18)
+          .setAlpha(0);
+
+        const fxParts = [plate, frame, star, pulse, beam, beamFlare];
+        this.heavenHellDivineGroundFx.push(...fxParts);
+
+        this.tweens.add({
+          targets: [plate, frame, star],
+          alpha: 0.92,
+          duration: 90,
+          ease: "Sine.easeOut"
+        });
+        this.tweens.add({
+          targets: [plate, frame],
+          scale: (target, key, value) => (Number(value) || 1) * 1.08,
+          duration: 140,
+          ease: "Cubic.easeOut"
+        });
+        this.tweens.add({
+          targets: star,
+          alpha: isKilled ? 0.92 : 0.7,
+          angle: star.angle + (isOrigin ? 24 : 18),
+          scale: isOrigin ? 1.02 : 0.92,
+          duration: 220,
+          ease: "Sine.easeOut"
+        });
+        this.tweens.add({
+          targets: beam,
+          alpha: isKilled ? 0.96 : 0.72,
+          scaleX: (beam.scaleX || 1) * (isKilled ? 4.4 : 3.4),
+          scaleY: (beam.scaleY || 1) * (isKilled ? 1.55 : 1.35),
+          duration: isKilled ? 250 : 220,
+          ease: "Cubic.easeOut"
+        });
+        this.tweens.add({
+          targets: beamFlare,
+          alpha: isKilled ? 0.72 : 0.46,
+          scale: isKilled ? 2.7 : 2.1,
+          duration: isKilled ? 240 : 220,
+          ease: "Cubic.easeOut"
+        });
+        this.tweens.add({
+          targets: pulse,
+          alpha: isKilled ? 0.7 : 0.48,
+          scale: 2 + waveIndex * 0.08 + distanceIndex * 0.06,
+          duration: 240,
+          ease: "Cubic.easeOut"
+        });
+
+        const holdMs = 280 + waveIndex * 40 + distanceIndex * 50;
+        const fadeMs = isKilled ? 700 : 620;
+        const beamFadeStartMs = Math.max(120, Math.floor(holdMs * 0.5));
+        const beamFadeMs = Math.max(120, Math.floor((isKilled ? 280 : 240) * 0.5));
+        this.time.delayedCall(holdMs, () => {
+          const activeFx = fxParts.filter((fx) => fx && !fx.destroyed);
+          if (activeFx.length === 0) return;
+          this.tweens.add({
+            targets: [plate, frame, star, pulse, beamFlare],
+            alpha: 0,
+            duration: fadeMs,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: plate,
+            scaleX: (plate.scaleX || 1) * 1.12,
+            scaleY: (plate.scaleY || 1) * 1.12,
+            duration: fadeMs,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: frame,
+            angle: frame.angle + 12,
+            scale: 1.16,
+            duration: fadeMs,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: star,
+            angle: star.angle - 24,
+            scale: 1.14,
+            duration: fadeMs,
+            ease: "Sine.easeOut"
+          });
+        });
+
+        this.time.delayedCall(beamFadeStartMs, () => {
+          if (!beam || beam.destroyed) return;
+          this.tweens.add({
+            targets: beam,
+            alpha: 0,
+            scaleX: (beam.scaleX || 1) * 1.28,
+            duration: beamFadeMs,
+            ease: "Sine.easeOut"
+          });
+        });
+
+        return fxParts;
+      },
+
+    async playHeavenHellDivineStrikeAtStep(step = {}, gameState = {}, { stepQuickStop = false, origin = null } = {}) {
+        if (stepQuickStop || step?.divineStrikeProc !== true) return;
+        if (gameState?.heavenHell?.bonus && gameState?.isBonus === true) {
+          this._heavenHellActiveGameState = gameState;
+        }
+
+        const strikeTargets = Array.isArray(step?.divineStrikeTargets) ? step.divineStrikeTargets : [];
+        if (strikeTargets.length === 0) return;
+
+        this.clearHeavenHellDivineGroundFx?.({ fade: true });
+
+        const heroX = Number(this.heroSprite?.x || (origin?.x ?? (GRID_OFFSET_X + (clientConfig.area.width * 70) * 0.5)));
+        const heroY = Number(this.heroSprite?.y || (origin?.y ?? (GRID_OFFSET_Y + (clientConfig.area.height * 70) * 0.5)));
+        const originPoint = {
+          x: Number(origin?.x || heroX),
+          y: Number(origin?.y || heroY)
+        };
+        const killedCells = [];
+        const lootCells = [];
+        const lootCellKeys = new Set();
+        const killedKeys = new Set();
+        const markedReachKeys = new Set();
+        const pushLootCell = (reel, row) => {
+          const cellReel = Math.floor(Number(reel));
+          const cellRow = Math.floor(Number(row));
+          if (!Number.isFinite(cellReel) || !Number.isFinite(cellRow)) return;
+          const key = `${cellReel},${cellRow}`;
+          if (lootCellKeys.has(key)) return;
+          lootCellKeys.add(key);
+          lootCells.push({ reel: cellReel, row: cellRow });
+        };
+        const waves = [...new Set(strikeTargets.map((target) => Math.max(0, Math.floor(Number(target?.wave) || 0))))].sort((a, b) => a - b);
+        const orderedTargets = waves.flatMap((wave) => (
+          strikeTargets
+            .filter((target) => Math.max(0, Math.floor(Number(target?.wave) || 0)) === wave)
+            .sort((a, b) => Number(a?.row) - Number(b?.row) || Number(a?.reel) - Number(b?.reel))
+            .map((target) => ({ ...target, wave }))
+        ));
+
+        for (let targetIndex = 0; targetIndex < orderedTargets.length; targetIndex++) {
+          const target = orderedTargets[targetIndex];
+          const wave = Math.max(0, Math.floor(Number(target?.wave) || 0));
+          const reel = Math.floor(Number(target?.reel));
+          const row = Math.floor(Number(target?.row));
+          if (!Number.isFinite(reel) || !Number.isFinite(row)) continue;
+
+          const center = this.getGridCellCenter(reel, row);
+          this.createHeavenHellDivineStrikeSigil?.(center, {
+            wave,
+            isCenter: target?.center === true
+          });
+          const strikeImpact = this.add.circle(center.x, center.y, target?.center === true ? 20 : 18, 0xFFEAB0, 0.18)
+            .setDepth(DEPTH_SYMBOLS + 15)
+            .setStrokeStyle(4, 0xFFF8D4, 0.92)
+            .setBlendMode(Phaser.BlendModes.ADD)
+            .setScale(0.42);
+          if (target?.center !== true) {
+            this.createHeavenHellDivineXWaveMarker?.(center, { wave: Math.max(1, wave) });
+          }
+          this.heavenHellDivineGroundFx.push(strikeImpact);
+          this.tweens.add({ targets: strikeImpact, scale: 3.6, alpha: 0, duration: 220, ease: "Cubic.easeOut" });
+          this.playSfx?.("attack_swing", { volume: 0.24, rate: 0.98 + wave * 0.04 });
+          this.playSfx?.("lightning_thor", { volume: 0.18, rate: 0.96 + wave * 0.04 });
+          this.playHeavenHellAngelStrikeSlash?.(originPoint, center, {
+            scale: target?.center === true ? 0.96 : 0.88 + wave * 0.05
+          });
+          if (targetIndex < orderedTargets.length - 1) {
+            await this.waitForPresentation(14, { skippable: true });
+          }
+        }
+
+        for (const target of orderedTargets) {
+          const wave = Math.max(0, Math.floor(Number(target?.wave) || 0));
+          const hitCells = Array.isArray(target?.hitCells) ? target.hitCells : [];
+          hitCells.forEach((cell) => {
+            const cellReel = Math.floor(Number(cell?.reel));
+            const cellRow = Math.floor(Number(cell?.row));
+            if (!Number.isFinite(cellReel) || !Number.isFinite(cellRow)) return;
+
+            const cellCenter = this.getGridCellCenter(cellReel, cellRow);
+            const reachKey = `${cellReel},${cellRow}`;
+            if (!markedReachKeys.has(reachKey)) {
+              markedReachKeys.add(reachKey);
+              this.createHeavenHellDivineStrikeReachMarker?.(cellCenter, {
+                wave,
+                distance: Number(cell?.distance || 0),
+                isOrigin: cell?.origin === true,
+                isKilled: cell?.killed === true
+              });
+            }
+
+            if (cell?.killed === true || (cell?.hadDemon === true && cell?.origin === true)) {
+              pushLootCell(cellReel, cellRow);
+            }
+            if (cell?.killed !== true) return;
+            if (killedKeys.has(reachKey)) return;
+            killedKeys.add(reachKey);
+
+            const sprite = this.reelSprites?.[cellReel]?.[cellRow];
+            if (sprite && !sprite.destroyed) {
+              this.playHeavenHellDemonDeathFx?.(cellReel, cellRow, {
+                center: cellCenter,
+                intensity: cell?.origin === true ? 1.22 : 1.02,
+                destroySprite: true,
+                gameState,
+                killWeight: cell?.killCountMultiplier,
+                divineXDoubleKill: cell?.divineXDoubleKill === true,
+                isMultiplierDemon: cell?.isMultiplierDemon === true
+              });
+            } else if (cell?.isMultiplierDemon === true) {
+              this.dropHeavenHellMultiplierDemonOrb(cellCenter.x, cellCenter.y);
+            }
+            if (this.reelSprites?.[cellReel]) {
+              this.reelSprites[cellReel][cellRow] = null;
+            }
+            killedCells.push({ reel: cellReel, row: cellRow });
+          });
+        }
+
+        this.pushHeavenHellStepBananaLootCells(step, pushLootCell);
+
+        this.cameras?.main?.shake?.(130, 0.0042);
+        await this.waitForPresentation(44, { skippable: true });
+
+        if (lootCells.length > 0) {
           await this.playHeavenHellLootDropPattern(gameState, {
-            source: "divineWrath",
-            from: { x: heroX, y: heroY - 105 },
-            jitterStrength: 16,
-            filterCells: killCells,
+            source: "divineStrike",
+            launchFromDropCell: true,
+            jitterStrength: this.getHeavenHellChargeLootJitter(step),
+            filterCells: lootCells,
             persistToGround: true
           });
         }
-    
-        this.time.delayedCall(1450, () => this.clearHeavenHellDivineGroundFx?.({ fade: true }));
+
+        this.time.delayedCall(1800, () => this.clearHeavenHellDivineGroundFx?.({ fade: true }));
       },
 
-    async playHeavenHellDivineWrathAreaTelegraph(gameState = {}) {
+    async playHeavenHellDivineXAtStep(step = {}, gameState = {}, { stepQuickStop = false, origin = null, strikeAtTargets = false } = {}) {
+        if (stepQuickStop || step?.divineXProc !== true) return;
+        if (gameState?.heavenHell?.bonus && gameState?.isBonus === true) {
+          this._heavenHellActiveGameState = gameState;
+        }
+
+        const xTargets = Array.isArray(step?.divineXTargets) ? step.divineXTargets : [];
+        if (xTargets.length === 0) return;
+
+        this.clearHeavenHellDivineGroundFx?.({ fade: true });
+
+        const heroX = Number(this.heroSprite?.x || (origin?.x ?? (GRID_OFFSET_X + (clientConfig.area.width * 70) * 0.5)));
+        const heroY = Number(this.heroSprite?.y || (origin?.y ?? (GRID_OFFSET_Y + (clientConfig.area.height * 70) * 0.5)));
+        const originPoint = {
+          x: Number(origin?.x || heroX),
+          y: Number(origin?.y || heroY)
+        };
+        const title = strikeAtTargets
+          ? null
+          : this.add.text(heroX, heroY - 96, "DIVINE X", {
+            fontSize: "22px",
+            fontFamily: '"Cinzel", "Times New Roman", serif',
+            fontStyle: "bold",
+            color: "#F3D7FF",
+            stroke: "#240932",
+            strokeThickness: 6
+          }).setOrigin(0.5).setDepth(DEPTH_HERO + 52).setAlpha(0);
+        if (title) {
+          this.tweens.add({ targets: title, alpha: 1, y: heroY - 116, duration: 120, ease: "Sine.easeOut" });
+        }
+
+        const waves = [...new Set(xTargets.map((target) => Math.max(1, Math.floor(Number(target?.wave) || 1))))].sort((a, b) => a - b);
+        const divineStrikeTargets = Array.isArray(step?.divineStrikeTargets) ? step.divineStrikeTargets : [];
+        const divineStrikeTargetMap = new Map(
+          divineStrikeTargets
+            .filter((entry) => Number.isFinite(Number(entry?.reel)) && Number.isFinite(Number(entry?.row)))
+            .map((entry) => [`${Math.floor(Number(entry.reel))},${Math.floor(Number(entry.row))}`, entry])
+        );
+        const killedCells = [];
+        const lootCells = [];
+        const lootCellKeys = new Set();
+        const killedKeys = new Set();
+        const pushLootCell = (reel, row) => {
+          const cellReel = Math.floor(Number(reel));
+          const cellRow = Math.floor(Number(row));
+          if (!Number.isFinite(cellReel) || !Number.isFinite(cellRow)) return;
+          const key = `${cellReel},${cellRow}`;
+          if (lootCellKeys.has(key)) return;
+          lootCellKeys.add(key);
+          lootCells.push({ reel: cellReel, row: cellRow });
+        };
+
+        const orderedXTargets = waves.flatMap((wave) => (
+          xTargets
+            .filter((target) => Math.max(1, Math.floor(Number(target?.wave) || 1)) === wave)
+            .sort((a, b) => Number(a?.row) - Number(b?.row) || Number(a?.reel) - Number(b?.reel))
+            .map((target) => ({ ...target, wave }))
+        ));
+
+        const telegraphDivineXTarget = (target) => {
+          const wave = Math.max(1, Math.floor(Number(target?.wave) || 1));
+          const reel = Math.floor(Number(target?.reel));
+          const row = Math.floor(Number(target?.row));
+          if (!Number.isFinite(reel) || !Number.isFinite(row)) return null;
+
+          const center = this.getGridCellCenter(reel, row);
+          this.createHeavenHellDivineXWaveMarker?.(center, { wave });
+
+          if (strikeAtTargets) {
+            this.playSfx?.("attack_swing", { volume: 0.22, rate: 1.02 + wave * 0.03 });
+            this.playHeavenHellAngelStrikeSlash?.(originPoint, center, { scale: 0.82 + wave * 0.06 });
+          } else {
+            this.playSfx?.("lightning_thor", { volume: 0.22, rate: 1.14 + wave * 0.02 });
+          }
+          return center;
+        };
+
+        const resolveDivineXTargetKills = (target) => {
+          const wave = Math.max(1, Math.floor(Number(target?.wave) || 1));
+          const reel = Math.floor(Number(target?.reel));
+          const row = Math.floor(Number(target?.row));
+          if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
+
+          const center = this.getGridCellCenter(reel, row);
+          const linkedStrikeTarget = strikeAtTargets
+            ? divineStrikeTargetMap.get(`${reel},${row}`)
+            : null;
+          const strikeHitCells = Array.isArray(linkedStrikeTarget?.hitCells) ? linkedStrikeTarget.hitCells : [];
+
+          if (linkedStrikeTarget) {
+              this.createHeavenHellDivineStrikeSigil?.(center, {
+                wave,
+                isCenter: false
+              });
+              const strikeImpact = this.add.circle(center.x, center.y, 18, 0xFFF0BE, 0.22)
+                .setDepth(DEPTH_SYMBOLS + 15)
+                .setBlendMode(Phaser.BlendModes.ADD);
+              this.heavenHellDivineGroundFx.push(strikeImpact);
+              this.playSfx?.("lightning_thor_impact", { volume: 0.2, rate: 1.04 + wave * 0.03 });
+              this.tweens.add({
+                targets: strikeImpact,
+                scale: 3.4,
+                alpha: 0,
+                duration: 300,
+                ease: "Cubic.easeOut"
+              });
+
+              strikeHitCells.forEach((cell) => {
+                const cellReel = Math.floor(Number(cell?.reel));
+                const cellRow = Math.floor(Number(cell?.row));
+                if (!Number.isFinite(cellReel) || !Number.isFinite(cellRow)) return;
+
+                const cellCenter = this.getGridCellCenter(cellReel, cellRow);
+                const ripple = this.add.circle(cellCenter.x, cellCenter.y, cell?.origin === true ? 14 : 12, 0xFFE6A8, 0.12)
+                  .setDepth(DEPTH_SYMBOLS + 13)
+                  .setStrokeStyle(cell?.origin === true ? 3 : 2, 0xFFF8D4, 0.78)
+                  .setBlendMode(Phaser.BlendModes.ADD)
+                  .setScale(0.45);
+                this.heavenHellDivineGroundFx.push(ripple);
+                this.tweens.add({
+                  targets: ripple,
+                  scale: cell?.origin === true ? 1.9 : 1.5,
+                  alpha: 0,
+                  duration: 260,
+                  ease: "Cubic.easeOut"
+                });
+
+                if (cell?.killed !== true) return;
+                const key = `${cellReel},${cellRow}`;
+                if (killedKeys.has(key)) return;
+                killedKeys.add(key);
+
+                const sprite = this.reelSprites?.[cellReel]?.[cellRow];
+                if (sprite && !sprite.destroyed) {
+                  this.playHeavenHellDemonDeathFx?.(cellReel, cellRow, {
+                    center: cellCenter,
+                    intensity: cell?.origin === true ? 1.22 : 1.04,
+                    destroySprite: true,
+                    gameState,
+                    killWeight: cell?.killCountMultiplier,
+                    divineXDoubleKill: cell?.divineXDoubleKill === true,
+                    isMultiplierDemon: cell?.isMultiplierDemon === true
+                  });
+                } else if (cell?.isMultiplierDemon === true) {
+                  this.dropHeavenHellMultiplierDemonOrb(cellCenter.x, cellCenter.y);
+                }
+                if (this.reelSprites?.[cellReel]) {
+                  this.reelSprites[cellReel][cellRow] = null;
+                }
+                killedCells.push({ reel: cellReel, row: cellRow });
+                pushLootCell(cellReel, cellRow);
+              });
+            } else if (target?.killed === true) {
+              const sprite = this.reelSprites?.[reel]?.[row];
+              if (sprite && !sprite.destroyed) {
+                this.playHeavenHellDemonDeathFx?.(reel, row, {
+                  center,
+                  intensity: strikeAtTargets ? 1.18 : 0.98,
+                  destroySprite: true,
+                  gameState,
+                  killWeight: target?.killCountMultiplier,
+                  divineXDoubleKill: target?.divineXDoubleKill === true,
+                  isMultiplierDemon: target?.isMultiplierDemon === true
+                });
+              } else if (target?.isMultiplierDemon === true) {
+                this.dropHeavenHellMultiplierDemonOrb(center.x, center.y);
+              }
+              if (this.reelSprites?.[reel]) {
+                this.reelSprites[reel][row] = null;
+              }
+              killedKeys.add(`${reel},${row}`);
+              killedCells.push({ reel, row });
+              pushLootCell(reel, row);
+            }
+        };
+
+        if (strikeAtTargets) {
+          for (let targetIndex = 0; targetIndex < orderedXTargets.length; targetIndex++) {
+            telegraphDivineXTarget(orderedXTargets[targetIndex]);
+            if (targetIndex < orderedXTargets.length - 1) {
+              await this.waitForPresentation(12, { skippable: true });
+            }
+          }
+          for (const target of orderedXTargets) {
+            resolveDivineXTargetKills(target);
+          }
+        } else {
+          for (const wave of waves) {
+            const waveTargets = orderedXTargets.filter((target) => Math.max(1, Math.floor(Number(target?.wave) || 1)) === wave);
+            for (const target of waveTargets) {
+              telegraphDivineXTarget(target);
+              resolveDivineXTargetKills(target);
+              await this.waitForPresentation(16, { skippable: true });
+            }
+            this.cameras?.main?.shake?.(110, 0.0032 + wave * 0.001);
+            await this.waitForPresentation(24, { skippable: true });
+          }
+        }
+
+        this.pushHeavenHellStepBananaLootCells(step, pushLootCell);
+
+        if (title) {
+          this.tweens.add({
+            targets: title,
+            alpha: 0,
+            y: title.y - 18,
+            duration: 160,
+            ease: "Sine.easeOut",
+            onComplete: () => title.destroy()
+          });
+        }
+
+        if (strikeAtTargets) {
+          this.cameras?.main?.shake?.(110, 0.0036);
+        }
+
+        if (lootCells.length > 0) {
+          await this.playHeavenHellLootDropPattern(gameState, {
+            source: "divineX",
+            launchFromDropCell: true,
+            jitterStrength: this.getHeavenHellChargeLootJitter(step),
+            filterCells: lootCells,
+            persistToGround: true
+          });
+        }
+
+        this.time.delayedCall(1800, () => this.clearHeavenHellDivineGroundFx?.({ fade: true }));
+      },
+
+    async playHeavenHellDivineXAreaTelegraph(gameState = {}) {
         if (gameState?.heavenHell?.bonus && gameState?.isBonus === true) {
           this._heavenHellActiveGameState = gameState;
         }
@@ -1869,7 +3427,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         });
       },
 
-    tickHeavenHellKillMeterOnKill(reel, row, gameState = {}, { allowRewardFx = false } = {}) {
+    tickHeavenHellKillMeterOnKill(reel, row, gameState = {}, { allowRewardFx = false, killWeight = null } = {}) {
         const bonus = gameState?.heavenHell?.bonus;
         if (!bonus || gameState?.isBonus !== true) return;
         if (!this._heavenHellMeterRuntime) {
@@ -1882,8 +3440,10 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const prevProgress = ui
           ? Number(ui.lastProgress) || 0
           : Math.max(0, Math.min(1, runtime.displayKills / runtime.nextUnlock));
-        const killWeight = this.getHeavenHellKillWeightForCell(reel, row, gameState);
-        const appliedWeight = Math.min(killWeight, runtime.killBudgetRemaining);
+        const resolvedKillWeight = Number.isFinite(Number(killWeight))
+          ? Math.max(1, Math.floor(Number(killWeight) || 1))
+          : this.getHeavenHellKillWeightForCell(reel, row, gameState);
+        const appliedWeight = Math.min(resolvedKillWeight, runtime.killBudgetRemaining);
         if (appliedWeight <= 0) return;
     
         runtime.killBudgetRemaining -= appliedWeight;
@@ -1955,13 +3515,13 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         }
       },
 
-    getHeavenHellAbilitySlotPalette(abilityKey = "portal") {
+    getHeavenHellAbilitySlotPalette(abilityKey = "divineX") {
         const palettes = {
-          portal: { fill: 0x7B4DFF, glow: 0xD8B8FF, empty: 0x171126 },
-          divineWrath: { fill: 0xD94A2B, glow: 0xFFB48A, empty: 0x24140F },
+          divineX: { fill: 0x7B4DFF, glow: 0xD8B8FF, empty: 0x171126 },
+          divineStrike: { fill: 0xD94A2B, glow: 0xFFB48A, empty: 0x24140F },
           divineCharge: { fill: 0x3FA8FF, glow: 0xB8E8FF, empty: 0x0F1A28 }
         };
-        return palettes[abilityKey] || palettes.portal;
+        return palettes[abilityKey] || palettes.divineX;
       },
 
     destroyHeavenHellAbilityPanel() {
@@ -1988,7 +3548,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         }
       },
 
-    createHeavenHellAbilitySlot(x, y, filled, abilityKey = "portal") {
+    createHeavenHellAbilitySlot(x, y, filled, abilityKey = "divineX") {
         const palette = this.getHeavenHellAbilitySlotPalette(abilityKey);
         const size = 14;
         const slotBg = this.add.rectangle(x, y, size, size, filled ? palette.fill : palette.empty, filled ? 0.96 : 0.72)
@@ -2082,8 +3642,8 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
     
         const abilityRows = [];
         const abilityDefs = [
-          { key: "portal", label: "Portal", maxSlots: 2 },
-          { key: "divineWrath", label: "Wrath", maxSlots: 1 },
+          { key: "divineX", label: "X", maxSlots: 2 },
+          { key: "divineStrike", label: "Strike", maxSlots: 2 },
           { key: "divineCharge", label: "Charge", maxSlots: 2 }
         ];
         const abilityRowY = panelHeight / 2 - 14;
@@ -2208,11 +3768,11 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
     refreshHeavenHellAbilitySlots(ui, abilities = {}) {
         if (!ui?.abilityRows) return;
         const levels = {
-          portal: Math.max(0, Math.floor(Number(abilities?.portal || 0))),
-          divineWrath: Math.max(0, Math.floor(Number(abilities?.divineWrath || 0))),
+          divineX: Math.max(0, Math.floor(Number(abilities?.divineX || 0))),
+          divineStrike: Math.max(0, Math.floor(Number(abilities?.divineStrike || 0))),
           divineCharge: Math.max(0, Math.floor(Number(abilities?.divineCharge || 0)))
         };
-        const levelsKey = `${levels.portal}:${levels.divineWrath}:${levels.divineCharge}`;
+        const levelsKey = `${levels.divineX}:${levels.divineStrike}:${levels.divineCharge}`;
         if (ui.lastAbilityLevels === levelsKey) return;
         ui.lastAbilityLevels = levelsKey;
     

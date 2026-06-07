@@ -652,7 +652,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** @deprecated Use inline hunt charge wind-up + impact instead. */
-  /** @deprecated Use playHeavenHellDivineWrathAtStep during hunt instead. */
+  /** @deprecated Use playHeavenHellDivineXAtStep during hunt instead. */
   
   /**
    * Reset Thor's lightning count (call when entering bonus/freespin)

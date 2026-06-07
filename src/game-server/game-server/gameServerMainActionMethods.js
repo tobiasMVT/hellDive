@@ -519,6 +519,7 @@ export function createGameServerMainActionMethods(deps = {}) {
       if (heavenHellEnabled) {
         const heavenHell = this.ensureHeavenHellState(gameState);
         heavenHell.portalTriggered = false;
+        const hasPortalBonus = this.syncHeavenHellPortalBonusFlag(gameState);
         const heavenEntryFreespins = Math.max(
           1,
           Math.floor(Number(this.getHeavenHellConfig()?.bonus?.entryFreespins ?? 5) || 5)
@@ -532,8 +533,8 @@ export function createGameServerMainActionMethods(deps = {}) {
           20,
           Math.floor(Number(this.getHeavenHellConfig()?.bonus?.abilityUnlock?.killsPerUnlock ?? 20) || 20)
         );
-        heavenHell.bonus.portalLevel = 0;
-        heavenHell.bonus.abilities = { portal: 0, divineWrath: 0, divineCharge: 0 };
+        heavenHell.bonus.portalBonus = hasPortalBonus;
+        heavenHell.bonus.abilities = { divineX: 0, divineStrike: 0, divineCharge: 0 };
         heavenHell.bonus.freerespinChain = 0;
         heavenHell.bonus.actionCount = 0;
         heavenHell.bonus.lootGround = [];

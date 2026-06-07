@@ -88,6 +88,47 @@ Same kill triggers both → **Charge first** (pre-flight wind-up, then launch). 
 
 Example: Charge 5× + Wrath kills 4 demons at 1 coin each → `4 × 5 = 20` (primary high-volatility combo).
 
+Client timing note: when both proc on the same hit, the Charge landing impact should hand off into Wrath/Strike immediately. Charge loot can continue without delaying the AoE beat.
+
+## Combined Ability Rules (same hunt attack step)
+
+All rules below apply per **banana hunt step** — one hero impact and whatever X / Strike AoE that step generates.
+
+### Divine Charge → loot only
+
+If Charge procs on the attack, **every demon killed by that attack** gets `lootMultiplier = chargeMultiplier` (e.g. 5× or 10× loot pieces):
+
+- Impact demon(s) (`eatenBananas`)
+- Divine X diagonal kills
+- Divine Strike AoE kills (center + X-origin strikes)
+- Any combination of the above on the same step
+
+Charge affects **loot only**. It must **never** change `killCountMultiplier` or `weightedKills`.
+
+### Divine X → kill credit only
+
+If Divine X procs on the attack, **every demon killed by that attack** counts as **×2 kills** (meter, unlocks, boss weight uses ×2):
+
+- Impact demon
+- X diagonal kills
+- Strike AoE kills when Strike also procs on the same step
+
+Divine X affects **kill credit only**. It must **never** change `lootMultiplier`.
+
+**One demon, one count:** A cell is only ever one kill entry per attack. If the impact demon is also inside X or Strike AoE, it still counts **×2 total** (not ×2 from impact plus ×2 from X = ×4).
+
+### Full combo example
+
+Charge 5× + Divine X + Divine Strike on one attack:
+
+| Demon | Kill credit | Loot |
+|-------|-------------|------|
+| Impact target | 2 (X) | 5× (Charge) |
+| X diagonal | 2 (X) | 5× (Charge) |
+| Strike AoE | 2 (X) | 5× (Charge) |
+
+Not `2 × 5 = 10` kills — Charge never stacks into kill count.
+
 ## Config Root (example)
 
 ```json

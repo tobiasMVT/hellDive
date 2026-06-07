@@ -50,7 +50,7 @@ export function createClientFlowMethods(deps = {}) {
       } else if (gameState.executedAction === ACTION_FREESPIN_BANANA_HUNT || gameState.executedAction === LEGACY_ACTION_FREESPIN_BANANA_HUNT) {
         await this.handleFreespinBananaHuntAction(gameState, clientState);
       } else if (gameState.executedAction === "chestreward") {
-        this.handleChestRewardAction(gameState, clientState);
+        await this.handleChestRewardAction(gameState, clientState);
       }
 
       if (gameState.executedAction === "freespin" || gameState.executedAction === "freerespin") {
