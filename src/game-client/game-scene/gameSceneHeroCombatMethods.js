@@ -248,6 +248,14 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         );
         const isHeavenHellBonusHunt = Boolean(heavenHellGameState?.heavenHell?.bonus && heavenHellGameState?.isBonus === true);
         const isMainGameAngelHunt = !isHeavenHellBonusHunt;
+        const shouldUseHellDiveStartDeathFx = () => (
+          this.textures?.exists?.("helldive_demon_death_spatter") &&
+          typeof this.playHeavenHellDemonDeathFx === "function" &&
+          (
+            (isHeavenHellBonusHunt && firstHeavenHellBonusEntryAttack) ||
+            this.shouldPlayHeavenHellSoulCollectionFx?.()
+          )
+        );
         const syncAngelMultiplierDisplay = (rawValue, options = {}) => {
           if (!isMainGameAngelHunt) return null;
           return this.setHeroAngelMultiplierDisplay?.(rawValue, options);
@@ -1719,14 +1727,13 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
               if (startSprite && !startSprite.destroyed) {
                 if (startHasBanana) {
                   // Banana at starting position - remove immediately on contact.
-                  // Blood splash at start (temporary particles)
-                  if (isHeavenHellBonusHunt && firstHeavenHellBonusEntryAttack) {
+                  if (shouldUseHellDiveStartDeathFx()) {
                     const divineXKillWeight = startStep?.divineXProc === true
                       ? Math.max(1, Number(this.getHeavenHellKillWeightForCell?.(startPos.reel, startPos.row, heavenHellGameState) || 1)) * 2
                       : null;
                     this.playHeavenHellDemonDeathFx(startPos.reel, startPos.row, {
                       center: { x: startX, y: startY },
-                      intensity: 1.65,
+                      intensity: firstHeavenHellBonusEntryAttack ? 1.65 : 1.05,
                       destroySprite: true,
                       gameState: heavenHellGameState,
                       killWeight: divineXKillWeight,
@@ -1736,7 +1743,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
                     this.createBloodSplash(startX, startY);
                     // Persistent blood splatter that stays on scene
                     this.createBloodSplatter(startX, startY);
-    
+
                     this.tweens.killTweensOf(startSprite);
                     this.destroyBananaBackplate(startSprite);
                     startSprite.destroy();
@@ -1834,13 +1841,13 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             
             // Drop orbs if starting position was a banana with orbs
             if (startHasBanana && startOrbs > 0) {
-              if (isHeavenHellBonusHunt && firstHeavenHellBonusEntryAttack) {
+              if (shouldUseHellDiveStartDeathFx()) {
                 const divineXKillWeight = startStep?.divineXProc === true
                   ? Math.max(1, Number(this.getHeavenHellKillWeightForCell?.(startPos.reel, startPos.row, heavenHellGameState) || 1)) * 2
                   : null;
                 this.playHeavenHellDemonDeathFx(startPos.reel, startPos.row, {
                   center: { x: startX, y: startY },
-                  intensity: 1.65,
+                  intensity: firstHeavenHellBonusEntryAttack ? 1.65 : 1.05,
                   destroySprite: true,
                   gameState: heavenHellGameState,
                   killWeight: divineXKillWeight,
@@ -1867,23 +1874,24 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             const startSprite = startHasBanana
               ? resolveBananaSpriteAtCell(startPos.reel, startPos.row)
               : this.reelSprites[startPos.reel]?.[startPos.row];
-            if (startSprite && !startSprite.destroyed) {
+            const useStartHellDiveDeathFx = startHasBanana && shouldUseHellDiveStartDeathFx();
+            if (startSprite && !startSprite.destroyed && !useStartHellDiveDeathFx) {
               this.tweens.killTweensOf(startSprite);
               this.destroyBananaBackplate(startSprite);
               startSprite.destroy();
             }
-            if (this.reelSprites[startPos.reel]) {
+            if (this.reelSprites[startPos.reel] && !useStartHellDiveDeathFx) {
               this.reelSprites[startPos.reel][startPos.row] = null;
             }
-    
+
             if (startHasBanana) {
-              if (isHeavenHellBonusHunt && firstHeavenHellBonusEntryAttack) {
+              if (useStartHellDiveDeathFx) {
                 const divineXKillWeight = startStep?.divineXProc === true
                   ? Math.max(1, Number(this.getHeavenHellKillWeightForCell?.(startPos.reel, startPos.row, heavenHellGameState) || 1)) * 2
                   : null;
                 this.playHeavenHellDemonDeathFx(startPos.reel, startPos.row, {
                   center: { x: startX, y: startY },
-                  intensity: 1.65,
+                  intensity: firstHeavenHellBonusEntryAttack ? 1.65 : 1.05,
                   destroySprite: true,
                   gameState: heavenHellGameState,
                   killWeight: divineXKillWeight,

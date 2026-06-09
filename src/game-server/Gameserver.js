@@ -6,7 +6,7 @@ import { generateChest, resolveChestSequence } from "./lib/chestSystem.js";
 
 const originalConfig = JSON.parse(JSON.stringify(serverConfig))
 const MAX_ACTIONS_PER_ROUND = 10000;
-const MAX_TICKET_SEARCH_ATTEMPTS = 10000;
+const MAX_TICKET_SEARCH_ATTEMPTS = 25000;
 const FALLBACK_TICKET = "noStrategy";
 const DEFAULT_LIGHTNING_BEE_MULTIPLIER_LADDER = [
   1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233,
@@ -139,14 +139,16 @@ const resolveAdjustedNumber = (
 };
 
 const parseTicketConstraints = (ticketName = FALLBACK_TICKET) => {
-  const minMatch = ticketName.match(/min(\d+)/);
-  const maxMatch = ticketName.match(/max(\d+)/);
-  const baseStrategy = ticketName.replace(/_min\d+/g, "").replace(/_max\d+/g, "");
+  const minMatch = ticketName.match(/min_?([\d.]+)/);
+  const maxMatch = ticketName.match(/max_?([\d.]+)/);
+  const baseStrategy = ticketName
+    .replace(/_min_?[\d.]+/g, "")
+    .replace(/_max_?[\d.]+/g, "");
 
   return {
     baseStrategy,
-    minTbm: minMatch ? parseInt(minMatch[1], 10) : 0,
-    maxTbm: maxMatch ? parseInt(maxMatch[1], 10) : Infinity
+    minTbm: minMatch ? parseFloat(minMatch[1]) : 0,
+    maxTbm: maxMatch ? parseFloat(maxMatch[1]) : Infinity
   };
 };
 
@@ -10595,9 +10597,11 @@ isTicketMatch(ticketName, roundStates) {
     case "noBonus_noHammers":
       return !hasBonus && !hasHammers;
     case "noWin":
-      return finalTbm === 0;
+      return finalTbm === 0 && !hasBonus;
     case "noWin_noHammers":
-      return finalTbm === 0 && !hasHammers;
+      return finalTbm === 0 && !hasBonus && !hasHammers;
+    case "winMainGame":
+      return !hasBonus && finalTbm > 0;
     case "bonusOnRespin":
       return hasBonus && hasDemonHunt;
     case "bonusOnSpin":
@@ -10664,6 +10668,7 @@ Object.assign(
     TROLL_FEATURE_ENABLED,
     isPlainObject,
     isPositiveNumber,
+    parseTicketConstraints,
     resetGameState,
     serverConfig
   })

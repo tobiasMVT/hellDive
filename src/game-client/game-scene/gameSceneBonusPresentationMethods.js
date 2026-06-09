@@ -153,6 +153,9 @@ export function createGameSceneBonusPresentationMethods(deps = {}) {
 
     startBonusMode() {
         this.isInBonusMode = true;
+        if (typeof this.resetHeavenHellSoulPortalState === "function") {
+          this.resetHeavenHellSoulPortalState();
+        }
         const collectTarget = this.getCenterCollectTarget();
         const isHellDiveBonusStart = this.mainBackground?.texture?.key === "helldive_hell_bonus_bg";
         if (!isHellDiveBonusStart) {

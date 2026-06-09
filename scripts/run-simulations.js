@@ -293,6 +293,12 @@ const buildAbilityRtpRows = (contributionTBM, contributionPayout, totalStake) =>
     rtpPercent: totalStake > 0 ? fourDecimals((contributionPayout[ability] / totalStake) * 100) : 0
   }));
 
+const parseBool = (value, fallback = false) => {
+  if (value === true || value === "true") return true;
+  if (value === false || value === "false") return false;
+  return fallback;
+};
+
 const args = parseArgs();
 
 const rounds = Number(args.rounds ?? simulationConfig.rounds ?? 10000);
@@ -303,6 +309,7 @@ const outputPathTemplate = String(
 );
 const progressEvery = Number(args.progressEvery ?? 5000);
 const quietRoundLogs = String(args.quietRoundLogs ?? "true") !== "false";
+const fakeNoWins = parseBool(args.fakeNoWins, parseBool(simulationConfig.fakeNoWins, false));
 
 if (!Number.isFinite(rounds) || rounds <= 0) {
   throw new Error(`Invalid --rounds value: ${rounds}`);
@@ -387,8 +394,18 @@ const abilityProcTotals = emptyAbilityProcCounts();
 
 const startedAt = performance.now();
 
+if (fakeNoWins) {
+  originalConsoleLog(
+    "[sim] fakeNoWins enabled — drawn noWin tickets use a synthetic zero-win spin instead of RNG."
+  );
+}
+
 for (let i = 1; i <= rounds; i += 1) {
-  const states = await server.generateRoundStates({ betSize, ticketStrategy: resolvedTicketStrategy });
+  const states = await server.generateRoundStates({
+    betSize,
+    ticketStrategy: resolvedTicketStrategy,
+    fakeNoWins
+  });
   if (!states.length) {
     failedRounds += 1;
     continue;
@@ -553,6 +570,7 @@ const report = {
     requestedTicketStrategy: ticketStrategy,
     availableTicketStrategies,
     playBackEnd: serverConfig.playBackEnd === true,
+    fakeNoWins,
     outputPathTemplate,
     resolvedOutputPath: outputPath
   },

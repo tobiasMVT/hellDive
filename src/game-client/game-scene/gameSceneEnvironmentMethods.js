@@ -36,12 +36,7 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
 
   return {
     stopAngelMovementLightEmitter() {
-        const emitterState = this.angelMovementLightEmitter;
-        if (!emitterState) return;
-        if (emitterState.timer) {
-          emitterState.timer.remove(false);
-        }
-        this.angelMovementLightEmitter = null;
+        this.stopFollowSpriteLightEmitter("angelMovementLightEmitter");
       },
 
     startAngelMovementLightEmitter({
@@ -49,25 +44,63 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         intervalMs = 18,
         burstScale = 1
       } = {}) {
-        this.stopAngelMovementLightEmitter();
         if (!this.heroSprite || this.heroSprite.destroyed) return;
-    
+        return this.startFollowSpriteLightEmitter(this.heroSprite, {
+          tint,
+          intervalMs,
+          burstScale,
+          stateKey: "angelMovementLightEmitter",
+          stopMethod: "stopAngelMovementLightEmitter"
+        });
+      },
+
+    stopFollowSpriteLightEmitter(stateKey = "followSpriteLightEmitter") {
+        const emitterState = this[stateKey];
+        if (!emitterState) return;
+        if (emitterState.timer) {
+          emitterState.timer.remove(false);
+        }
+        this[stateKey] = null;
+      },
+
+    startFollowSpriteLightEmitter(
+        followSprite,
+        {
+          tint = 0xFFD85C,
+          intervalMs = 18,
+          burstScale = 1,
+          depth = DEPTH_HERO - 2,
+          stateKey = "followSpriteLightEmitter",
+          stopMethod = "stopFollowSpriteLightEmitter"
+        } = {}
+      ) {
+        if (typeof this[stopMethod] === "function") {
+          this[stopMethod](stateKey);
+        } else {
+          this.stopFollowSpriteLightEmitter(stateKey);
+        }
+        if (!followSprite || followSprite.destroyed) return null;
+
         const spawnParticle = () => {
-          if (!this.heroSprite || this.heroSprite.destroyed) {
-            this.stopAngelMovementLightEmitter();
+          if (!followSprite || followSprite.destroyed) {
+            if (typeof this[stopMethod] === "function") {
+              this[stopMethod](stateKey);
+            } else {
+              this.stopFollowSpriteLightEmitter(stateKey);
+            }
             return;
           }
-    
+
           const particle = this.add.circle(
-            Number(this.heroSprite.x) + Phaser.Math.FloatBetween(-10, 10),
-            Number(this.heroSprite.y) + Phaser.Math.FloatBetween(-10, 10),
+            Number(followSprite.x) + Phaser.Math.FloatBetween(-10, 10),
+            Number(followSprite.y) + Phaser.Math.FloatBetween(-10, 10),
             Phaser.Math.FloatBetween(1.8, 4.2) * burstScale,
             tint,
             Phaser.Math.FloatBetween(0.45, 0.9)
           )
-            .setDepth(DEPTH_HERO - 2)
+            .setDepth(depth)
             .setBlendMode(Phaser.BlendModes.ADD);
-    
+
           this.tweens.add({
             targets: particle,
             x: particle.x + Phaser.Math.FloatBetween(-22, 22),
@@ -79,15 +112,16 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
             onComplete: () => particle.destroy()
           });
         };
-    
+
         spawnParticle();
-        this.angelMovementLightEmitter = {
+        this[stateKey] = {
           timer: this.time.addEvent({
             delay: Math.max(8, Math.floor(Number(intervalMs) || 18)),
             loop: true,
             callback: spawnParticle
           })
         };
+        return this[stateKey];
       },
 
     resetLightningCount() {

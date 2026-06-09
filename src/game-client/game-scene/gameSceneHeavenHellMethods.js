@@ -1,6 +1,7 @@
 export function createGameSceneHeavenHellMethods(deps = {}) {
   const {
     DEPTH_HERO,
+    DEPTH_HOUSE,
     DEPTH_SYMBOLS,
     GRID_OFFSET_X,
     GRID_OFFSET_Y,
@@ -11,6 +12,9 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
     getHeroScaleForFootprint,
     getSymbolScale
   } = deps;
+  const SOUL_COLLECT_TRAIL_DEPTH = DEPTH_HOUSE + 1;
+  const SOUL_COLLECT_ORB_DEPTH = DEPTH_HOUSE + 2;
+  const SOUL_COLLECT_INTAKE_DEPTH = DEPTH_HOUSE + 3;
 
   return {
     clearHeavenHellRippleFx() {
@@ -635,6 +639,132 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         if (!portalCore.destroyed) {
           portalCore.destroy();
         }
+      },
+
+    getHeavenHellSoulFlightDurationMs(startX, startY, endX, endY) {
+        const distance = Math.max(1, Math.hypot(endX - startX, endY - startY));
+        return Phaser.Math.Clamp(Math.round(900 + distance * 2.35), 1200, 1800);
+      },
+
+    getHeavenHellSoulDiveTweenDurationMs(flightMs) {
+        const globalTweenScale = Math.max(0.001, Number(this.tweens?.timeScale) || 1);
+        return Math.round(flightMs * globalTweenScale);
+      },
+
+    playHeavenHellSoulDiveIntoPortal({
+        startX,
+        startY,
+        intensity = 1,
+        divineXDoubleKill = false,
+        onComplete = null
+      } = {}) {
+        void this._playHeavenHellSoulDiveIntoPortal({
+          startX,
+          startY,
+          intensity,
+          divineXDoubleKill,
+          onComplete
+        });
+      },
+
+    async _playHeavenHellSoulDiveIntoPortal({
+        startX,
+        startY,
+        intensity = 1,
+        divineXDoubleKill = false,
+        onComplete = null
+      } = {}) {
+        if (!this.add || !this.tweens || !this.time) return;
+
+        const portalTarget = this.getHeavenHellBonusEntryPortalPosition?.();
+        if (!portalTarget) return;
+
+        const heroTexture = this.getHeavenHellHeroTextureKey?.(HERO_STAGE_TEXTURE_KEYS.rush) || HERO_STAGE_TEXTURE_KEYS.base;
+        const power = Phaser.Math.Clamp(Number(intensity) || 1, 0.7, 2.2);
+        const soulScale = 0.14 + power * 0.03;
+        const ghostTint = divineXDoubleKill ? 0xFF55EE : 0xFF3311;
+        const particleTint = divineXDoubleKill ? 0xFF55EE : 0xFF2200;
+        const fromX = Number(startX);
+        const fromY = Number(startY);
+        const flightMs = this.getHeavenHellSoulFlightDurationMs(fromX, fromY, portalTarget.x, portalTarget.y);
+        const tweenDurationMs = this.getHeavenHellSoulDiveTweenDurationMs(flightMs);
+        const emitterStateKey = `_heavenHellSoulLightEmitter_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+        const soulSprite = this.add.image(fromX, fromY, heroTexture)
+          .setOrigin(0.5)
+          .setScale(soulScale)
+          .setTint(ghostTint)
+          .setDepth(SOUL_COLLECT_ORB_DEPTH)
+          .setAlpha(0.95)
+          .setBlendMode(Phaser.BlendModes.ADD);
+
+        this.spawnHeavenHellChargeLaunchTrails(fromX, fromY, portalTarget.x, portalTarget.y, {
+          heroScale: soulScale,
+          ghostTint,
+          trailDurationMs: tweenDurationMs,
+          depthBase: SOUL_COLLECT_TRAIL_DEPTH,
+          useSoulOrbGhost: false
+        });
+
+        await this.waitForPresentation?.(120, { skippable: true });
+
+        this.startFollowSpriteLightEmitter?.(soulSprite, {
+          tint: particleTint,
+          intervalMs: 18,
+          burstScale: 0.62,
+          depth: SOUL_COLLECT_TRAIL_DEPTH,
+          stateKey: emitterStateKey,
+          stopMethod: "stopFollowSpriteLightEmitter"
+        });
+
+        await new Promise((resolve) => {
+          this.tweens.add({
+            targets: soulSprite,
+            x: portalTarget.x,
+            y: portalTarget.y,
+            scale: Math.max(0.04, soulScale * 0.18),
+            alpha: 0.18,
+            angle: 18,
+            duration: tweenDurationMs,
+            ease: "Cubic.easeIn",
+            onComplete: resolve
+          });
+        });
+
+        this.stopFollowSpriteLightEmitter?.(emitterStateKey);
+
+        if (soulSprite && !soulSprite.destroyed) {
+          soulSprite.destroy();
+        }
+
+        const intakeFlash = this.add.circle(portalTarget.x, portalTarget.y, 10, 0xFF4422, 0.88)
+          .setDepth(SOUL_COLLECT_INTAKE_DEPTH)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        const intakeShock = this.add.circle(portalTarget.x, portalTarget.y, 16, 0xCC1100, 0.42)
+          .setDepth(SOUL_COLLECT_INTAKE_DEPTH - 0.01)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        this.tweens.add({
+          targets: intakeFlash,
+          scale: 2.2,
+          alpha: 0,
+          duration: 180,
+          ease: "Cubic.easeOut",
+          onComplete: () => intakeFlash.destroy()
+        });
+        this.tweens.add({
+          targets: intakeShock,
+          scale: 1.8,
+          alpha: 0,
+          duration: 260,
+          ease: "Cubic.easeOut",
+          onComplete: () => intakeShock.destroy()
+        });
+
+        this.playSfx?.("orb_collect", {
+          volume: divineXDoubleKill ? 0.38 : 0.3,
+          rate: divineXDoubleKill ? 1.12 : 1.02
+        });
+        onComplete?.();
       },
 
     playHeavenHellBonusAngelArrival() {
@@ -1375,6 +1505,15 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
             }
           });
         }
+
+        this.createHeavenHellSoulCollectionFx?.({
+          reel,
+          row,
+          center,
+          intensity,
+          divineXDoubleKill,
+          gameState: resolvedGameState
+        });
       },
 
     playHeavenHellAngelStrikeSlash(from, to, { scale = 1 } = {}) {
@@ -1516,33 +1655,67 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         return true;
       },
 
-    spawnHeavenHellChargeLaunchTrails(fromX, fromY, toX, toY, { heroScale = 1 } = {}) {
+    spawnHeavenHellChargeLaunchTrails(fromX, fromY, toX, toY, {
+        heroScale = 1,
+        ghostTint = 0xBFE9FF,
+        curvePointAt = null,
+        trailDurationMs = null,
+        depthBase = DEPTH_HERO + 39,
+        useSoulOrbGhost = false
+      } = {}) {
         const dx = toX - fromX;
         const dy = toY - fromY;
         const distance = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-        const trailCount = Math.min(12, Math.max(5, Math.floor(distance / 42)));
+        const trailCount = Math.min(14, Math.max(5, Math.floor(distance / 38)));
         const angelTextureKey = this.getHeavenHellHeroTextureKey?.(HERO_STAGE_TEXTURE_KEYS.rush) || HERO_STAGE_TEXTURE_KEYS.base;
+        const staggerMs = trailDurationMs
+          ? Math.max(10, Math.floor(trailDurationMs / (trailCount + 2)))
+          : 12;
+        const resolvePoint = (t) => {
+          if (typeof curvePointAt === "function") {
+            const point = curvePointAt(t);
+            const prev = curvePointAt(Math.max(0, t - 0.05));
+            return {
+              x: point.x,
+              y: point.y,
+              angle: Math.atan2(point.y - prev.y, point.x - prev.x)
+            };
+          }
+          return {
+            x: fromX + dx * t,
+            y: fromY + dy * t,
+            angle: Math.atan2(dy, dx)
+          };
+        };
+
         for (let i = 1; i <= trailCount; i++) {
           const t = i / (trailCount + 1);
-          this.time.delayedCall(i * 12, () => {
+          this.time.delayedCall(i * staggerMs, () => {
+            const point = resolvePoint(t);
+            const trailPoint = resolvePoint(Math.max(0, t - 0.04));
             const trail = this.textures?.exists?.("helldive_angel_trail")
-              ? this.add.image(fromX + dx * t - dx * 0.05, fromY + dy * t - dy * 0.05, "helldive_angel_trail")
-                  .setDepth(DEPTH_HERO + 39)
+              ? this.add.image(trailPoint.x, trailPoint.y, "helldive_angel_trail")
+                  .setDepth(depthBase)
                   .setScale(0.56 + t * 0.34)
                   .setAlpha(0.5 * (1 - t * 0.3))
+                  .setTint(useSoulOrbGhost ? ghostTint : 0xFFFFFF)
                   .setBlendMode(Phaser.BlendModes.ADD)
               : null;
-            if (trail) trail.setRotation(Math.atan2(dy, dx));
-            const ghost = this.add.image(fromX + dx * t, fromY + dy * t, angelTextureKey)
-              .setDepth(DEPTH_HERO + 40)
-              .setScale(heroScale * (1.06 - t * 0.3))
-              .setAlpha(0.48 * (1 - t * 0.42))
-              .setTint(0xBFE9FF)
-              .setBlendMode(Phaser.BlendModes.ADD);
+            if (trail) trail.setRotation(point.angle);
+            const ghost = useSoulOrbGhost
+              ? this.add.circle(point.x, point.y, Phaser.Math.FloatBetween(6, 9) + t * 4, ghostTint, 0.82)
+                  .setDepth(depthBase + 1)
+                  .setBlendMode(Phaser.BlendModes.ADD)
+              : this.add.image(point.x, point.y, angelTextureKey)
+                  .setDepth(depthBase + 1)
+                  .setScale(heroScale * (1.06 - t * 0.3))
+                  .setAlpha(0.48 * (1 - t * 0.42))
+                  .setTint(ghostTint)
+                  .setBlendMode(Phaser.BlendModes.ADD);
             this.tweens.add({
               targets: ghost,
               alpha: 0,
-              scale: ghost.scaleX * 1.32,
+              scale: (ghost.scaleX || 1) * 1.32,
               duration: 220,
               ease: "Sine.easeOut",
               onComplete: () => ghost.destroy()

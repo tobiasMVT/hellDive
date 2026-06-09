@@ -28,19 +28,25 @@
     },
     "normal": {
         "noStrategy": 0,
-        "noStrategy_max0": 12,
-        "noStrategy_min_1_max10": 2,
-        "noStrategy_min_1_max200": 4,
-        "noStrategy_min_1_max500": 4,
-        "noStrategy_min_1_max750": 1,
+        "noStrategy_max0": 0,
+        "noStrategy_min_1_max10": 0,
+        "noStrategy_min_1_max200": 0,
+        "noStrategy_min_1_max500": 0,
+        "noStrategy_min_1_max750": 0,
 
-        "noStrategy_min_5_max10": 2,
-        "noStrategy_min_10_max200": 4,
-        "noStrategy_min_20_max500": 4,
-        "noStrategy_min_20_max750": 1,
+        "noStrategy_min_5_max10": 0,
+        "noStrategy_min_10_max200": 0,
+        "noStrategy_min_20_max500": 0,
+        "noStrategy_min_20_max750": 0,
+        "noWin": 650,
 
-
-        "bonus": 0
+        "winMainGame_min0.1_max10": 324,
+        "winMainGame_min10_max300": 15,
+        "winMainGame_min10": 1,
+    
+        "bonus_min0.1_max50": 7,
+        "bonus_min50_max200": 2,
+        "bonus_max1000": 1
     },
     "bonus": {
         "bonus": 1,
@@ -949,7 +955,7 @@
     "heavenHell": {
         "enabled": true,
         "main": {
-            "portalTriggerChancePerKill": 0.015,
+            "portalTriggerChancePerKill": 0.01,
             "portalTriggerChancePerHuntAction": 0
         },
         "bonus": {

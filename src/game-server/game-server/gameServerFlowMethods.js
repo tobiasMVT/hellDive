@@ -13,11 +13,40 @@ export function createGameServerFlowMethods(deps = {}) {
     TROLL_FEATURE_ENABLED,
     isPlainObject,
     isPositiveNumber,
+    parseTicketConstraints,
     resetGameState,
     serverConfig
   } = deps;
 
   return {
+    buildFakeNoWinRoundStates({ betSize = 1, ticketStrategy } = {}) {
+      const gameState = structuredClone(serverConfig.gameState);
+      resetGameState(gameState);
+      gameState.betSize = Number.isFinite(Number(betSize)) ? Number(betSize) : 1;
+      gameState.roundSummary = {
+        ...(gameState.roundSummary || {}),
+        totalWin: 0,
+        wasBonus: false,
+        isComplete: true,
+        tbm: 0,
+        normalWinTBM: 0,
+        mysteryWinTBM: 0,
+        timeSymbolsTotal: 0,
+        timeSymbolsBonus: 0,
+        timeSymbolsSpin: 0,
+        timeSymbolsRespin: 0,
+        timeSymbolsBonusSpin: 0,
+        timeSymbolsBonusRespin: 0,
+        heroAbilitiesApplied: false
+      };
+
+      const roundMeta = this.buildRoundMeta({ betSize, ticketStrategy });
+      const state = structuredClone(gameState);
+      state.roundMeta = roundMeta;
+      state.simulationFakeNoWin = true;
+      return [state];
+    },
+
     async generateSingleRound({ betSize = 1, logRoundStart = false, ticketStrategy } = {}) {
       const gameState = structuredClone(serverConfig.gameState);
       resetGameState(gameState);
@@ -44,7 +73,7 @@ export function createGameServerFlowMethods(deps = {}) {
       return [];
     },
 
-    async generateRoundStates({ betSize = 1, ticketStrategy } = {}) {
+    async generateRoundStates({ betSize = 1, ticketStrategy, fakeNoWins = false } = {}) {
       const strategy = this.resolveTicketStrategy(ticketStrategy);
       const bucket = serverConfig?.[strategy];
       const ticketModeEnabled =
@@ -55,9 +84,14 @@ export function createGameServerFlowMethods(deps = {}) {
       }
 
       const ticket = this.drawWeightedTicket(strategy);
+      const { baseStrategy } = parseTicketConstraints(ticket);
 
       if (!serverConfig.playBackEnd) {
         console.log(`[DEV Tickets] Strategy "${strategy}" -> ticket "${ticket}"`);
+      }
+
+      if (fakeNoWins && baseStrategy === "noWin") {
+        return this.buildFakeNoWinRoundStates({ betSize, ticketStrategy: strategy });
       }
 
       for (let attempt = 1; attempt <= MAX_TICKET_SEARCH_ATTEMPTS; attempt++) {
@@ -75,15 +109,8 @@ export function createGameServerFlowMethods(deps = {}) {
       }
 
       console.warn(
-        `[DEV Tickets] Could not match "${ticket}" in ${MAX_TICKET_SEARCH_ATTEMPTS} attempts. Falling back to ${FALLBACK_TICKET}.`
+        `[DEV Tickets] Could not match "${ticket}" after ${MAX_TICKET_SEARCH_ATTEMPTS} attempts on the same ticket. Round discarded.`
       );
-
-      for (let attempt = 1; attempt <= 100; attempt++) {
-        const roundStates = await this.generateSingleRound({ betSize, ticketStrategy: strategy });
-        if (this.isTicketMatch(FALLBACK_TICKET, roundStates)) {
-          return roundStates;
-        }
-      }
 
       return [];
     },

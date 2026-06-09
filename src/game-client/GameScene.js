@@ -1179,3 +1179,157 @@ Object.assign(GameScene.prototype, createGameSceneHeroEffectsMethods(gameSceneEx
 Object.assign(GameScene.prototype, createGameSceneHeroCombatMethods(gameSceneExtractedDeps));
 Object.assign(GameScene.prototype, createGameSceneBonusPresentationMethods(gameSceneExtractedDeps));
 Object.assign(GameScene.prototype, createGameSceneBoardFlowMethods(gameSceneExtractedDeps));
+
+const originalHeavenHellDemonDeathFx = GameScene.prototype.playHeavenHellDemonDeathFx;
+const SOUL_PORTAL_DEPTH = DEPTH_HOUSE + 3;
+const SOUL_PORTAL_BASE_RADIUS = 8;
+const SOUL_PORTAL_KILLS_FOR_MAX_SIZE = 100;
+const SOUL_PORTAL_MAX_SCALE = 4;
+
+Object.assign(GameScene.prototype, {
+  getHeavenHellBonusEntryPortalPosition() {
+    const lastReel = Math.max(0, clientConfig.area.width - 1);
+    const sixthRow = Math.max(0, Math.min(clientConfig.area.height - 1, 5));
+    const seventhRow = Math.max(0, Math.min(clientConfig.area.height - 1, 6));
+    const sixthCell = this.getGridCellCenter(lastReel, sixthRow);
+    const seventhCell = this.getGridCellCenter(lastReel, seventhRow);
+    return {
+      x: sixthCell.x + 40,
+      y: (sixthCell.y + seventhCell.y) * 0.5 + 15
+    };
+  },
+
+  getHeavenHellPortalSoulFlashPosition() {
+    return this.getHeavenHellBonusEntryPortalPosition?.() || {
+      x: GRID_OFFSET_X + (clientConfig.area.width * 70),
+      y: GRID_OFFSET_Y + (clientConfig.area.height * 70 * 0.5)
+    };
+  },
+
+  shouldPlayHeavenHellSoulCollectionFx(gameState = null) {
+    if (this.isInBonusMode === true) return false;
+
+    // Main-game demon hunts use currentAction "bananaHunt".
+    // Bonus demon hunts use "freespinbananaHunt" and must not trigger soul FX.
+    if (String(this.currentAction || "") !== "bananaHunt") return false;
+
+    if (gameState?.isBonus === true) return false;
+    if (gameState?.heavenHell?.bonus) return false;
+    return true;
+  },
+
+  clearHeavenHellSoulPortalMarker() {
+    if (this._heavenHellSoulPortalMarker && !this._heavenHellSoulPortalMarker.destroyed) {
+      this.tweens.killTweensOf(this._heavenHellSoulPortalMarker);
+      this._heavenHellSoulPortalMarker.destroy();
+    }
+    this._heavenHellSoulPortalMarker = null;
+  },
+
+  resetHeavenHellSoulPortalState() {
+    this.clearHeavenHellSoulPortalMarker();
+    this._heavenHellSoulPortalKillCount = 0;
+  },
+
+  getHeavenHellSoulPortalKillCount() {
+    return Math.min(
+      SOUL_PORTAL_KILLS_FOR_MAX_SIZE,
+      Math.max(0, Math.floor(Number(this._heavenHellSoulPortalKillCount) || 0))
+    );
+  },
+
+  incrementHeavenHellSoulPortalKillCount() {
+    this._heavenHellSoulPortalKillCount = Math.min(
+      SOUL_PORTAL_KILLS_FOR_MAX_SIZE,
+      this.getHeavenHellSoulPortalKillCount() + 1
+    );
+    return this._heavenHellSoulPortalKillCount;
+  },
+
+  getHeavenHellSoulPortalMarkerScale(killCount = this.getHeavenHellSoulPortalKillCount()) {
+    const progress = Phaser.Math.Clamp(killCount / SOUL_PORTAL_KILLS_FOR_MAX_SIZE, 0, 1);
+    return 1 + progress * (SOUL_PORTAL_MAX_SCALE - 1);
+  },
+
+  ensureHeavenHellSoulPortalMarker() {
+    const pos = this.getHeavenHellPortalSoulFlashPosition?.();
+    if (!pos) return null;
+
+    if (this._heavenHellSoulPortalMarker && !this._heavenHellSoulPortalMarker.destroyed) {
+      this._heavenHellSoulPortalMarker
+        .setPosition(pos.x, pos.y)
+        .setDepth(SOUL_PORTAL_DEPTH);
+      return this._heavenHellSoulPortalMarker;
+    }
+
+    const marker = this.add.circle(pos.x, pos.y, SOUL_PORTAL_BASE_RADIUS, 0xFF0000, 0.72)
+      .setDepth(SOUL_PORTAL_DEPTH)
+      .setStrokeStyle(2, 0xFF3333, 0.9)
+      .setBlendMode(Phaser.BlendModes.NORMAL);
+    marker.setScale(this.getHeavenHellSoulPortalMarkerScale());
+    this._heavenHellSoulPortalMarker = marker;
+    return marker;
+  },
+
+  updateHeavenHellSoulPortalMarkerScale(killCount = this.getHeavenHellSoulPortalKillCount()) {
+    const marker = this.ensureHeavenHellSoulPortalMarker();
+    if (!marker) return;
+    const targetScale = this.getHeavenHellSoulPortalMarkerScale(killCount);
+    this.tweens.killTweensOf(marker);
+    marker.setAlpha(0.72);
+    this.tweens.add({
+      targets: marker,
+      scale: targetScale,
+      duration: 200,
+      ease: "Sine.easeOut"
+    });
+  },
+
+  pulseHeavenHellSoulPortalMarker() {
+    const marker = this._heavenHellSoulPortalMarker;
+    if (!marker || marker.destroyed) return;
+    const baseScale = this.getHeavenHellSoulPortalMarkerScale();
+    this.tweens.killTweensOf(marker);
+    marker.setAlpha(0.72);
+    marker.setScale(baseScale);
+    this.tweens.add({
+      targets: marker,
+      scale: baseScale * 1.06,
+      duration: 100,
+      yoyo: true,
+      ease: "Sine.easeOut"
+    });
+  },
+
+  createHeavenHellSoulCollectionFx({
+    reel,
+    row,
+    center = null,
+    intensity = 1,
+    divineXDoubleKill = false,
+    gameState = null
+  } = {}) {
+    if (!this.shouldPlayHeavenHellSoulCollectionFx?.(gameState)) return;
+    if (!this.add || !this.tweens || !this.time) return;
+
+    const source = center || this.getGridCellCenter(reel, row);
+    const portalTarget = this.getHeavenHellBonusEntryPortalPosition?.();
+    if (!source || !portalTarget) return;
+
+    const killCount = this.incrementHeavenHellSoulPortalKillCount();
+    this.ensureHeavenHellSoulPortalMarker();
+    this.updateHeavenHellSoulPortalMarkerScale(killCount);
+
+    this.playHeavenHellSoulDiveIntoPortal?.({
+      startX: Number(source.x),
+      startY: Number(source.y),
+      intensity,
+      divineXDoubleKill,
+      onComplete: () => this.pulseHeavenHellSoulPortalMarker()
+    });
+  },
+
+  playHeavenHellDemonDeathFx(reel, row, options = {}) {
+    originalHeavenHellDemonDeathFx?.call?.(this, reel, row, options);
+  }
+});
