@@ -394,6 +394,15 @@ export function createGameServerMainActionMethods(deps = {}) {
       gameState.orbDrops = huntResult.orbDrops;
       gameState.mysteryReveals = huntResult.mysteryReveals || [];
       gameState.heroPosition = huntResult.heroFinalPosition;
+      gameState.heroAngelStartMultiplier = Math.max(
+        1,
+        Math.floor(Number(huntResult.heroAngelStartMultiplier ?? gameState.heroAngelNextMultiplier ?? 1) || 1)
+      );
+      gameState.heroAngelMultiplier = huntResult.heroAngelMultiplier ?? gameState.heroAngelMultiplier ?? null;
+      gameState.heroAngelNextMultiplier = Math.max(
+        1,
+        Math.floor(Number(huntResult.heroAngelNextMultiplier ?? gameState.heroAngelNextMultiplier ?? 1) || 1)
+      );
       gameState.bananaImpactWins = huntResult.heroPath?.filter((step) => Number(step?.impactWinTwa || 0) > 0) || [];
       if (!heavenHellEnabled) {
         const mergeGunCollections = this.collectMergeGunFeaturesFromHeroPath(gameState, gameState.reels, gameState.heroPath || []);
@@ -541,6 +550,9 @@ export function createGameServerMainActionMethods(deps = {}) {
           heavenHell.bonus.abilityProcsThisAction.push({ type: "entryUnlock", ...entryUnlock });
         }
         gameState.multiplier = 1;
+        gameState.heroAngelStartMultiplier = 1;
+        gameState.heroAngelMultiplier = null;
+        gameState.heroAngelNextMultiplier = 1;
         gameState.heroPosition = serverConfig.heroStartingPosition || { reel: 4, row: 2 };
       }
     }

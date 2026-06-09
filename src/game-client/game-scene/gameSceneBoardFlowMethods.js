@@ -33,6 +33,16 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
       },
 
     getHeroWildActiveBadgeText(strength = null) {
+        const currentAction = String(this.currentAction || "");
+        const angelMultiplierDisplay = Number(this.currentHeroAngelMultiplierDisplay);
+        if (
+          (currentAction === "spin" || currentAction === "respin" || currentAction === "bananaHunt") &&
+          Number.isFinite(angelMultiplierDisplay) &&
+          angelMultiplierDisplay >= 1
+        ) {
+          return `${Math.max(1, Math.floor(angelMultiplierDisplay))}x`;
+        }
+
         const parsedStrength = Number(strength ?? this.currentMonkeyWildStrength ?? 1);
         const displayStrength = Number.isFinite(parsedStrength)
           ? Math.max(1, Math.floor(parsedStrength))
@@ -47,6 +57,52 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
     shouldShowHeroWildBadgeForCurrentAction() {
         const action = String(this.currentAction || "");
         return action === "spin" || action === "respin" || action === "bananaHunt";
+      },
+
+    shouldPersistHeroWildActiveBadge() {
+        const action = String(this.currentAction || "");
+        if (action !== "spin" && action !== "respin" && action !== "bananaHunt") {
+          return false;
+        }
+        const angelMultiplierDisplay = Number(this.currentHeroAngelMultiplierDisplay);
+        return Number.isFinite(angelMultiplierDisplay) && angelMultiplierDisplay >= 1;
+      },
+
+    setHeroAngelMultiplierDisplay(value = null, options = {}) {
+        const { showBadge = false, pulse = false, clearBadge = false } = options;
+        const parsedValue = Number(value);
+        this.currentHeroAngelMultiplierDisplay = Number.isFinite(parsedValue) && parsedValue >= 1
+          ? Math.max(1, Math.floor(parsedValue))
+          : null;
+        this.heroWildActiveBadgeText = this.getHeroWildActiveBadgeText();
+
+        if (this.currentHeroAngelMultiplierDisplay === null) {
+          if (clearBadge) {
+            this.clearHeroWildActiveBadge({ force: true });
+          } else if (this.heroWildActiveBadge && !this.heroWildActiveBadge.destroyed) {
+            this.heroWildActiveBadge.setText(this.heroWildActiveBadgeText || "W");
+          }
+          return this.currentHeroAngelMultiplierDisplay;
+        }
+
+        if (showBadge) {
+          this.showHeroWildActiveBadge();
+          if (pulse && this.heroWildActiveBadge && !this.heroWildActiveBadge.destroyed) {
+            this.tweens.killTweensOf(this.heroWildActiveBadge);
+            this.heroWildActiveBadge.setScale(0.9);
+            this.tweens.add({
+              targets: this.heroWildActiveBadge,
+              scale: 1.12,
+              duration: 140,
+              yoyo: true,
+              ease: 'Sine.easeOut'
+            });
+          }
+        } else if (this.heroWildActiveBadge && !this.heroWildActiveBadge.destroyed) {
+          this.heroWildActiveBadge.setText(this.heroWildActiveBadgeText || "W");
+        }
+
+        return this.currentHeroAngelMultiplierDisplay;
       },
 
     showHeroWildActiveBadge() {
@@ -95,7 +151,7 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
       },
 
     clearHeroWildActiveBadge(options = {}) {
-        const { lingerMs = 0, leaveShadow = false } = options;
+        const { lingerMs = 0, leaveShadow = false, force = false } = options;
         const activeBadge = this.heroWildActiveBadge;
         if (leaveShadow && activeBadge && !activeBadge.destroyed) {
           const duration = Math.max(120, Number(lingerMs) || 500);
@@ -122,6 +178,17 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
             onComplete: () => afterimage.destroy()
           });
         }
+
+        if (!force && this.shouldPersistHeroWildActiveBadge()) {
+          if (activeBadge && !activeBadge.destroyed) {
+            activeBadge.setText(this.heroWildActiveBadgeText || "W");
+            activeBadge.setVisible(true);
+            activeBadge.setAlpha(this.heroSprite?.alpha ?? 1);
+          } else {
+            this.showHeroWildActiveBadge();
+          }
+          return;
+        }
     
         if (this.heroWildActiveBadgeFollow) {
           this.events.off('postupdate', this.heroWildActiveBadgeFollow);
@@ -136,6 +203,7 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
 
     leaveHeroWildTrailMark(x = null, y = null, options = {}) {
         if (!this.shouldShowHeroWildBadgeForCurrentAction()) return;
+        if (this.shouldPersistHeroWildActiveBadge()) return;
         if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return;
         const footprintSize = Math.max(1, Math.floor(Number(options.heroFootprintSize ?? this.currentHeroFootprintSize) || 1));
         if (footprintSize > 1) return;

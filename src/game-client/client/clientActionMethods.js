@@ -21,6 +21,7 @@ export function createClientActionMethods(deps = {}) {
         await this.waitForPresentation(2000);
       }
 
+      this.scene.setHeroAngelMultiplierDisplay?.(null, { clearBadge: true });
       this.scene.resetForNewSpin();
       this.scene.resetBonusFruitPile?.();
       this.scene.hideFreespinCounter();
@@ -55,6 +56,10 @@ export function createClientActionMethods(deps = {}) {
 
     async handleBananaHuntAction(gameState) {
       this.scene.setCurrentAction?.(ACTION_BANANA_HUNT);
+      this.scene.setHeroAngelMultiplierDisplay?.(gameState?.heroAngelStartMultiplier ?? null, {
+        showBadge: Number.isFinite(Number(gameState?.heroAngelStartMultiplier)),
+        clearBadge: !Number.isFinite(Number(gameState?.heroAngelStartMultiplier))
+      });
 
       if (gameState.heroPath && gameState.heroPath.length > 0) {
         const stepType = "destroy";
@@ -100,6 +105,10 @@ export function createClientActionMethods(deps = {}) {
         );
         this.scene.syncHeroBonusForm?.(gameState?.heroFootprintSize || 1, false, gameState?.heroPosition || null);
       }
+      this.scene.setHeroAngelMultiplierDisplay?.(gameState?.heroAngelMultiplier ?? null, {
+        showBadge: Number.isFinite(Number(gameState?.heroAngelMultiplier)),
+        clearBadge: !Number.isFinite(Number(gameState?.heroAngelMultiplier))
+      });
       await this.syncMergeGunFeatureUi(gameState, { playActivation: false });
       this.syncLightningBeeFeatureUi(gameState, { consume: true });
 
@@ -113,6 +122,7 @@ export function createClientActionMethods(deps = {}) {
     },
 
     async handleBonusTransitionAction(gameState) {
+      this.scene.setHeroAngelMultiplierDisplay?.(null, { clearBadge: true });
       this.scene.setLightningCount?.(100);
       if (this.isHeavenHellEnabled(gameState)) {
         this.scene.clearMainGameSymbolsForHeavenHellBonus?.();

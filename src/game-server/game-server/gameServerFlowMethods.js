@@ -164,6 +164,17 @@ export function createGameServerFlowMethods(deps = {}) {
       this.clearCompletedLightningBeeFeatureSymbols(gameState, gameState.reelsBeforeDrop);
       this.clearCompletedLightningBeeFeatureSymbols(gameState, gameState.reelsAfterDrop);
       gameState.hero = { ...BASE_MONKEY_STATE };
+      gameState.heroAngelStartMultiplier = Math.max(
+        1,
+        Math.floor(Number(gameState.heroAngelStartMultiplier || gameState.heroAngelNextMultiplier || 1) || 1)
+      );
+      gameState.heroAngelMultiplier = Number.isFinite(Number(gameState.heroAngelMultiplier))
+        ? Math.max(1, Math.floor(Number(gameState.heroAngelMultiplier) || 1))
+        : null;
+      gameState.heroAngelNextMultiplier = Math.max(
+        1,
+        Math.floor(Number(gameState.heroAngelNextMultiplier || 1) || 1)
+      );
       this.normalizeDemonMeter(gameState);
       this.normalizeBonusStageState(gameState);
       const heavenHellEnabled = this.isHeavenHellEnabled();
@@ -363,5 +374,3 @@ export function createGameServerFlowMethods(deps = {}) {
     }
   };
 }
-
-

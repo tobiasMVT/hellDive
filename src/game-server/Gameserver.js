@@ -7677,6 +7677,29 @@ export class GameServer {
     const minClusterSize = serverConfig.minClusterSize || 4;
     const huntBetSize = Number(gameState?.betSize || 0);
     const huntMultiplier = Number(gameState?.multiplier || 1);
+    let currentAngelClusterMultiplier = Math.max(
+      1,
+      Math.floor(Number(gameState?.heroAngelNextMultiplier || 1) || 1)
+    );
+    const startingAngelCarryMultiplier = currentAngelClusterMultiplier;
+    let latestAngelDisplayMultiplier = Number.isFinite(Number(gameState?.heroAngelMultiplier))
+      ? Math.max(1, Math.floor(Number(gameState.heroAngelMultiplier) || 1))
+      : null;
+
+    const applyMainGameAngelMultiplierProgression = (killsThisStep = 0, stepEntry = null) => {
+      const normalizedKills = Math.max(0, Math.floor(Number(killsThisStep) || 0));
+      if (awardImpactPayouts !== true || normalizedKills <= 0) {
+        return null;
+      }
+
+      const appliedMultiplier = Math.max(1, currentAngelClusterMultiplier);
+      latestAngelDisplayMultiplier = appliedMultiplier;
+      if (stepEntry && typeof stepEntry === "object") {
+        stepEntry.angelMultiplier = appliedMultiplier;
+      }
+      currentAngelClusterMultiplier = Math.max(1, appliedMultiplier * 2);
+      return appliedMultiplier;
+    };
 
     const applyStepProgression = (bananasConsumedThisStep = 0, stepEntry = null, anchorForGrowth = currentPos) => {
       const consumedNow = Math.max(0, Math.floor(Number(bananasConsumedThisStep) || 0));
@@ -7798,6 +7821,7 @@ export class GameServer {
           });
         }
       });
+      const startAngelMultiplier = applyMainGameAngelMultiplierProgression(startBananasConsumed, startStepEntry);
       const startProgression = applyStepProgression(startBananasConsumed, startStepEntry, currentPos);
       const clusterResult = this.applyDemonCheckClusterExplosions(
         huntReels,
@@ -7805,7 +7829,7 @@ export class GameServer {
         currentMeterLevel,
         minClusterSize,
         huntBetSize,
-        huntMultiplier,
+        huntMultiplier * Math.max(1, Number(startAngelMultiplier || 1)),
         startContext.heroState,
         {
           includeHeroWildCells: gameState?.isBonus === true
@@ -7953,6 +7977,7 @@ export class GameServer {
               count: banana.orbs
             });
           });
+          const stepAngelMultiplier = applyMainGameAngelMultiplierProgression(bananasConsumedThisStep, stepEntry);
           const stepProgression = applyStepProgression(bananasConsumedThisStep, stepEntry, stepAnchor);
 
           // Server-side mirror of banana-position cluster pop (keeps gravity state in sync with client).
@@ -7962,7 +7987,7 @@ export class GameServer {
             currentMeterLevel,
             minClusterSize,
             huntBetSize,
-            huntMultiplier,
+            huntMultiplier * Math.max(1, Number(stepAngelMultiplier || 1)),
             stepContext.heroState,
             {
               includeHeroWildCells: gameState?.isBonus === true
@@ -8106,7 +8131,10 @@ export class GameServer {
       mysteryReveals: finalMysteryReveals, // Positions with mystery symbols (excluding hero's final position)
       heroFinalPosition: currentPos, // Where the hero ended up
       heroFinalFootprintSize: currentHeroFootprintSize,
-      growthAppliedDuringHunt
+      growthAppliedDuringHunt,
+      heroAngelStartMultiplier: startingAngelCarryMultiplier,
+      heroAngelMultiplier: latestAngelDisplayMultiplier,
+      heroAngelNextMultiplier: currentAngelClusterMultiplier
     };
   }
 
@@ -10815,6 +10843,9 @@ function resetGameState(gameState) {
         
         // Reset multiplier on new spin
         gameState.multiplier = 1;
+        gameState.heroAngelStartMultiplier = 1;
+        gameState.heroAngelMultiplier = null;
+        gameState.heroAngelNextMultiplier = 1;
         
         // Reset hero position (will enter from starting position on next hunt)
         gameState.heroPosition = null;
@@ -10886,5 +10917,3 @@ function resetGameState(gameState) {
 
 // Export resetGameState so it can be used externally
 export { resetGameState };
-
-

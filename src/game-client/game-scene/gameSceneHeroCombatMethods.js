@@ -247,6 +247,11 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           Math.floor(Number(duration) / Math.min(HUNT_MOMENTUM_MAX, huntMomentum))
         );
         const isHeavenHellBonusHunt = Boolean(heavenHellGameState?.heavenHell?.bonus && heavenHellGameState?.isBonus === true);
+        const isMainGameAngelHunt = !isHeavenHellBonusHunt;
+        const syncAngelMultiplierDisplay = (rawValue, options = {}) => {
+          if (!isMainGameAngelHunt) return null;
+          return this.setHeroAngelMultiplierDisplay?.(rawValue, options);
+        };
         const bloodSlowMoDuration = 900; // Extended slow-motion blood splatter
         
         // Orb animation settings
@@ -1221,7 +1226,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
               rushActive: true,
               bonusStage: visualBonusStage
             });
-          } else {
+          } else if (!isMainGameFreshHunt) {
             const width = this.scale?.width || 600;
             const sideRoll = Math.random();
             if (sideRoll >= 0.4 && sideRoll < 0.8) {
@@ -1775,6 +1780,16 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           }
         } else {
           // CONTINUING HUNT - Hero already on board, just reposition if needed
+          if (this.heroSprite && !this.heroSprite.destroyed) {
+            this.currentHeroAnchor = {
+              reel: Number(startPos?.reel || 0),
+              row: Number(startPos?.row || 0)
+            };
+            if (Phaser.Math.Distance.Between(this.heroSprite.x, this.heroSprite.y, startX, startY) > 4) {
+              this.heroSprite.setPosition(startX, startY);
+            }
+          }
+
           // Quick ready stance before next hunt
           await new Promise(resolve => {
             this.tweens.add({
@@ -1923,6 +1938,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         }
     
         if (startHasBanana && !is3x3Troll) {
+          syncAngelMultiplierDisplay(startStep?.angelMultiplier, { showBadge: true, pulse: true });
           if (rushActive) {
             startStep.footprintCells
               ?.filter?.((cell) => cell?.banana !== true)
@@ -2097,6 +2113,9 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             step?.divineStrikeProc === true &&
             !stepQuickStop;
           const stepBananaMeterArrivalPromises = [];
+          if (isBananaStep) {
+            syncAngelMultiplierDisplay(step?.angelMultiplier, { showBadge: true, pulse: true });
+          }
 
           if (isBananaStep && isHeavenHellBonusHunt && step?.divineChargeProc === true && !stepQuickStop) {
             const chargeRushTexture = getHeroTexture(weapon, {
@@ -3305,7 +3324,8 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         }
         
         this.clearMonkeyWildStrengthBadge();
-        this.clearHeroWildActiveBadge();
+        this.currentHeroAngelMultiplierDisplay = null;
+        this.clearHeroWildActiveBadge({ force: true });
         this.clearHeroWildTrailMarks();
         this.currentHeroFootprintSize = 1;
         this.currentHeroRushActive = false;
@@ -4361,7 +4381,8 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         this.currentHeroAnchor = null;
 
         this.clearMonkeyWildStrengthBadge();
-        this.clearHeroWildActiveBadge();
+        this.currentHeroAngelMultiplierDisplay = null;
+        this.clearHeroWildActiveBadge({ force: true });
         this.clearHeroWildTrailMarks?.();
 
         if (!this.heroSprite || this.heroSprite.destroyed) {
