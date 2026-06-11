@@ -6343,6 +6343,66 @@ export class GameServer {
     };
   }
 
+  simulateMainGameAngelWinOutcome(reels, gameState = null) {
+    if (!this.isHeavenHellEnabled() || !reels || gameState?.isBonus === true) {
+      return { hasAngelWin: false, huntResult: null };
+    }
+    if (!this.boardHasDemons(reels)) {
+      return { hasAngelWin: false, huntResult: null };
+    }
+
+    const simulatedGameState = JSON.parse(JSON.stringify(gameState || {}));
+    simulatedGameState.isBonus = false;
+    simulatedGameState.betSize = Number(gameState?.betSize || simulatedGameState?.betSize || 0);
+    simulatedGameState.multiplier = Number(gameState?.multiplier || simulatedGameState?.multiplier || 1);
+    simulatedGameState.heroPosition = gameState?.heroPosition || null;
+    simulatedGameState.heroFootprintSize = Math.max(
+      1,
+      Math.floor(Number(gameState?.heroFootprintSize || simulatedGameState?.heroFootprintSize || 1) || 1)
+    );
+    simulatedGameState.heroAngelNextMultiplier = this.clampMainGameAngelMultiplier(
+      gameState?.heroAngelNextMultiplier ?? simulatedGameState?.heroAngelNextMultiplier ?? 1
+    );
+    simulatedGameState.heroAngelMultiplier = Number.isFinite(Number(gameState?.heroAngelMultiplier))
+      ? this.clampMainGameAngelMultiplier(gameState.heroAngelMultiplier)
+      : null;
+
+    const huntResult = this.executeDemonHunt(
+      reels,
+      "destroy",
+      BASE_MONKEY_STATE.weapon,
+      simulatedGameState.heroPosition,
+      simulatedGameState
+    );
+
+    return {
+      hasAngelWin: Number(huntResult?.clusterWinTbm || 0) > 0,
+      huntResult
+    };
+  }
+
+  evaluateMainGameAngelWinStruggle(reels, gameState = null) {
+    const startingMultiplier = this.clampMainGameAngelMultiplier(
+      gameState?.heroAngelNextMultiplier ?? gameState?.heroAngelMultiplier ?? 1
+    );
+    const rule = this.getMainGameAngelWinStruggleRule(startingMultiplier);
+    const simulation = this.simulateMainGameAngelWinOutcome(reels, gameState);
+    const shouldReroll = Boolean(
+      simulation.hasAngelWin &&
+      rule &&
+      rule.times > 0 &&
+      this.rollChance(rule.odds)
+    );
+
+    return {
+      ...simulation,
+      startingMultiplier,
+      rule,
+      shouldReroll,
+      rerollAttempts: shouldReroll ? rule.times : 0
+    };
+  }
+
   /**
    * Attempt to reroll new symbols to create wins (Normal Win Boost)
    * Only rerolls symbols that were spawned from outside the grid
@@ -6395,6 +6455,64 @@ export class GameServer {
     
     // No wins found after all attempts
     return { hasWins: false };
+  }
+
+  attemptMainGameAngelWinStruggleReroll(reels, newSymbolPositions, rerollAttempts, gameState = null) {
+    const maxAttempts = Math.max(0, Math.floor(Number(rerollAttempts) || 0));
+    const newPositions = Array.from(newSymbolPositions || [])
+      .map((key) => {
+        const [reel, row] = String(key).split(",").map(Number);
+        return { reel, row };
+      })
+      .filter((pos) => Number.isFinite(pos.reel) && Number.isFinite(pos.row));
+
+    const paytable = serverConfig.paytable || {};
+    const candidatePositions = newPositions.filter((pos) => {
+      const symbol = reels?.[pos.reel]?.[pos.row];
+      return Object.prototype.hasOwnProperty.call(paytable, String(symbol));
+    });
+
+    if (maxAttempts <= 0 || candidatePositions.length === 0) {
+      return {
+        reels,
+        struggleResolved: false,
+        attemptsUsed: 0,
+        simulation: this.simulateMainGameAngelWinOutcome(reels, gameState)
+      };
+    }
+
+    let finalReels = reels;
+    let finalSimulation = this.simulateMainGameAngelWinOutcome(reels, gameState);
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const rerollReels = JSON.parse(JSON.stringify(reels));
+      candidatePositions.forEach((pos) => {
+        rerollReels[pos.reel][pos.row] = this.getRandomSymbol(
+          this.serverConfig?.symbolWeightsMain || serverConfig.symbolWeightsMain,
+          false,
+          0,
+          0
+        );
+      });
+
+      finalReels = rerollReels;
+      finalSimulation = this.simulateMainGameAngelWinOutcome(rerollReels, gameState);
+      if (!finalSimulation.hasAngelWin) {
+        return {
+          reels: finalReels,
+          struggleResolved: true,
+          attemptsUsed: attempt + 1,
+          simulation: finalSimulation
+        };
+      }
+    }
+
+    return {
+      reels: finalReels,
+      struggleResolved: !finalSimulation.hasAngelWin,
+      attemptsUsed: maxAttempts,
+      simulation: finalSimulation
+    };
   }
 
   /**
@@ -7679,13 +7797,12 @@ export class GameServer {
     const minClusterSize = serverConfig.minClusterSize || 4;
     const huntBetSize = Number(gameState?.betSize || 0);
     const huntMultiplier = Number(gameState?.multiplier || 1);
-    let currentAngelClusterMultiplier = Math.max(
-      1,
-      Math.floor(Number(gameState?.heroAngelNextMultiplier || 1) || 1)
+    let currentAngelClusterMultiplier = this.clampMainGameAngelMultiplier(
+      gameState?.heroAngelNextMultiplier ?? 1
     );
     const startingAngelCarryMultiplier = currentAngelClusterMultiplier;
     let latestAngelDisplayMultiplier = Number.isFinite(Number(gameState?.heroAngelMultiplier))
-      ? Math.max(1, Math.floor(Number(gameState.heroAngelMultiplier) || 1))
+      ? this.clampMainGameAngelMultiplier(gameState.heroAngelMultiplier)
       : null;
 
     const applyMainGameAngelMultiplierProgression = (killsThisStep = 0, stepEntry = null) => {
@@ -7694,12 +7811,12 @@ export class GameServer {
         return null;
       }
 
-      const appliedMultiplier = Math.max(1, currentAngelClusterMultiplier);
+      const appliedMultiplier = this.clampMainGameAngelMultiplier(currentAngelClusterMultiplier);
       latestAngelDisplayMultiplier = appliedMultiplier;
       if (stepEntry && typeof stepEntry === "object") {
         stepEntry.angelMultiplier = appliedMultiplier;
       }
-      currentAngelClusterMultiplier = Math.max(1, appliedMultiplier * 2);
+      currentAngelClusterMultiplier = this.clampMainGameAngelMultiplier(appliedMultiplier * 2);
       return appliedMultiplier;
     };
 
@@ -8891,8 +9008,49 @@ export class GameServer {
     return isPlainObject(serverConfig?.heavenHell) ? serverConfig.heavenHell : {};
   }
 
+  getHeavenHellMainConfig() {
+    return isPlainObject(this.getHeavenHellConfig()?.main) ? this.getHeavenHellConfig().main : {};
+  }
+
   isHeavenHellEnabled() {
     return this.getHeavenHellConfig()?.enabled === true;
+  }
+
+  getMainGameAngelMultiplierCap() {
+    const configuredCap = Number(this.getHeavenHellMainConfig()?.maxMuliplierOnAngel);
+    if (!Number.isFinite(configuredCap) || configuredCap < 1) {
+      return Number.MAX_SAFE_INTEGER;
+    }
+    return Math.max(1, Math.floor(configuredCap));
+  }
+
+  clampMainGameAngelMultiplier(multiplier = 1) {
+    const normalizedMultiplier = Math.max(1, Math.floor(Number(multiplier) || 1));
+    return Math.min(normalizedMultiplier, this.getMainGameAngelMultiplierCap());
+  }
+
+  getMainGameAngelWinStruggleRule(multiplier = 1) {
+    const struggleConfig = this.getHeavenHellMainConfig()?.multiplierWinStruggleChanceByTier;
+    if (!isPlainObject(struggleConfig)) return null;
+
+    const normalizedMultiplier = this.clampMainGameAngelMultiplier(multiplier);
+    const tierEntries = Object.entries(struggleConfig)
+      .map(([threshold, rule]) => ({
+        threshold: Number(threshold),
+        odds: this.normalizeProbability(rule?.odds, 0),
+        times: Math.max(0, Math.floor(Number(rule?.times) || 0))
+      }))
+      .filter((entry) => Number.isFinite(entry.threshold))
+      .sort((a, b) => a.threshold - b.threshold);
+
+    let matchedRule = null;
+    tierEntries.forEach((entry) => {
+      if (normalizedMultiplier >= entry.threshold) {
+        matchedRule = entry;
+      }
+    });
+
+    return matchedRule;
   }
 
   rollChance(chance = 0) {

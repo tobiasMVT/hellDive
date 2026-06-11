@@ -46,7 +46,7 @@
     
         "bonus_min0.1_max50": 7,
         "bonus_min50_max200": 2,
-        "bonus_max1000": 1
+        "bonus_max1000": 10000
     },
     "bonus": {
         "bonus": 1,
@@ -956,7 +956,14 @@
         "enabled": true,
         "main": {
             "portalTriggerChancePerKill": 0.01,
-            "portalTriggerChancePerHuntAction": 0
+            "portalTriggerChancePerHuntAction": 0,
+            "maxMuliplierOnAngel": 1024,
+            "multiplierWinStruggleChanceByTier": {
+                "50": { "odds": 0.2, "times": 1 },
+                "100": { "odds": 0.3, "times": 1 },
+                "200": { "odds": 0.5, "times": 1 },
+                "500": { "odds": 1, "times": 2 }
+            }
         },
         "bonus": {
             "entryFreespins": 6,

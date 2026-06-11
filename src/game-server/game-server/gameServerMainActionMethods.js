@@ -20,45 +20,10 @@ export function createGameServerMainActionMethods(deps = {}) {
 
       gameState.heroPosition = null;
       gameState.skipWheel = false;
-      const necromancerLevel = gameState.hero?.necromancer || 0;
-      const necromancerSpawns = this.spawnNecromancerDemons(necromancerLevel, null, 1);
-      gameState.necromancerSpawns = necromancerSpawns;
-
-      gameState.reels = this.generateReels(
-        this.serverConfig.symbolWeightsMain,
-        serverConfig.area.width,
-        serverConfig.area.height
-      );
-
-      if (necromancerSpawns.length > 0) {
-        gameState.reels = this.placeNecromancerDemons(gameState.reels, necromancerSpawns);
-      }
-
-      const demonConfig = serverConfig.bananaSpawn || { minBananas: 1, maxBananas: 3, chance: 0.5 };
-      gameState.reels = this.addDemons(gameState.reels, demonConfig, {
-        gameState,
-        heroPosition: null,
-        heroFootprintSize: 1
-      });
-
-      const timeResult = this.injectTimeSymbols(gameState.reels, gameState.bonusWon?.won || false, null, gameState);
-      gameState.reels = timeResult.reels;
-      gameState.timeSymbols = [];
-      gameState.gravity = this.decideGravity(gameState.reels);
-
-      const multiplier = gameState.multiplier || 1;
-      let result = this.processClusters(
-        gameState.reels,
-        betSize,
-        serverConfig.minClusterSize || 4,
-        multiplier,
-        gameState.bananaMeter?.level,
-        this.buildHeroFootprintState(gameState.heroPosition, gameState.heroFootprintSize || 1),
-        true
-      );
-      if (!result.hasWins) {
-        const fullBoardResult = this.resolveFullBoardClusterResult(
-          gameState.reels,
+      const resolveSpinClusterResult = (reels) => {
+        const multiplier = gameState.multiplier || 1;
+        let clusterResult = this.processClusters(
+          reels,
           betSize,
           serverConfig.minClusterSize || 4,
           multiplier,
@@ -66,11 +31,115 @@ export function createGameServerMainActionMethods(deps = {}) {
           this.buildHeroFootprintState(gameState.heroPosition, gameState.heroFootprintSize || 1),
           true
         );
-        if (fullBoardResult?.hasWins) {
-          result = fullBoardResult;
+        if (!clusterResult.hasWins) {
+          const fullBoardResult = this.resolveFullBoardClusterResult(
+            reels,
+            betSize,
+            serverConfig.minClusterSize || 4,
+            multiplier,
+            gameState.bananaMeter?.level,
+            this.buildHeroFootprintState(gameState.heroPosition, gameState.heroFootprintSize || 1),
+            true
+          );
+          if (fullBoardResult?.hasWins) {
+            clusterResult = fullBoardResult;
+          }
+        }
+        return clusterResult;
+      };
+
+      const generateFreshMainSpin = () => {
+        const scratchState = JSON.parse(JSON.stringify(gameState));
+        const necromancerLevel = gameState.hero?.necromancer || 0;
+        const necromancerSpawns = this.spawnNecromancerDemons(necromancerLevel, null, 1);
+        let reels = this.generateReels(
+          this.serverConfig.symbolWeightsMain,
+          serverConfig.area.width,
+          serverConfig.area.height
+        );
+
+        if (necromancerSpawns.length > 0) {
+          reels = this.placeNecromancerDemons(reels, necromancerSpawns);
+        }
+
+        const demonConfig = serverConfig.bananaSpawn || { minBananas: 1, maxBananas: 3, chance: 0.5 };
+        reels = this.addDemons(reels, demonConfig, {
+          gameState: scratchState,
+          heroPosition: null,
+          heroFootprintSize: 1
+        });
+
+        const timeResult = this.injectTimeSymbols(reels, scratchState.bonusWon?.won || false, null, scratchState);
+        reels = timeResult.reels;
+        const gravity = this.decideGravity(reels);
+        const result = resolveSpinClusterResult(reels);
+
+        let hasPendingBarrelRespin = false;
+        let reelsBeforeDrop = result.hasWins ? result.updatedReels : null;
+        if (!result.hasWins) {
+          const barrelsOnBoard = this.getBarrelSymbolsOnBoard(reels);
+          if (barrelsOnBoard.length > 0) {
+            const barrelResult = this.triggerBarrelDemonBursts(reels, barrelsOnBoard, scratchState);
+            if (barrelResult.barrelBursts.length > 0) {
+              reelsBeforeDrop = barrelResult.reels;
+              hasPendingBarrelRespin = true;
+            }
+          }
+        }
+
+        return {
+          necromancerSpawns,
+          reels,
+          gravity,
+          result,
+          hasPendingBarrelRespin,
+          reelsBeforeDrop,
+          barrelBursts: scratchState.barrelBursts || [],
+          totalBarrelBananasSpawned: scratchState.totalBarrelBananasSpawned || 0,
+          totalBarrelDestroyedSymbols: scratchState.totalBarrelDestroyedSymbols || 0
+        };
+      };
+
+      let spinOutcome = generateFreshMainSpin();
+      if (
+        heavenHellEnabled &&
+        !spinOutcome.result.hasWins &&
+        !spinOutcome.hasPendingBarrelRespin &&
+        this.boardHasDemons(spinOutcome.reels)
+      ) {
+        const struggleState = this.evaluateMainGameAngelWinStruggle(spinOutcome.reels, gameState);
+        if (struggleState.shouldReroll) {
+          let attemptsRemaining = struggleState.rerollAttempts;
+          while (attemptsRemaining > 0) {
+            spinOutcome = generateFreshMainSpin();
+            attemptsRemaining -= 1;
+
+            if (
+              spinOutcome.result.hasWins ||
+              spinOutcome.hasPendingBarrelRespin ||
+              !this.boardHasDemons(spinOutcome.reels)
+            ) {
+              break;
+            }
+
+            const rerolledSimulation = this.simulateMainGameAngelWinOutcome(spinOutcome.reels, gameState);
+            if (!rerolledSimulation.hasAngelWin) {
+              break;
+            }
+          }
         }
       }
-      let hasPendingBarrelRespin = false;
+
+      gameState.necromancerSpawns = spinOutcome.necromancerSpawns;
+      gameState.reels = spinOutcome.reels;
+      gameState.timeSymbols = [];
+      gameState.gravity = spinOutcome.gravity;
+      gameState.barrelBursts = spinOutcome.barrelBursts;
+      gameState.totalBarrelBananasSpawned = spinOutcome.totalBarrelBananasSpawned;
+      gameState.totalBarrelDestroyedSymbols = spinOutcome.totalBarrelDestroyedSymbols;
+
+      let result = spinOutcome.result;
+      let hasPendingBarrelRespin = spinOutcome.hasPendingBarrelRespin;
 
       if (result.hasWins) {
         gameState.clusters = result.clusters;
@@ -81,22 +150,14 @@ export function createGameServerMainActionMethods(deps = {}) {
         if (!gameState.rtpData) gameState.rtpData = {};
         gameState.rtpData.clusterWinTBM = (gameState.rtpData.clusterWinTBM || 0) + result.tbm;
 
-        gameState.reelsBeforeDrop = result.updatedReels;
+        gameState.reelsBeforeDrop = spinOutcome.reelsBeforeDrop;
         gameState.nextAction = "respin";
-      } else {
-        const barrelsOnBoard = this.getBarrelSymbolsOnBoard(gameState.reels);
-        if (barrelsOnBoard.length > 0) {
-          const barrelResult = this.triggerBarrelDemonBursts(gameState.reels, barrelsOnBoard, gameState);
-          if (barrelResult.barrelBursts.length > 0) {
-            gameState.reelsBeforeDrop = barrelResult.reels;
-            hasPendingBarrelRespin = true;
-          }
-        }
       }
 
       if (!result.hasWins && hasPendingBarrelRespin) {
         gameState.clusters = [];
         gameState.winAmount = 0;
+        gameState.reelsBeforeDrop = spinOutcome.reelsBeforeDrop;
         gameState.reelsAfterDrop = null;
         gameState.nextAction = "respin";
       } else if (!result.hasWins && Object.values(gameState.reels).some((row) => row.some((sym) => this.isDemon(sym)))) {
@@ -179,18 +240,9 @@ export function createGameServerMainActionMethods(deps = {}) {
       gameState.timeSymbols = [];
 
       const multiplier = gameState.multiplier || 1;
-      let result = this.processClusters(
-        gravityResult.reels,
-        betSize,
-        serverConfig.minClusterSize || 4,
-        multiplier,
-        gameState.bananaMeter?.level,
-        this.buildHeroFootprintState(gameState.heroPosition, gameState.heroFootprintSize || 1),
-        true
-      );
-      if (!result.hasWins) {
-        const fullBoardResult = this.resolveFullBoardClusterResult(
-          gravityResult.reels,
+      const resolveRespinClusterResult = (reels) => {
+        let clusterResult = this.processClusters(
+          reels,
           betSize,
           serverConfig.minClusterSize || 4,
           multiplier,
@@ -198,10 +250,24 @@ export function createGameServerMainActionMethods(deps = {}) {
           this.buildHeroFootprintState(gameState.heroPosition, gameState.heroFootprintSize || 1),
           true
         );
-        if (fullBoardResult?.hasWins) {
-          result = fullBoardResult;
+        if (!clusterResult.hasWins) {
+          const fullBoardResult = this.resolveFullBoardClusterResult(
+            reels,
+            betSize,
+            serverConfig.minClusterSize || 4,
+            multiplier,
+            gameState.bananaMeter?.level,
+            this.buildHeroFootprintState(gameState.heroPosition, gameState.heroFootprintSize || 1),
+            true
+          );
+          if (fullBoardResult?.hasWins) {
+            clusterResult = fullBoardResult;
+          }
         }
-      }
+        return clusterResult;
+      };
+
+      let result = resolveRespinClusterResult(gravityResult.reels);
       let pendingBarrelDropReels = null;
 
       const boostConfig = serverConfig.normalWinBoost || {};
@@ -235,24 +301,44 @@ export function createGameServerMainActionMethods(deps = {}) {
       }
 
       if (!result.hasWins) {
-        const fullBoardResult = this.resolveFullBoardClusterResult(
-          gameState.reels,
-          betSize,
-          serverConfig.minClusterSize || 4,
-          multiplier,
-          gameState.bananaMeter?.level,
-          this.buildHeroFootprintState(gameState.heroPosition, gameState.heroFootprintSize || 1),
-          true
-        );
-        if (fullBoardResult?.hasWins) {
-          result = fullBoardResult;
+        result = resolveRespinClusterResult(gameState.reels);
+      }
+
+      if (
+        this.isHeavenHellEnabled() &&
+        !result.hasWins &&
+        this.boardHasDemons(gameState.reels)
+      ) {
+        const angelStruggle = this.evaluateMainGameAngelWinStruggle(gameState.reels, gameState);
+        if (angelStruggle.shouldReroll) {
+          const struggleReroll = this.attemptMainGameAngelWinStruggleReroll(
+            gameState.reels,
+            newSymbolPositions,
+            angelStruggle.rerollAttempts,
+            gameState
+          );
+
+          gameState.reels = struggleReroll.reels;
+          gameState.reelsAfterDrop = struggleReroll.reels;
+          gameState.dropEvent.movements.forEach((movement) => {
+            const targetReel = movement.toReel !== undefined ? movement.toReel : movement.reel;
+            const targetRow = movement.to;
+            if (
+              struggleReroll.reels[targetReel] &&
+              struggleReroll.reels[targetReel][targetRow] !== undefined
+            ) {
+              movement.symbol = struggleReroll.reels[targetReel][targetRow];
+            }
+          });
+
+          result = resolveRespinClusterResult(gameState.reels);
         }
       }
 
       if (!result.hasWins) {
-        const barrelsOnBoard = this.getBarrelSymbolsOnBoard(gravityResult.reels);
+        const barrelsOnBoard = this.getBarrelSymbolsOnBoard(gameState.reels);
         if (barrelsOnBoard.length > 0) {
-          const barrelResult = this.triggerBarrelDemonBursts(gravityResult.reels, barrelsOnBoard, gameState);
+          const barrelResult = this.triggerBarrelDemonBursts(gameState.reels, barrelsOnBoard, gameState);
           if (barrelResult.barrelBursts.length > 0) {
             pendingBarrelDropReels = barrelResult.reels;
           }
