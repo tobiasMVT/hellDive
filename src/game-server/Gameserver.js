@@ -9117,6 +9117,306 @@ export class GameServer {
     return this.getHeavenHellConfig()?.bonus?.chestTypes || {};
   }
 
+  getHeavenHellPentagramConfig() {
+    return this.getHeavenHellConfig()?.bonus?.pentagram || {};
+  }
+
+  buildHeavenHellPentagramPoints() {
+    const points = Array.isArray(this.getHeavenHellPentagramConfig()?.points)
+      ? this.getHeavenHellPentagramConfig().points
+      : [];
+    const debugShowTriggerCells = this.getHeavenHellPentagramConfig()?.debugShowTriggerCells === true;
+    const normalized = points
+      .map((entry, index) => {
+        const id = String(entry?.id || "").trim() || `P${index + 1}`;
+        const segmentId = String(entry?.segmentId || id).trim() || id;
+        const x = Number(entry?.x);
+        const y = Number(entry?.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        const triggerCells = (Array.isArray(entry?.triggerCells) ? entry.triggerCells : [])
+          .map((cell) => {
+            const reel = Math.floor(Number(cell?.reel));
+            const row = Math.floor(Number(cell?.row));
+            if (!Number.isFinite(reel) || !Number.isFinite(row)) return null;
+            return { reel, row };
+          })
+          .filter(Boolean);
+        return {
+          id,
+          segmentId,
+          x,
+          y,
+          triggerCells,
+          debugShowTriggerCells
+        };
+      })
+      .filter(Boolean);
+    return normalized;
+  }
+
+  buildHeavenHellPentagramPointStates(points = []) {
+    const sourcePoints = Array.isArray(points) && points.length > 0
+      ? points
+      : this.buildHeavenHellPentagramPoints();
+    if (sourcePoints.length === 0) {
+      return {
+        A: false,
+        B: false,
+        C: false,
+        D: false,
+        E: false
+      };
+    }
+    return sourcePoints.reduce((pointStates, point) => {
+      const segmentId = String(point?.segmentId || point?.id || "").trim();
+      if (!segmentId) return pointStates;
+      pointStates[segmentId] = false;
+      return pointStates;
+    }, {});
+  }
+
+  countHeavenHellPentagramLitPoints(pointStates = {}) {
+    return Object.values(pointStates || {}).reduce((sum, value) => sum + (value === true ? 1 : 0), 0);
+  }
+
+  getHeavenHellPentagramRewardStepValue() {
+    return Math.max(1, Math.floor(Number(this.getHeavenHellPentagramConfig()?.rewardStepValue ?? 1) || 1));
+  }
+
+  buildHeavenHellPentagramRewardSteps(totalAdded = 0) {
+    const remainingTotal = Math.max(0, Math.floor(Number(totalAdded) || 0));
+    const stepValue = this.getHeavenHellPentagramRewardStepValue();
+    if (remainingTotal <= 0) return [];
+
+    const steps = [];
+    let remaining = remainingTotal;
+    while (remaining > 0) {
+      const amount = Math.min(stepValue, remaining);
+      steps.push({
+        amount,
+        label: `+${amount}`
+      });
+      remaining -= amount;
+    }
+    return steps;
+  }
+
+  rollHeavenHellPentagramCompletionRewardTotal() {
+    const rewardEntries = this.getHeavenHellPentagramConfig()?.completionMultiplierRewards;
+    const rolledTotal = Math.max(
+      0,
+      Math.floor(Number(this.pickWeightedValueFromEntries(rewardEntries)) || 0)
+    );
+    if (rolledTotal > 0) {
+      return rolledTotal;
+    }
+    return this.getHeavenHellPentagramRewardStepValue() * 6;
+  }
+
+  findHeavenHellPentagramTriggerCellMatch(point = {}, targets = []) {
+    const triggerCells = Array.isArray(point?.triggerCells) ? point.triggerCells : [];
+    if (triggerCells.length === 0) return null;
+
+    const targetMap = new Map();
+    (Array.isArray(targets) ? targets : []).forEach((target) => {
+      const reel = Math.floor(Number(target?.reel));
+      const row = Math.floor(Number(target?.row));
+      if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
+      targetMap.set(`${reel},${row}`, {
+        reel,
+        row,
+        wave: Math.max(0, Math.floor(Number(target?.wave) || 0))
+      });
+    });
+
+    for (const cell of triggerCells) {
+      const match = targetMap.get(`${Math.floor(Number(cell?.reel))},${Math.floor(Number(cell?.row))}`);
+      if (match) {
+        return match;
+      }
+    }
+    return null;
+  }
+
+  resolveHeavenHellPentagramTargetHits(
+    gameState,
+    {
+      pathIndex = -1,
+      ability = "",
+      targets = []
+    } = {}
+  ) {
+    const heavenHell = this.ensureHeavenHellState(gameState);
+    const pentagram = heavenHell?.bonus?.pentagram;
+    if (!pentagram || pentagram.enabled !== true) {
+      return [];
+    }
+
+    const points = Array.isArray(pentagram.points) ? pentagram.points : [];
+    const hits = [];
+    points.forEach((point) => {
+      const matchedTarget = this.findHeavenHellPentagramTriggerCellMatch(point, targets);
+      if (!matchedTarget) return;
+      const event = this.registerHeavenHellPentagramHit(gameState, {
+        pathIndex,
+        ability,
+        point,
+        originReel: matchedTarget.reel,
+        originRow: matchedTarget.row,
+        triggerReel: matchedTarget.reel,
+        triggerRow: matchedTarget.row,
+        triggerWave: matchedTarget.wave
+      });
+      if (event) {
+        hits.push(event);
+      }
+    });
+    return hits;
+  }
+
+  collectHeavenHellDivineStrikePentagramTargets(strikeTargets = []) {
+    const targets = [];
+    (Array.isArray(strikeTargets) ? strikeTargets : []).forEach((target) => {
+      const wave = Math.max(0, Math.floor(Number(target?.wave) || 0));
+      (Array.isArray(target?.hitCells) ? target.hitCells : []).forEach((cell) => {
+        const reel = Math.floor(Number(cell?.reel));
+        const row = Math.floor(Number(cell?.row));
+        if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
+        targets.push({
+          reel,
+          row,
+          wave
+        });
+      });
+    });
+    return targets;
+  }
+
+  registerHeavenHellPentagramHit(
+    gameState,
+    {
+      pathIndex = -1,
+      ability = "",
+      point = null,
+      originReel = null,
+      originRow = null,
+      triggerReel = null,
+      triggerRow = null,
+      triggerWave = null
+    } = {}
+  ) {
+    const heavenHell = this.ensureHeavenHellState(gameState);
+    const pentagram = heavenHell?.bonus?.pentagram;
+    if (!pentagram || !point) return null;
+
+    const pointId = String(point?.segmentId || point?.id || "").trim();
+    if (!pointId) return null;
+
+    const alreadyCompleted = pentagram.pointStates?.[pointId] === true;
+    const event = {
+      pathIndex: Math.max(-1, Math.floor(Number(pathIndex) || -1)),
+      ability: String(ability || ""),
+      pointId: String(point?.id || pointId),
+      litPointId: pointId,
+      pointIdsLitAtActionStart: Array.isArray(pentagram?.pointIdsLitAtActionStart)
+        ? pentagram.pointIdsLitAtActionStart.slice()
+        : [],
+      point: {
+        id: String(point?.id || pointId),
+        segmentId: pointId,
+        x: Number(point?.x),
+        y: Number(point?.y),
+        triggerCells: Array.isArray(point?.triggerCells)
+          ? point.triggerCells.map((cell) => ({
+              reel: Math.floor(Number(cell?.reel)),
+              row: Math.floor(Number(cell?.row))
+            }))
+          : []
+      },
+      originReel: Number.isFinite(Number(originReel)) ? Number(originReel) : null,
+      originRow: Number.isFinite(Number(originRow)) ? Number(originRow) : null,
+      triggerReel: Number.isFinite(Number(triggerReel)) ? Number(triggerReel) : null,
+      triggerRow: Number.isFinite(Number(triggerRow)) ? Number(triggerRow) : null,
+      triggerWave: Number.isFinite(Number(triggerWave)) ? Math.floor(Number(triggerWave)) : null,
+      activated: false,
+      alreadyCompleted
+    };
+
+    if (!alreadyCompleted) {
+      pentagram.pointStates[pointId] = true;
+      pentagram.litPointCount = this.countHeavenHellPentagramLitPoints(pentagram.pointStates);
+      event.activated = true;
+
+      if (
+        pentagram.completed !== true &&
+        Object.values(pentagram.pointStates).length > 0 &&
+        Object.values(pentagram.pointStates).every(Boolean)
+      ) {
+        const completedPointIds = Object.keys(pentagram.pointStates).filter((key) => pentagram.pointStates[key] === true);
+        pentagram.completed = true;
+        const totalAdded = this.rollHeavenHellPentagramCompletionRewardTotal();
+        pentagram.pendingCompletionReward = {
+          pathIndex: event.pathIndex,
+          triggerAbility: event.ability,
+          pointId: event.pointId,
+          litPointId: pointId,
+          pointIdsLitAtActionStart: event.pointIdsLitAtActionStart,
+          completedPointIds,
+          totalAdded,
+          steps: this.buildHeavenHellPentagramRewardSteps(totalAdded)
+        };
+      }
+    }
+
+    pentagram.activationsThisAction.push(event);
+    return event;
+  }
+
+  finalizeHeavenHellPentagramCompletionReward(gameState) {
+    const heavenHell = this.ensureHeavenHellState(gameState);
+    const bonusState = heavenHell?.bonus;
+    const pentagram = bonusState?.pentagram;
+    if (!bonusState || !pentagram || !pentagram.pendingCompletionReward) return null;
+
+    const reward = pentagram.pendingCompletionReward;
+    const totalAdded = Math.max(0, Math.floor(Number(reward?.totalAdded) || 0));
+    const steps = Array.isArray(reward?.steps) && reward.steps.length > 0
+      ? reward.steps.map((step) => ({
+          amount: Math.max(1, Math.floor(Number(step?.amount || 1) || 1)),
+          label: String(step?.label || `+${Math.max(1, Math.floor(Number(step?.amount || 1) || 1))}`)
+        }))
+      : this.buildHeavenHellPentagramRewardSteps(totalAdded);
+    const beforeMultiplier = Math.max(1, Math.floor(Number(bonusState.globalMultiplier) || 1));
+    const addedFromSteps = steps.reduce((sum, step) => sum + Math.max(0, Math.floor(Number(step?.amount || 0) || 0)), 0);
+    const appliedTotal = addedFromSteps > 0 ? addedFromSteps : totalAdded;
+    const afterMultiplier = beforeMultiplier + appliedTotal;
+
+    bonusState.globalMultiplier = afterMultiplier;
+    pentagram.completionEventThisAction = {
+      pathIndex: Math.max(-1, Math.floor(Number(reward?.pathIndex) || -1)),
+      triggerAbility: String(reward?.triggerAbility || ""),
+      pointId: String(reward?.pointId || ""),
+      litPointId: String(reward?.litPointId || ""),
+      pointIdsLitAtActionStart: Array.isArray(reward?.pointIdsLitAtActionStart)
+        ? reward.pointIdsLitAtActionStart.slice()
+        : [],
+      completedPointIds: Array.isArray(reward?.completedPointIds)
+        ? reward.completedPointIds.slice()
+        : [],
+      totalAdded: appliedTotal,
+      steps,
+      beforeMultiplier,
+      afterMultiplier,
+      completedPoints: this.countHeavenHellPentagramLitPoints(pentagram.pointStates)
+    };
+    pentagram.completionCount = Math.max(0, Math.floor(Number(pentagram.completionCount || 0) || 0) + 1);
+    pentagram.pointStates = this.buildHeavenHellPentagramPointStates(pentagram.points);
+    pentagram.litPointCount = 0;
+    pentagram.completed = false;
+    pentagram.pendingCompletionReward = null;
+    return pentagram.completionEventThisAction;
+  }
+
   syncHeavenHellChestCounters(gameState) {
     if (!gameState) return;
     const bonusState = gameState?.heavenHell?.bonus;
@@ -9356,6 +9656,38 @@ export class GameServer {
     bonusState.chestsRewarded = Math.max(0, Math.floor(Number(bonusState.chestsRewarded || 0) || 0));
     bonusState.chestRewardResumeAction = typeof bonusState.chestRewardResumeAction === "string"
       ? bonusState.chestRewardResumeAction
+      : null;
+    if (!bonusState.pentagram || typeof bonusState.pentagram !== "object") {
+      bonusState.pentagram = {};
+    }
+    const pentagramPoints = this.buildHeavenHellPentagramPoints();
+    const pentagram = bonusState.pentagram;
+    pentagram.enabled = this.getHeavenHellPentagramConfig()?.enabled !== false && pentagramPoints.length > 0;
+    pentagram.points = pentagramPoints;
+    const legacySegments = pentagram?.segments && typeof pentagram.segments === "object"
+      ? pentagram.segments
+      : null;
+    const defaultPointStates = this.buildHeavenHellPentagramPointStates(pentagramPoints);
+    const normalizedPointStates = { ...defaultPointStates };
+    Object.keys(defaultPointStates).forEach((pointId) => {
+      normalizedPointStates[pointId] = (
+        pentagram?.pointStates?.[pointId] === true ||
+        legacySegments?.[pointId] === true
+      );
+    });
+    pentagram.pointStates = normalizedPointStates;
+    pentagram.pointIdsLitAtActionStart = Object.keys(pentagram.pointStates).filter(
+      (pointId) => pentagram.pointStates[pointId] === true
+    );
+    pentagram.litPointCount = this.countHeavenHellPentagramLitPoints(pentagram.pointStates);
+    pentagram.completed = pentagram.enabled === true && Object.values(pentagram.pointStates).length > 0
+      ? Object.values(pentagram.pointStates).every(Boolean)
+      : false;
+    pentagram.completionCount = Math.max(0, Math.floor(Number(pentagram.completionCount || 0) || 0));
+    pentagram.activationsThisAction = [];
+    pentagram.completionEventThisAction = null;
+    pentagram.pendingCompletionReward = pentagram.pendingCompletionReward && typeof pentagram.pendingCompletionReward === "object"
+      ? pentagram.pendingCompletionReward
       : null;
     bonusState.abilityProcsThisAction = [];
     bonusState.rippleInjectionsThisAction = [];
@@ -10043,10 +10375,11 @@ export class GameServer {
         ? this.buildHeavenHellDivineXTargets(originReel, originRow, divineXDistance)
         : [];
       const divineStrikeTargets = [];
+      let strikeOrigins = [];
 
       if (divineStrikeProc) {
         step.divineStrikeProc = true;
-        const strikeOrigins = [
+        strikeOrigins = [
           { reel: originReel, row: originRow, wave: 0, center: true },
           ...(divineXProc ? divineXTargets.map((target) => ({
             reel: target.reel,
@@ -10121,6 +10454,11 @@ export class GameServer {
           radius: divineStrikeRadius,
           targets: divineStrikeTargets
         });
+        this.resolveHeavenHellPentagramTargetHits(gameState, {
+          pathIndex,
+          ability: "divineStrike",
+          targets: this.collectHeavenHellDivineStrikePentagramTargets(divineStrikeTargets)
+        });
       }
 
       if (divineXProc) {
@@ -10185,6 +10523,11 @@ export class GameServer {
           originRow,
           targets: xTargetEntries,
           killCells: xTargetEntries.filter((entry) => entry.killed === true)
+        });
+        this.resolveHeavenHellPentagramTargetHits(gameState, {
+          pathIndex,
+          ability: "divineX",
+          targets: xTargetEntries
         });
       }
     });
@@ -10382,6 +10725,9 @@ export class GameServer {
         bonusState.globalMultiplier += bossMultiplierGain;
       }
     });
+    if (isBonus) {
+      this.finalizeHeavenHellPentagramCompletionReward(gameState);
+    }
 
     const lootDrops = isBonus
       ? this.resolveHeavenHellLootDrops(gameState, killEntries, { guaranteed: false, lootMultiplier: 1 })
@@ -10746,10 +11092,16 @@ isTicketMatch(ticketName, roundStates) {
   const hasMysteryWild = roundStates.some((state) => state.hero?.step === "mysteryWild");
   const hasAxe = roundStates.some((state) => state.hero?.weapon === "axe");
   const hasNecromancer2 = roundStates.some((state) => Number(state.hero?.necromancer) === 2);
+  const hasCompletedPentagram = roundStates.some((state) => (
+    Number(state?.heavenHell?.bonus?.pentagram?.completionCount || 0) > 0 ||
+    state?.heavenHell?.bonus?.pentagram?.completionEventThisAction
+  ));
 
   switch (baseStrategy) {
     case "bonus":
       return hasBonus;
+    case "bonusPentagram":
+      return hasBonus && hasCompletedPentagram;
     case "noBonus":
       return !hasBonus;
     case "noBonus_noHammers":
@@ -11062,16 +11414,33 @@ function resetGameState(gameState) {
             actionCount: 0,
             lootGround: [],
             lootGroundSettled: [],
-            pendingChests: [],
-            nextChestId: 1,
-            chestsRewarded: 0,
-            chestRewardResumeAction: null,
-            abilityProcsThisAction: [],
-            rippleInjectionsThisAction: [],
-            bossEventsThisAction: [],
-            chestEventsThisAction: [],
-            chestActionSummary: null,
-            killsThisAction: 0
+          pendingChests: [],
+          nextChestId: 1,
+          chestsRewarded: 0,
+          chestRewardResumeAction: null,
+          abilityProcsThisAction: [],
+          pentagram: {
+            points: [],
+            pointStates: {
+              A: false,
+              B: false,
+              C: false,
+              D: false,
+              E: false
+            },
+            pointIdsLitAtActionStart: [],
+            litPointCount: 0,
+            completed: false,
+            completionCount: 0,
+            activationsThisAction: [],
+            completionEventThisAction: null,
+            pendingCompletionReward: null
+          },
+          rippleInjectionsThisAction: [],
+          bossEventsThisAction: [],
+          chestEventsThisAction: [],
+          chestActionSummary: null,
+          killsThisAction: 0
           }
         };
         gameState.bonusState.chestsPending = 0;

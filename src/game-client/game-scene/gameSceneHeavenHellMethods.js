@@ -51,6 +51,610 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         });
       },
 
+    clearHeavenHellPentagramFx() {
+        if (!Array.isArray(this.heavenHellPentagramFx)) {
+          this.heavenHellPentagramFx = [];
+          return;
+        }
+        this.heavenHellPentagramFx.forEach((fx) => {
+          if (fx && !fx.destroyed) fx.destroy();
+        });
+        this.heavenHellPentagramFx = [];
+      },
+
+    getHeavenHellPentagramPointCenter(point = {}) {
+        const pointX = Number(point?.x);
+        const pointY = Number(point?.y);
+        if (!Number.isFinite(pointX) || !Number.isFinite(pointY)) return null;
+        const cellSize = 70;
+        return {
+          x: pointX * cellSize + cellSize / 2 + GRID_OFFSET_X,
+          y: (clientConfig.area.height - 1 - pointY) * cellSize + cellSize / 2 + GRID_OFFSET_Y
+        };
+      },
+
+    getHeavenHellPentagramSegments(points = []) {
+        const pointMap = new Map(
+          (Array.isArray(points) ? points : [])
+            .filter((point) => point && typeof point === "object")
+            .map((point) => [String(point.id || point.segmentId || ""), point])
+        );
+        const layout = [
+          { segmentId: "A", from: "A", to: "C" },
+          { segmentId: "B", from: "B", to: "D" },
+          { segmentId: "C", from: "C", to: "E" },
+          { segmentId: "D", from: "D", to: "A" },
+          { segmentId: "E", from: "E", to: "B" }
+        ];
+        return layout
+          .map((segment) => {
+            const fromPoint = pointMap.get(segment.from);
+            const toPoint = pointMap.get(segment.to);
+            if (!fromPoint || !toPoint) return null;
+            const from = this.getHeavenHellPentagramPointCenter(fromPoint);
+            const to = this.getHeavenHellPentagramPointCenter(toPoint);
+            if (!from || !to) return null;
+            return {
+              ...segment,
+              fromPoint,
+              toPoint,
+              from,
+              to
+            };
+          })
+          .filter(Boolean);
+      },
+
+    ensureHeavenHellPentagramUi() {
+        if (this.heavenHellPentagramUi?.container && !this.heavenHellPentagramUi.container.destroyed) {
+          return this.heavenHellPentagramUi;
+        }
+        const container = this.add.container(0, 0).setDepth(DEPTH_SYMBOLS + 18);
+        const inactiveGraphics = this.add.graphics();
+        const activeGlowGraphics = this.add.graphics();
+        const activeGraphics = this.add.graphics();
+        const debugGraphics = this.add.graphics();
+        const pointGraphics = this.add.graphics();
+        container.add([inactiveGraphics, activeGlowGraphics, activeGraphics, debugGraphics, pointGraphics]);
+        this.heavenHellPentagramUi = {
+          container,
+          inactiveGraphics,
+          activeGlowGraphics,
+          activeGraphics,
+          debugGraphics,
+          pointGraphics,
+          points: [],
+          segments: [],
+          segmentState: {}
+        };
+        return this.heavenHellPentagramUi;
+      },
+
+    drawHeavenHellPentagramState(points = [], pointState = {}, { completed = false } = {}) {
+        const ui = this.ensureHeavenHellPentagramUi();
+        const segments = this.getHeavenHellPentagramSegments(points);
+        ui.points = Array.isArray(points) ? points : [];
+        ui.segments = segments;
+        ui.segmentState = { ...(pointState || {}) };
+        ui.container.setVisible(true);
+
+        const inactiveGraphics = ui.inactiveGraphics;
+        const activeGlowGraphics = ui.activeGlowGraphics;
+        const activeGraphics = ui.activeGraphics;
+        const debugGraphics = ui.debugGraphics;
+        const pointGraphics = ui.pointGraphics;
+        inactiveGraphics.clear();
+        activeGlowGraphics.clear();
+        activeGraphics.clear();
+        debugGraphics.clear();
+        pointGraphics.clear();
+
+        segments.forEach((segment) => {
+          const segmentActive = pointState?.[String(segment?.segmentId || "")] === true;
+          inactiveGraphics.lineStyle(5, 0x2A0D18, 0.34);
+          inactiveGraphics.beginPath();
+          inactiveGraphics.moveTo(segment.from.x, segment.from.y);
+          inactiveGraphics.lineTo(segment.to.x, segment.to.y);
+          inactiveGraphics.strokePath();
+
+          if (segmentActive || completed === true) {
+            const lineColor = completed ? 0xFFE8A6 : 0xF7E08A;
+            const glowColor = completed ? 0xFFF6D2 : 0xFFF1BF;
+            activeGlowGraphics.lineStyle(completed ? 15 : 13, glowColor, completed ? 0.18 : 0.16);
+            activeGlowGraphics.beginPath();
+            activeGlowGraphics.moveTo(segment.from.x, segment.from.y);
+            activeGlowGraphics.lineTo(segment.to.x, segment.to.y);
+            activeGlowGraphics.strokePath();
+
+            activeGraphics.lineStyle(completed ? 7 : 6, lineColor, completed ? 0.94 : 0.84);
+            activeGraphics.beginPath();
+            activeGraphics.moveTo(segment.from.x, segment.from.y);
+            activeGraphics.lineTo(segment.to.x, segment.to.y);
+            activeGraphics.strokePath();
+          }
+        });
+
+        points.forEach((point) => {
+          const active = pointState?.[String(point?.segmentId || point?.id || "")] === true;
+          if (active !== true && point?.debugShowTriggerCells === true && Array.isArray(point?.triggerCells)) {
+            point.triggerCells.forEach((cell) => {
+              const reel = Math.floor(Number(cell?.reel));
+              const row = Math.floor(Number(cell?.row));
+              if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
+              const center = this.getGridCellCenter(reel, row);
+              debugGraphics.fillStyle(0xFFFBEA, 0.16);
+              debugGraphics.fillRoundedRect(center.x - 30, center.y - 30, 60, 60, 10);
+              debugGraphics.lineStyle(2, 0xFFFDF4, 0.42);
+              debugGraphics.strokeRoundedRect(center.x - 30, center.y - 30, 60, 60, 10);
+            });
+          }
+          const center = this.getHeavenHellPentagramPointCenter(point);
+          if (!center) return;
+          pointGraphics.fillStyle(active ? (completed ? 0xFFF0B8 : 0xFFE7A0) : 0x1A0A11, active ? 0.92 : 0.7);
+          pointGraphics.fillCircle(center.x, center.y, active ? 8 : 6);
+          pointGraphics.lineStyle(active ? 3 : 2, active ? (completed ? 0xFFFFF0 : 0xFFF8DA) : 0x5F2630, active ? 0.95 : 0.7);
+          pointGraphics.strokeCircle(center.x, center.y, active ? 11 : 8);
+          if (active) {
+            pointGraphics.fillStyle(completed ? 0xFFF8D6 : 0xFFF1C8, completed ? 0.3 : 0.22);
+            pointGraphics.fillCircle(center.x, center.y, completed ? 18 : 15);
+          }
+        });
+      },
+
+    syncHeavenHellPentagram(gameState = {}) {
+        const pentagram = gameState?.heavenHell?.bonus?.pentagram;
+        if (!pentagram || gameState?.isBonus !== true || pentagram?.enabled !== true) {
+          this.clearHeavenHellPentagramFx?.();
+          if (this.heavenHellPentagramUi?.container && !this.heavenHellPentagramUi.container.destroyed) {
+            this.heavenHellPentagramUi.container.setVisible(false);
+          }
+          return false;
+        }
+
+        const points = Array.isArray(pentagram?.points) ? pentagram.points : [];
+        const pointState = pentagram?.pointStates && typeof pentagram.pointStates === "object"
+          ? pentagram.pointStates
+          : {};
+        this.drawHeavenHellPentagramState(points, pointState, {
+          completed: pentagram?.completed === true
+        });
+        return true;
+      },
+
+    getHeavenHellPentagramStepEvents(gameState = {}, pathIndex = -1) {
+        const pentagram = gameState?.heavenHell?.bonus?.pentagram;
+        if (!pentagram || gameState?.isBonus !== true) {
+          return { activations: [], completionEvent: null };
+        }
+        const activations = (Array.isArray(pentagram?.activationsThisAction) ? pentagram.activationsThisAction : [])
+          .filter((entry) => Math.floor(Number(entry?.pathIndex ?? -1)) === Math.floor(Number(pathIndex) || -1));
+        const completionEvent = Math.floor(Number(pentagram?.completionEventThisAction?.pathIndex ?? -2)) === Math.floor(Number(pathIndex) || -1)
+          ? pentagram.completionEventThisAction
+          : null;
+        return { activations, completionEvent };
+      },
+
+    getHeavenHellPentagramAbilityEvents(gameState = {}, pathIndex = -1, ability = "") {
+        const { activations } = this.getHeavenHellPentagramStepEvents?.(gameState, pathIndex) || {};
+        const abilityKey = String(ability || "");
+        if (!abilityKey) return [];
+        return (Array.isArray(activations) ? activations : []).filter((event) => (
+          String(event?.ability || "") === abilityKey
+        ));
+      },
+
+    async playHeavenHellPentagramActivationEvent(event = {}) {
+        if (!event || event.__presentationPlayed === true) {
+          return false;
+        }
+        event.__presentationPlayed = true;
+        await this.playHeavenHellPentagramPointHitEffect?.(event);
+        if (event?.activated === true) {
+          await this.playHeavenHellPentagramSegmentActivation?.(event);
+        }
+        return true;
+      },
+
+    getHeavenHellPentagramDivineXTargetKeyForEvent(event = {}, xTargets = []) {
+        if (Number.isFinite(Number(event?.triggerReel)) && Number.isFinite(Number(event?.triggerRow))) {
+          return `${Math.floor(Number(event.triggerReel))},${Math.floor(Number(event.triggerRow))},${Math.max(1, Math.floor(Number(event?.triggerWave) || 1))}`;
+        }
+        const pointX = Number(event?.point?.x);
+        const pointY = Number(event?.point?.y);
+        const originReel = Number(event?.originReel);
+        const originRow = Number(event?.originRow);
+        if (!Number.isFinite(pointX) || !Number.isFinite(pointY)) {
+          return null;
+        }
+
+        const desiredWave = (
+          Number.isFinite(originReel) && Number.isFinite(originRow)
+            ? Math.max(1, Math.ceil(Math.max(Math.abs(pointX - originReel), Math.abs(pointY - originRow)) - 0.5))
+            : null
+        );
+        let bestTarget = null;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        (Array.isArray(xTargets) ? xTargets : []).forEach((target) => {
+          const reel = Number(target?.reel);
+          const row = Number(target?.row);
+          if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
+          const wave = Math.max(1, Math.floor(Number(target?.wave) || 1));
+          if (desiredWave !== null && wave !== desiredWave) return;
+          const distance = Math.abs(reel - pointX) + Math.abs(row - pointY);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestTarget = target;
+          }
+        });
+
+        if (!bestTarget) return null;
+        return `${Math.floor(Number(bestTarget.reel))},${Math.floor(Number(bestTarget.row))},${Math.max(1, Math.floor(Number(bestTarget.wave) || 1))}`;
+      },
+
+    getHeavenHellPentagramDivineStrikeTargetKeyForEvent(event = {}, strikeTargets = []) {
+        if (Number.isFinite(Number(event?.triggerReel)) && Number.isFinite(Number(event?.triggerRow))) {
+          return `${Math.floor(Number(event.triggerReel))},${Math.floor(Number(event.triggerRow))},${Math.max(0, Math.floor(Number(event?.triggerWave) || 0))}`;
+        }
+        const pointX = Number(event?.point?.x);
+        const pointY = Number(event?.point?.y);
+        const originReel = Number(event?.originReel);
+        const originRow = Number(event?.originRow);
+        if (!Number.isFinite(pointX) || !Number.isFinite(pointY) || !Number.isFinite(originReel) || !Number.isFinite(originRow)) {
+          return null;
+        }
+
+        const desiredWave = Math.max(1, Math.ceil(
+          Math.max(Math.abs(pointX - originReel), Math.abs(pointY - originRow)) - 0.5
+        ));
+        let bestTarget = null;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        (Array.isArray(strikeTargets) ? strikeTargets : []).forEach((target) => {
+          const reel = Number(target?.reel);
+          const row = Number(target?.row);
+          if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
+          const wave = Math.max(0, Math.floor(Number(target?.wave) || 0));
+          if (wave !== desiredWave) return;
+          const distance = Math.abs(reel - pointX) + Math.abs(row - pointY);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestTarget = target;
+          }
+        });
+
+        if (!bestTarget) return null;
+        return `${Math.floor(Number(bestTarget.reel))},${Math.floor(Number(bestTarget.row))},${Math.max(0, Math.floor(Number(bestTarget.wave) || 0))}`;
+      },
+
+    async playHeavenHellPentagramPointHitEffect(event = {}) {
+        const center = this.getHeavenHellPentagramPointCenter(event?.point || {});
+        if (!center) return;
+        if (!Array.isArray(this.heavenHellPentagramFx)) {
+          this.heavenHellPentagramFx = [];
+        }
+        const ring = this.add.circle(center.x, center.y, 10, 0xF8E08B, 0.24)
+          .setDepth(DEPTH_SYMBOLS + 26)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        const pulse = this.add.circle(center.x, center.y, 5, 0xFFF9E1, 0.88)
+          .setDepth(DEPTH_SYMBOLS + 27)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        const blink = this.add.circle(center.x, center.y, 8, 0xFFF6CF, 0.22)
+          .setDepth(DEPTH_SYMBOLS + 28)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.6);
+        this.heavenHellPentagramFx.push(ring, pulse, blink);
+        this.tweens.add({
+          targets: ring,
+          scale: 3.1,
+          alpha: 0,
+          duration: 260,
+          ease: "Cubic.easeOut",
+          onComplete: () => ring.destroy()
+        });
+        this.tweens.add({
+          targets: pulse,
+          scale: 2.4,
+          alpha: 0,
+          duration: 180,
+          ease: "Cubic.easeOut",
+          onComplete: () => pulse.destroy()
+        });
+        this.tweens.add({
+          targets: blink,
+          scale: 2.2,
+          alpha: 0,
+          duration: 150,
+          ease: "Cubic.easeOut",
+          onComplete: () => blink.destroy()
+        });
+        this.playSfx?.("lightning_thor_impact", {
+          volume: 0.16,
+          rate: event?.ability === "divineX" ? 1.08 : 1
+        });
+      },
+
+    async playHeavenHellPentagramSegmentActivation(event = {}) {
+        const ui = this.ensureHeavenHellPentagramUi();
+        const segment = (Array.isArray(ui?.segments) ? ui.segments : []).find(
+          (entry) => String(entry?.segmentId || "") === String(event?.litPointId || event?.segmentId || "")
+        );
+        if (!segment) return;
+        if (!Array.isArray(this.heavenHellPentagramFx)) {
+          this.heavenHellPentagramFx = [];
+        }
+
+        const pointCenter = this.getHeavenHellPentagramPointCenter(segment.fromPoint || {});
+        if (!pointCenter) return;
+        const lineFlash = this.add.graphics().setDepth(DEPTH_SYMBOLS + 28).setBlendMode(Phaser.BlendModes.ADD);
+        lineFlash.lineStyle(16, 0xFFF3C2, 0.62);
+        lineFlash.beginPath();
+        lineFlash.moveTo(segment.from.x, segment.from.y);
+        lineFlash.lineTo(segment.to.x, segment.to.y);
+        lineFlash.strokePath();
+        const flare = this.add.circle(pointCenter.x, pointCenter.y, 12, 0xFFF0BA, 0.34)
+          .setDepth(DEPTH_SYMBOLS + 29)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        const halo = this.add.circle(pointCenter.x, pointCenter.y, 7, 0xFFF6DC, 0.72)
+          .setDepth(DEPTH_SYMBOLS + 30)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        this.heavenHellPentagramFx.push(lineFlash, flare, halo);
+        ui.segmentState[String(event?.litPointId || event?.segmentId || "")] = true;
+        this.drawHeavenHellPentagramState(ui.points, ui.segmentState, { completed: false });
+        this.tweens.add({
+          targets: lineFlash,
+          alpha: 0,
+          duration: 180,
+          ease: "Sine.easeOut",
+          onComplete: () => lineFlash.destroy()
+        });
+        this.tweens.add({
+          targets: flare,
+          scale: 2.4,
+          alpha: 0,
+          duration: 320,
+          ease: "Cubic.easeOut",
+          onComplete: () => flare.destroy()
+        });
+        this.tweens.add({
+          targets: halo,
+          scale: 1.8,
+          alpha: 0,
+          duration: 200,
+          ease: "Cubic.easeOut",
+          onComplete: () => halo.destroy()
+        });
+        this.cameras?.main?.shake?.(90, 0.0024);
+        this.playSfx?.("wins_highlight", { volume: 0.12 });
+        await this.waitForPresentation(40, { skippable: true });
+      },
+
+    async playHeavenHellPentagramCompletionSequence(gameState = {}, completionEvent = {}, { stepQuickStop = false } = {}) {
+        if (!completionEvent) return false;
+        if (stepQuickStop) {
+          this.createOrUpdateHouse?.(completionEvent?.afterMultiplier || gameState?.multiplier || 1);
+          return true;
+        }
+        if (!Array.isArray(this.heavenHellPentagramFx)) {
+          this.heavenHellPentagramFx = [];
+        }
+
+        const completedPointIds = Array.isArray(completionEvent?.completedPointIds)
+          ? completionEvent.completedPointIds
+          : ["A", "B", "C", "D", "E"];
+        const completionPointStates = completedPointIds.reduce((acc, pointId) => {
+          acc[String(pointId)] = true;
+          return acc;
+        }, {});
+        this.drawHeavenHellPentagramState(
+          Array.isArray(gameState?.heavenHell?.bonus?.pentagram?.points) ? gameState.heavenHell.bonus.pentagram.points : [],
+          completionPointStates,
+          { completed: true }
+        );
+
+        const triggerPoint = Array.isArray(gameState?.heavenHell?.bonus?.pentagram?.points)
+          ? gameState.heavenHell.bonus.pentagram.points.find((point) => String(point?.id || "") === String(completionEvent?.pointId || ""))
+          : null;
+        const beamStart = this.getHeavenHellPentagramPointCenter(triggerPoint) || {
+          x: GRID_OFFSET_X + (clientConfig.area.width * 70) * 0.5,
+          y: GRID_OFFSET_Y + (clientConfig.area.height * 70) * 0.5
+        };
+        const target = this.getCenterCollectTarget?.() || {
+          x: this.multiplierText?.x ?? this.houseSprite?.x ?? beamStart.x,
+          y: this.multiplierText?.y ?? this.houseSprite?.y ?? beamStart.y
+        };
+        const dx = Number(target.x) - Number(beamStart.x);
+        const dy = Number(target.y) - Number(beamStart.y);
+        const distance = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+        const angle = Phaser.Math.RadToDeg(Math.atan2(dy, dx));
+        const rayMidX = beamStart.x + dx * 0.5;
+        const rayMidY = beamStart.y + dy * 0.5;
+        const steps = Array.isArray(completionEvent?.steps) ? completionEvent.steps : [];
+        const stepCount = Math.max(1, steps.length);
+        const rayRevealMs = 240;
+        const rayWarmupMs = 260;
+        const rayFadeMs = 420;
+        const rayTailMs = 260;
+        const targetSequenceMs = Phaser.Math.Clamp(3600 + (stepCount * 220), 3800, 5200);
+        const tickIntervalMs = Math.max(
+          360,
+          Math.round((targetSequenceMs - (rayRevealMs + rayWarmupMs + rayFadeMs + rayTailMs)) / stepCount)
+        );
+        const rayCore = this.add.rectangle(rayMidX, rayMidY, distance, 12, 0xFFF0C8, 0.96)
+          .setDepth(DEPTH_HERO + 54)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAngle(angle)
+          .setScale(0.04, 0.92)
+          .setAlpha(0);
+        const rayGlow = this.add.rectangle(rayMidX, rayMidY, distance, 34, 0xFFD77A, 0.4)
+          .setDepth(DEPTH_HERO + 53)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setAngle(angle)
+          .setScale(0.04, 0.8)
+          .setAlpha(0);
+        const rayBeam = this.textures?.exists?.("helldive_divine_wrath_beam")
+          ? this.add.image(rayMidX, rayMidY, "helldive_divine_wrath_beam")
+              .setDepth(DEPTH_HERO + 55)
+              .setBlendMode(Phaser.BlendModes.ADD)
+              .setAngle(angle + 90)
+              .setScale(Math.max(0.34, distance / 360), 0.22)
+              .setAlpha(0)
+          : null;
+        const originBurst = this.add.circle(beamStart.x, beamStart.y, 18, 0xFFD37A, 0.28)
+          .setDepth(DEPTH_HERO + 55)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        const targetBurst = this.add.circle(target.x, target.y, 22, 0xFFF1B0, 0.3)
+          .setDepth(DEPTH_HERO + 56)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.4);
+        const targetHalo = this.add.circle(target.x, target.y, 38, 0xFFE58C, 0.18)
+          .setDepth(DEPTH_HERO + 55)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.72)
+          .setAlpha(0);
+        this.heavenHellPentagramFx.push(rayCore, rayGlow, originBurst, targetBurst, targetHalo);
+        if (rayBeam) {
+          this.heavenHellPentagramFx.push(rayBeam);
+        }
+        this.tweens.add({
+          targets: [rayCore, rayGlow, rayBeam, targetHalo].filter(Boolean),
+          alpha: { from: 0, to: 0.98 },
+          scaleX: 1,
+          duration: rayRevealMs,
+          ease: "Cubic.easeOut"
+        });
+        this.tweens.add({
+          targets: rayGlow,
+          alpha: { from: 0.48, to: 0.86 },
+          scaleY: { from: 0.92, to: 1.12 },
+          duration: 540,
+          yoyo: true,
+          repeat: -1,
+          ease: "Sine.easeInOut"
+        });
+        this.tweens.add({
+          targets: rayCore,
+          alpha: { from: 0.74, to: 0.98 },
+          duration: 260,
+          yoyo: true,
+          repeat: -1,
+          ease: "Sine.easeInOut"
+        });
+        if (rayBeam) {
+          this.tweens.add({
+            targets: rayBeam,
+            alpha: { from: 0.42, to: 0.84 },
+            scaleY: { from: 0.2, to: 0.28 },
+            duration: 460,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.easeInOut"
+          });
+        }
+        this.tweens.add({
+          targets: originBurst,
+          scale: 2.2,
+          alpha: 0,
+          duration: 320,
+          ease: "Cubic.easeOut",
+          onComplete: () => originBurst.destroy()
+        });
+        this.tweens.add({
+          targets: targetBurst,
+          scale: 3.1,
+          alpha: 0,
+          duration: 360,
+          ease: "Cubic.easeOut",
+          onComplete: () => targetBurst.destroy()
+        });
+        this.tweens.add({
+          targets: targetHalo,
+          scale: 1.2,
+          alpha: 0.28,
+          duration: 340,
+          ease: "Sine.easeOut"
+        });
+        this.tweens.add({
+          targets: targetHalo,
+          scale: 1.36,
+          alpha: 0.12,
+          duration: 620,
+          yoyo: true,
+          repeat: -1,
+          ease: "Sine.easeInOut"
+        });
+        this.playSfx?.("lightning_at_lvl_up", { volume: 0.2 });
+        this.cameras?.main?.shake?.(180, 0.004);
+        await this.waitForPresentation(rayWarmupMs, { skippable: true });
+
+        let liveMultiplier = Math.max(1, Math.floor(Number(completionEvent?.beforeMultiplier || gameState?.multiplier || 1) || 1));
+        for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+          const amount = Math.max(1, Math.floor(Number(steps[stepIndex]?.amount || 1) || 1));
+          liveMultiplier += amount;
+          this.createOrUpdateHouse?.(liveMultiplier);
+          this.createHeavenHellAbilityImpactLabel?.(target.x, target.y - 26, steps[stepIndex]?.label || `+${amount}`, {
+            depth: DEPTH_HERO + 58,
+            fontSize: "20px",
+            scale: 0.74,
+            rise: 34,
+            duration: 620,
+            color: "#FFF3B8",
+            stroke: "#4A2400",
+            shadow: "#241100"
+          });
+          const stepPulse = this.add.circle(target.x, target.y, 14, 0xFFF2C2, 0.3)
+            .setDepth(DEPTH_HERO + 57)
+            .setBlendMode(Phaser.BlendModes.ADD);
+          this.heavenHellPentagramFx.push(stepPulse);
+          this.tweens.add({
+            targets: stepPulse,
+            scale: 2.8,
+            alpha: 0,
+            duration: Math.max(240, Math.min(420, tickIntervalMs - 90)),
+            ease: "Cubic.easeOut",
+            onComplete: () => stepPulse.destroy()
+          });
+          this.playSfx?.("orb_collect", { volume: 0.18, rate: 1 + stepIndex * 0.02 });
+          this.cameras?.main?.shake?.(70, 0.0014);
+          await this.waitForPresentation(tickIntervalMs, { skippable: true });
+        }
+
+        this.tweens.add({
+          targets: [rayCore, rayGlow, rayBeam, targetHalo].filter(Boolean),
+          alpha: 0,
+          duration: rayFadeMs,
+          ease: "Sine.easeOut",
+          onComplete: () => {
+            rayCore.destroy();
+            rayGlow.destroy();
+            rayBeam?.destroy?.();
+            targetHalo.destroy();
+          }
+        });
+        await this.waitForPresentation(rayFadeMs + rayTailMs, { skippable: true });
+        return true;
+      },
+
+    async playHeavenHellPentagramStepEffects(gameState = {}, pathIndex = -1, { stepQuickStop = false } = {}) {
+        const { activations, completionEvent } = this.getHeavenHellPentagramStepEvents?.(gameState, pathIndex) || {};
+        if ((!activations || activations.length === 0) && !completionEvent) {
+          return false;
+        }
+        if (stepQuickStop) {
+          this.syncHeavenHellPentagram?.(gameState);
+          if (completionEvent) {
+            this.createOrUpdateHouse?.(completionEvent?.afterMultiplier || gameState?.multiplier || 1);
+          }
+          return true;
+        }
+
+        if (completionEvent) {
+          await this.playHeavenHellPentagramCompletionSequence?.(gameState, completionEvent, { stepQuickStop });
+          this.syncHeavenHellPentagram?.(gameState);
+          return true;
+        }
+        this.syncHeavenHellPentagram?.(gameState);
+        return true;
+      },
+
     getHellDiveBackgroundTextureKey(gameState = {}) {
         const action = String(gameState?.executedAction || "");
         const leavingBonusAfterResolvedAction =
@@ -3822,7 +4426,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         return fxParts;
       },
 
-    createHeavenHellDivineStrikeReachMarker(center = null, { wave = 0, distance = 0, isOrigin = false, isKilled = false } = {}) {
+    createHeavenHellDivineStrikeReachMarker(center = null, { wave = 0, distance = 0, isOrigin = false, isKilled = false, onImpact = null } = {}) {
         if (!center) return [];
         if (!Array.isArray(this.heavenHellDivineGroundFx)) {
           this.heavenHellDivineGroundFx = [];
@@ -3884,6 +4488,12 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
 
         const fxParts = [plate, frame, star, pulse, beam, beamFlare];
         this.heavenHellDivineGroundFx.push(...fxParts);
+        let impactTriggered = false;
+        const triggerImpact = () => {
+          if (impactTriggered) return;
+          impactTriggered = true;
+          onImpact?.();
+        };
 
         this.tweens.add({
           targets: [plate, frame, star],
@@ -3911,7 +4521,8 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           scaleX: (beam.scaleX || 1) * (isKilled ? 4.4 : 3.4),
           scaleY: (beam.scaleY || 1) * (isKilled ? 1.55 : 1.35),
           duration: isKilled ? 250 : 220,
-          ease: "Cubic.easeOut"
+          ease: "Cubic.easeOut",
+          onStart: triggerImpact
         });
         this.tweens.add({
           targets: beamFlare,
@@ -4016,6 +4627,20 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
             .sort((a, b) => Number(a?.row) - Number(b?.row) || Number(a?.reel) - Number(b?.reel))
             .map((target) => ({ ...target, wave }))
         ));
+        const pentagramStrikeEvents = this.getHeavenHellPentagramAbilityEvents?.(
+          gameState,
+          step?.pathIndex,
+          "divineStrike"
+        ) || [];
+        const pentagramStrikeEventMap = new Map();
+        pentagramStrikeEvents.forEach((event) => {
+          const key = this.getHeavenHellPentagramDivineStrikeTargetKeyForEvent?.(event, orderedTargets);
+          if (!key) return;
+          if (!pentagramStrikeEventMap.has(key)) {
+            pentagramStrikeEventMap.set(key, []);
+          }
+          pentagramStrikeEventMap.get(key).push(event);
+        });
 
         for (let targetIndex = 0; targetIndex < orderedTargets.length; targetIndex++) {
           const target = orderedTargets[targetIndex];
@@ -4061,11 +4686,19 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
             const reachKey = `${cellReel},${cellRow}`;
             if (!markedReachKeys.has(reachKey)) {
               markedReachKeys.add(reachKey);
+              const pentagramEventsAtCell = pentagramStrikeEventMap.get(`${cellReel},${cellRow},${wave}`) || [];
               this.createHeavenHellDivineStrikeReachMarker?.(cellCenter, {
                 wave,
                 distance: Number(cell?.distance || 0),
                 isOrigin: cell?.origin === true,
-                isKilled: cell?.killed === true
+                isKilled: cell?.killed === true,
+                onImpact: pentagramEventsAtCell.length > 0
+                  ? () => {
+                      pentagramEventsAtCell.forEach((event) => {
+                        void this.playHeavenHellPentagramActivationEvent?.(event);
+                      });
+                    }
+                  : null
               });
             }
 
@@ -4177,6 +4810,20 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
             .sort((a, b) => Number(a?.row) - Number(b?.row) || Number(a?.reel) - Number(b?.reel))
             .map((target) => ({ ...target, wave }))
         ));
+        const pentagramDivineXEvents = this.getHeavenHellPentagramAbilityEvents?.(
+          gameState,
+          step?.pathIndex,
+          "divineX"
+        ) || [];
+        const pentagramDivineXEventMap = new Map();
+        pentagramDivineXEvents.forEach((event) => {
+          const targetKey = this.getHeavenHellPentagramDivineXTargetKeyForEvent?.(event, orderedXTargets);
+          if (!targetKey) return;
+          if (!pentagramDivineXEventMap.has(targetKey)) {
+            pentagramDivineXEventMap.set(targetKey, []);
+          }
+          pentagramDivineXEventMap.get(targetKey).push(event);
+        });
 
         const telegraphDivineXTarget = (target) => {
           const wave = Math.max(1, Math.floor(Number(target?.wave) || 1));
@@ -4216,6 +4863,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           const reel = Math.floor(Number(target?.reel));
           const row = Math.floor(Number(target?.row));
           if (!Number.isFinite(reel) || !Number.isFinite(row)) return;
+          const pentagramEventsAtTarget = pentagramDivineXEventMap.get(`${reel},${row},${wave}`) || [];
 
           const center = this.getGridCellCenter(reel, row);
           const linkedStrikeTarget = strikeAtTargets
@@ -4243,7 +4891,12 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                 scale: 3.4,
                 alpha: 0,
                 duration: 300,
-                ease: "Cubic.easeOut"
+                ease: "Cubic.easeOut",
+                onStart: () => {
+                  pentagramEventsAtTarget.forEach((event) => {
+                    void this.playHeavenHellPentagramActivationEvent?.(event);
+                  });
+                }
               });
               this.tweens.add({
                 targets: strikeBloom,
@@ -4303,6 +4956,23 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                 pushLootCell(cellReel, cellRow);
               });
             } else if (target?.killed === true) {
+              const targetImpactPulse = this.add.circle(center.x, center.y, 14, 0xF0C6FF, 0.22)
+                .setDepth(DEPTH_SYMBOLS + 15)
+                .setBlendMode(Phaser.BlendModes.ADD)
+                .setScale(0.42);
+              this.heavenHellDivineGroundFx.push(targetImpactPulse);
+              this.tweens.add({
+                targets: targetImpactPulse,
+                scale: 2.6,
+                alpha: 0,
+                duration: 240,
+                ease: "Cubic.easeOut",
+                onStart: () => {
+                  pentagramEventsAtTarget.forEach((event) => {
+                    void this.playHeavenHellPentagramActivationEvent?.(event);
+                  });
+                }
+              });
               const sprite = this.reelSprites?.[reel]?.[row];
               if (sprite && !sprite.destroyed) {
                 showDivineXHitLabel(center, wave);
@@ -4329,7 +4999,8 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
 
         if (strikeAtTargets) {
           for (let targetIndex = 0; targetIndex < orderedXTargets.length; targetIndex++) {
-            telegraphDivineXTarget(orderedXTargets[targetIndex]);
+            const target = orderedXTargets[targetIndex];
+            telegraphDivineXTarget(target);
             if (targetIndex < orderedXTargets.length - 1) {
               await this.waitForPresentation(12, { skippable: true });
             }

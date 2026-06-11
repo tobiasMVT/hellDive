@@ -43,10 +43,11 @@
         "winMainGame_min0.1_max10": 324,
         "winMainGame_min10_max300": 15,
         "winMainGame_min10": 1,
-    
+
         "bonus_min0.1_max50": 7,
+        "bonusPentagram": 10000,
         "bonus_min50_max200": 2,
-        "bonus_max1000": 10000
+        "bonus_max1000": 1
     },
     "bonus": {
         "bonus": 1,
@@ -265,6 +266,23 @@
                 "chestRewardResumeAction": null,
                 "lootGround": [],
                 "abilityProcsThisAction": [],
+                "pentagram": {
+                    "points": [],
+                    "pointStates": {
+                        "A": false,
+                        "B": false,
+                        "C": false,
+                        "D": false,
+                        "E": false
+                    },
+                    "pointIdsLitAtActionStart": [],
+                    "litPointCount": 0,
+                    "completed": false,
+                    "completionCount": 0,
+                    "activationsThisAction": [],
+                    "completionEventThisAction": null,
+                    "pendingCompletionReward": null
+                },
                 "rippleInjectionsThisAction": [],
                 "bossEventsThisAction": [],
                 "chestEventsThisAction": [],
@@ -1038,6 +1056,55 @@
                         "lootMultiplier": 10
                     }
                 }
+            },
+            "pentagram": {
+                "enabled": true,
+                "debugShowTriggerCells": true,
+                "points": [
+                    {
+                        "id": "A",
+                        "segmentId": "A",
+                        "x": -0.65,
+                        "y": -0.75,
+                        "triggerCells": [{ "reel": 0, "row": 0 }]
+                    },
+                    {
+                        "id": "B",
+                        "segmentId": "B",
+                        "x": -0.55,
+                        "y": 4.95,
+                        "triggerCells": [{ "reel": 0, "row": 5 }]
+                    },
+                    {
+                        "id": "C",
+                        "segmentId": "C",
+                        "x": 3.5,
+                        "y": 7.75,
+                        "triggerCells": [{ "reel": 3, "row": 7 }, { "reel": 4, "row": 7 }]
+                    },
+                    {
+                        "id": "D",
+                        "segmentId": "D",
+                        "x": 7.55,
+                        "y": 4.95,
+                        "triggerCells": [{ "reel": 7, "row": 5 }]
+                    },
+                    {
+                        "id": "E",
+                        "segmentId": "E",
+                        "x": 7.65,
+                        "y": -0.75,
+                        "triggerCells": [{ "reel": 7, "row": 0 }]
+                    }
+                ],
+                "completionMultiplierRewards": [
+                    { "value": 3, "weight": 28 },
+                    { "value": 4, "weight": 27 },
+                    { "value": 5, "weight": 23 },
+                    { "value": 6, "weight": 14 },
+                    { "value": 7, "weight": 8 }
+                ],
+                "rewardStepValue": 1
             },
             "loot": {
                 "baseDropChance": 0,

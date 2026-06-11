@@ -22,6 +22,7 @@ Cluster-pay slot with an action-combat layer. Demons appear on the board; after 
 | Combat | `combat-system` | Closest demon first; demons never attack back |
 | Loot | `loot-system` | Visible on board until Collect Phase |
 | Abilities | `ability-system` | Unlocked in bonus; all config in `server_config.json` |
+| Pentagram | `pentagram-system` | Bonus-only overlay hit by Divine Strike / Divine X, upgrades center multiplier on completion |
 | Retrigger / kill meter | `retrigger-system` | Meter overflows during hunt; settles at end of battle when board is clear |
 
 ## Design Targets

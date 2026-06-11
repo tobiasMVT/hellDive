@@ -2020,6 +2020,11 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           if (startDivineXImpactPromise) {
             await startDivineXImpactPromise;
           }
+          if (isHeavenHellBonusHunt) {
+            await this.playHeavenHellPentagramStepEffects?.(heavenHellGameState, pathStartIndex, {
+              stepQuickStop: false
+            });
+          }
           await this.resolveBananaImpactClusters(
             { reel: startPos.reel, row: startPos.row },
             resolvedBananaMeterLevel,
@@ -2754,6 +2759,11 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             }
             if (stepDivineXImpactPromise) {
               await stepDivineXImpactPromise;
+            }
+            if (isHeavenHellBonusHunt) {
+              await this.playHeavenHellPentagramStepEffects?.(heavenHellGameState, i, {
+                stepQuickStop
+              });
             }
 
             bananaTargets.forEach((bananaTarget) => {

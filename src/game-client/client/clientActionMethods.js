@@ -27,6 +27,7 @@ export function createClientActionMethods(deps = {}) {
       this.scene.hideFreespinCounter();
       this.scene.createOrUpdateHouse(gameState.multiplier || 1);
       this.scene.clearHeavenHellLootGround?.();
+      this.scene.syncHeavenHellPentagram?.(gameState);
       this.scene.updateHeavenHellAbilityText?.(gameState);
 
       await this.runSegmentFlow(gameState);
@@ -141,6 +142,7 @@ export function createClientActionMethods(deps = {}) {
       await this.syncMergeGunFeatureUi(gameState, { playActivation: false });
       if (this.isHeavenHellEnabled(gameState)) {
         this.scene.showHeavenHellPortalAura?.(gameState);
+        this.syncHeavenHellPentagram?.(gameState);
         this.scene.renderHeavenHellLootGround?.(gameState?.heavenHell?.bonus?.lootGround || []);
         this.scene.updateHeavenHellAbilityText?.(gameState);
       }
@@ -152,6 +154,7 @@ export function createClientActionMethods(deps = {}) {
         this.scene.startBonusTheme?.();
         this.scene.updateFreespinCounter(gameState?.bonusState?.finalFreespins || 0, { deferRingConsume: true });
         this.scene.createOrUpdateHouse(gameState?.multiplier || 1);
+        this.syncHeavenHellPentagram?.(gameState);
         await this.scene.playHeavenHellRippleSpawn?.(gameState);
         this.scene.hideNonHeavenHellBonusSymbols?.(gameState);
         const playedCollectPhase = await this.playHeavenHellCollectPhaseIfNeeded(gameState);
@@ -277,6 +280,7 @@ export function createClientActionMethods(deps = {}) {
       if (this.isHeavenHellEnabled(gameState) && gameState?.dropEvent?.direction === "ripple") {
         this.scene.setCurrentAction?.("freerespin");
         this.scene.syncBonusMultiplierFruits?.(gameState, { refreshVisuals: false });
+        this.syncHeavenHellPentagram?.(gameState);
         await this.scene.playHeavenHellRippleSpawn?.(gameState);
         this.scene.hideNonHeavenHellBonusSymbols?.(gameState);
         const playedCollectPhase = await this.playHeavenHellCollectPhaseIfNeeded(gameState);
@@ -382,6 +386,9 @@ export function createClientActionMethods(deps = {}) {
     async handleFreespinBananaHuntAction(gameState) {
       this.scene.setCurrentAction?.(ACTION_FREESPIN_BANANA_HUNT);
       this.scene.syncBonusMultiplierFruits?.(gameState, { refreshVisuals: false });
+      if (this.isHeavenHellEnabled(gameState)) {
+        this.syncHeavenHellPentagram?.(gameState, { usePresentationState: true });
+      }
 
       if (gameState.heroPath && gameState.heroPath.length > 0) {
         const stepType = "destroy";
@@ -483,6 +490,7 @@ export function createClientActionMethods(deps = {}) {
         this.scene.syncSpritesToReelState?.(gameState?.reels || {});
         this.scene.hideNonHeavenHellBonusSymbols?.(gameState);
         this.scene.createOrUpdateHouse?.(gameState?.multiplier || 1);
+        this.syncHeavenHellPentagram?.(gameState);
         this.scene.renderHeavenHellLootGround?.(gameState?.heavenHell?.bonus?.lootGround || []);
         await this.syncHeavenHellAbilityUi?.(gameState, { allowRewardFx: true });
       }
@@ -505,6 +513,7 @@ export function createClientActionMethods(deps = {}) {
       await this.scene.playHeavenHellChestRewardSequence?.(gameState);
 
       const playedCollectPhase = await this.playHeavenHellCollectPhaseIfNeeded(gameState);
+      this.syncHeavenHellPentagram?.(gameState);
       this.scene.renderHeavenHellLootGround?.(gameState?.heavenHell?.bonus?.lootGround || []);
       this.scene.updateHeavenHellAbilityText?.(gameState, { allowRewardFx: false });
 
