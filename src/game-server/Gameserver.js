@@ -166,6 +166,7 @@ export class GameServer {
       this.bonusMysteryFeatureId = serverConfig.symbolsMapping?.bonusMysteryFeature; // Bonus mystery feature (ID 18)
       this.mergeGunFeatureId = serverConfig.symbolsMapping?.mergeGunFeature; // Merge gun feature (ID 19)
       this.lightningBeeFeatureId = serverConfig.symbolsMapping?.lightningBeeFeature; // Lightning bee feature (ID 20)
+      this.gargoyleDemonId = serverConfig.symbolsMapping?.gargoyleDemon ?? 21;
       
       // Store all hunt target IDs (banana preferred, banana kept for compatibility)
       this.demonId = serverConfig.symbolsMapping?.banana ?? serverConfig.symbolsMapping?.banana;
@@ -173,9 +174,11 @@ export class GameServer {
         serverConfig.symbolsMapping?.banana,
         serverConfig.symbolsMapping?.banana2,
         serverConfig.symbolsMapping?.banana3,
+        serverConfig.symbolsMapping?.gargoyleDemon,
         serverConfig.symbolsMapping?.banana,
         serverConfig.symbolsMapping?.banana2,
-        serverConfig.symbolsMapping?.banana3
+        serverConfig.symbolsMapping?.banana3,
+        serverConfig.symbolsMapping?.gargoyleDemon
       ].filter(id => id !== undefined);
       
       // House definition (2x2 in center)
@@ -9081,6 +9084,14 @@ export class GameServer {
     return this.getHeavenHellConfig()?.enabled === true;
   }
 
+  canHeavenHellMultiplierDemonProcFromKill(entry = null) {
+    if (this.getHeavenHellConfig()?.multiplierDemonProcOnAbilitesOnly !== true) {
+      return true;
+    }
+    const source = String(entry?.source || "").trim();
+    return source === "divineX" || source === "divineStrike" || source === "divineCharge";
+  }
+
   getMainGameAngelMultiplierCap() {
     const configuredCap = Number(this.getHeavenHellMainConfig()?.maxMuliplierOnAngel);
     if (!Number.isFinite(configuredCap) || configuredCap < 1) {
@@ -9159,6 +9170,7 @@ export class GameServer {
     }
     if (entry?.isBoss === true) return "boss_demon";
     if (entry?.isMultiplierDemon === true) return "multiplier_demon";
+    if (entry?.isGargoyleDemon === true) return "gargoyle_demon";
     return "normal_demon";
   }
 
@@ -9184,6 +9196,20 @@ export class GameServer {
 
   getHeavenHellPentagramConfig() {
     return this.getHeavenHellConfig()?.bonus?.pentagram || {};
+  }
+
+  getHeavenHellSymbolIds() {
+    const symbols = this.getHeavenHellConfig()?.bonus?.symbols || {};
+    return {
+      demonId: Number(symbols?.demon ?? serverConfig.symbolsMapping?.banana ?? 11),
+      multiplierDemonId: Number(symbols?.multiplierDemon ?? serverConfig.symbolsMapping?.banana2 ?? 12),
+      bossDemonId: Number(symbols?.bossDemon ?? serverConfig.symbolsMapping?.banana3 ?? 13),
+      gargoyleDemonId: Number(symbols?.gargoyleDemon ?? serverConfig.symbolsMapping?.gargoyleDemon ?? 21)
+    };
+  }
+
+  getHeavenHellGargoyleConfig() {
+    return this.getHeavenHellConfig()?.bonus?.gargoyleInjection || {};
   }
 
   buildHeavenHellPentagramPoints() {
@@ -9514,12 +9540,17 @@ export class GameServer {
       const chest = generateChest({
         chestConfig,
         chestTypes,
-        source: entry?.isBoss ? "boss" : (entry?.isMultiplierDemon ? "multiplier" : "normal"),
+        source: entry?.isBoss
+          ? "boss"
+          : (entry?.isMultiplierDemon
+            ? "multiplier"
+            : (entry?.isGargoyleDemon ? "gargoyle" : "normal")),
         reel: entry?.reel,
         row: entry?.row,
         symbol: entry?.symbol,
         isBoss: entry?.isBoss === true,
         isMultiplierDemon: entry?.isMultiplierDemon === true,
+        isGargoyleDemon: entry?.isGargoyleDemon === true,
         pendingId: nextChestId
       });
       if (!chest) return;
@@ -9799,13 +9830,14 @@ export class GameServer {
   }
 
   isHeavenHellDemonSymbol(symbol) {
-    const bonusCfg = this.getHeavenHellConfig()?.bonus || {};
-    const symbols = bonusCfg?.symbols || {};
-    const demon = Number(symbols?.demon ?? 11);
-    const mult = Number(symbols?.multiplierDemon ?? 12);
-    const boss = Number(symbols?.bossDemon ?? 13);
+    const { demonId: demon, multiplierDemonId: mult, bossDemonId: boss, gargoyleDemonId: gargoyle } = this.getHeavenHellSymbolIds();
     const n = Number(symbol);
-    return n === demon || n === mult || n === boss;
+    return n === demon || n === mult || n === boss || n === gargoyle;
+  }
+
+  isHeavenHellGargoyleSymbol(symbol) {
+    const { gargoyleDemonId } = this.getHeavenHellSymbolIds();
+    return Number(symbol) === gargoyleDemonId;
   }
 
   countHeavenHellDemons(reels = {}) {
@@ -9846,10 +9878,13 @@ export class GameServer {
   createHeavenHellBoard(gameState, executedAction = "freespin") {
     const heavenHellConfig = this.getHeavenHellConfig();
     const bonusConfig = heavenHellConfig?.bonus || {};
-    const symbolConfig = bonusConfig?.symbols || {};
-    const demonId = Number(symbolConfig?.demon ?? serverConfig.symbolsMapping?.banana ?? 11);
-    const multiplierDemonId = Number(symbolConfig?.multiplierDemon ?? serverConfig.symbolsMapping?.banana2 ?? 12);
-    const bossDemonId = Number(symbolConfig?.bossDemon ?? serverConfig.symbolsMapping?.banana3 ?? 13);
+    const {
+      demonId,
+      multiplierDemonId,
+      bossDemonId,
+      gargoyleDemonId
+    } = this.getHeavenHellSymbolIds();
+    const gargoyleConfig = this.getHeavenHellGargoyleConfig();
     const heavenHell = this.ensureHeavenHellState(gameState);
     const bonusState = heavenHell?.bonus || {};
     const chain = Math.max(0, Math.floor(Number(bonusState?.freerespinChain || 0)));
@@ -10067,10 +10102,46 @@ export class GameServer {
       }
     }
 
+    const gargoyleChance = this.normalizeProbability(gargoyleConfig?.chance, 0);
+    let gargoyleTriggered = false;
+    let gargoyleTargetCount = 0;
+    let gargoyleSpawnedCount = 0;
+    if (gargoyleChance > 0 && this.rollChance(gargoyleChance)) {
+      gargoyleTriggered = true;
+      const minGargoyles = Math.max(0, Math.floor(Number(gargoyleConfig?.minGargoyles ?? 1) || 1));
+      const maxGargoyles = Math.max(minGargoyles, Math.floor(Number(gargoyleConfig?.maxGargoyles ?? minGargoyles) || minGargoyles));
+      gargoyleTargetCount = maxGargoyles <= minGargoyles
+        ? minGargoyles
+        : (minGargoyles + Math.floor(Math.random() * (maxGargoyles - minGargoyles + 1)));
+    }
+    if (gargoyleTargetCount > 0) {
+      let remainingGargoyles = gargoyleTargetCount;
+      for (const pos of randomCandidates) {
+        if (remainingGargoyles <= 0) break;
+        const key = `${pos.reel},${pos.row}`;
+        if (occupied.has(key)) continue;
+        reels[pos.reel][pos.row] = gargoyleDemonId;
+        placements.push({
+          ...pos,
+          symbol: gargoyleDemonId,
+          type: "gargoyleDemon",
+          guaranteed: false,
+          gargoyleInjected: true
+        });
+        occupied.add(key);
+        gargoyleSpawnedCount++;
+        remainingGargoyles--;
+      }
+    }
+
     const guaranteedMultiplierKeys = new Set();
     const guaranteedNormalKeys = new Set();
+    const gargoyleKeys = new Set();
     placements.forEach((entry) => {
       const key = `${entry.reel},${entry.row}`;
+      if (entry.type === "gargoyleDemon") {
+        gargoyleKeys.add(key);
+      }
       if (entry.guaranteed !== true) return;
       if (entry.type === "multiplierDemon") guaranteedMultiplierKeys.add(key);
       if (entry.type === "demon") {
@@ -10082,7 +10153,7 @@ export class GameServer {
     for (let i = 0; i < placements.length; i++) {
       const entry = placements[i];
       const key = `${entry.reel},${entry.row}`;
-      if (guaranteedMultiplierKeys.has(key) || guaranteedNormalKeys.has(key)) continue;
+      if (guaranteedMultiplierKeys.has(key) || guaranteedNormalKeys.has(key) || gargoyleKeys.has(key)) continue;
       if (this.rollChance(randomMultiplierChance)) {
         reels[entry.reel][entry.row] = multiplierDemonId;
         entry.symbol = multiplierDemonId;
@@ -10094,19 +10165,20 @@ export class GameServer {
     if (placements.length > 0 && this.rollChance(bossChance)) {
       const nonGuaranteedPlacements = placements.filter((entry) => {
         const key = `${entry.reel},${entry.row}`;
-        return !guaranteedMultiplierKeys.has(key) && !guaranteedNormalKeys.has(key);
+        return !guaranteedMultiplierKeys.has(key) && !guaranteedNormalKeys.has(key) && !gargoyleKeys.has(key);
       });
-      const bossPool = nonGuaranteedPlacements.length > 0 ? nonGuaranteedPlacements : placements;
-      const bossTarget = bossPool[Math.floor(Math.random() * bossPool.length)];
-      reels[bossTarget.reel][bossTarget.row] = bossDemonId;
-      bossTarget.symbol = bossDemonId;
-      bossTarget.type = "bossDemon";
-      bonusState.bossEventsThisAction.push({
-        type: "spawn",
-        reel: bossTarget.reel,
-        row: bossTarget.row,
-        symbol: bossDemonId
-      });
+      if (nonGuaranteedPlacements.length > 0) {
+        const bossTarget = nonGuaranteedPlacements[Math.floor(Math.random() * nonGuaranteedPlacements.length)];
+        reels[bossTarget.reel][bossTarget.row] = bossDemonId;
+        bossTarget.symbol = bossDemonId;
+        bossTarget.type = "bossDemon";
+        bonusState.bossEventsThisAction.push({
+          type: "spawn",
+          reel: bossTarget.reel,
+          row: bossTarget.row,
+          symbol: bossDemonId
+        });
+      }
     }
 
     const rippleInjections = placements
@@ -10129,6 +10201,8 @@ export class GameServer {
       triggered: demonWaveTriggered === true,
       chance: Number(demonWaveChance.toFixed ? demonWaveChance.toFixed(4) : demonWaveChance),
       randomDemonsTargeted: Math.max(0, Math.floor(Number(demonWaveTargetCount) || 0)),
+      gargoyleInjectionTriggered: gargoyleTriggered === true,
+      gargoylesTargeted: Math.max(0, Math.floor(Number(gargoyleSpawnedCount) || 0)),
       portalDemonsTargeted: guaranteedNormalDemons + guaranteedMultiplierDemons,
       firstActionForcedGuarantee: isFirstBonusAction && placements.some((entry) => entry?.firstActionGuarantee === true),
       totalDemonsSpawned: rippleInjections.length,
@@ -10334,9 +10408,15 @@ export class GameServer {
     }
 
     const bonusConfig = this.getHeavenHellConfig()?.bonus || {};
-    const symbolConfig = bonusConfig?.symbols || {};
-    const multiplierDemonId = Number(symbolConfig?.multiplierDemon ?? serverConfig.symbolsMapping?.banana2 ?? 12);
-    const bossDemonId = Number(symbolConfig?.bossDemon ?? serverConfig.symbolsMapping?.banana3 ?? 13);
+    const {
+      multiplierDemonId,
+      bossDemonId,
+      gargoyleDemonId
+    } = this.getHeavenHellSymbolIds();
+    const gargoyleFleeDistance = Math.max(
+      0,
+      Math.floor(Number(this.getHeavenHellGargoyleConfig()?.fleeDistance ?? 2) || 2)
+    );
     const weightedBossKills = Math.max(1, Math.floor(Number(bonusConfig?.boss?.killsGranted ?? 9) || 9));
     const divineXKillCountMultiplier = 2;
     const divineStrikeLevel = Math.max(0, Math.floor(Number(bonusState?.abilities?.divineStrike || 0)));
@@ -10348,17 +10428,25 @@ export class GameServer {
 
     const board = JSON.parse(JSON.stringify(preHuntReels && typeof preHuntReels === "object" ? preHuntReels : {}));
     const killedKeys = new Set();
+    const removedKeys = new Set();
+    const escapedKeys = new Set();
     const abilityProcs = [];
     const divineAbilityExtraKills = [];
     const preKilledKeys = new Set();
     const heroPath = Array.isArray(huntResult.heroPath) ? huntResult.heroPath : [];
 
     const getSymbolAt = (reel, row) => Number(board?.[reel]?.[row]);
+    const markRemoved = (reel, row, set) => {
+      const key = `${reel},${row}`;
+      set.add(key);
+      removedKeys.add(key);
+      if (board?.[reel]) board[reel][row] = 0;
+      return key;
+    };
     const markKilled = (reel, row) => {
       const key = `${reel},${row}`;
       if (killedKeys.has(key)) return false;
-      killedKeys.add(key);
-      if (board?.[reel]) board[reel][row] = 0;
+      markRemoved(reel, row, killedKeys);
       return true;
     };
     const getStepBananaTargets = (step) => (
@@ -10366,7 +10454,9 @@ export class GameServer {
         ? step.eatenBananas
         : [{ reel: step?.reel, row: step?.row }]
     );
-    const markStepAbilityPreKilled = (step, targets = []) => {
+    const markStepCombatPreResolved = (step, targets = [], reason = "ability") => {
+      step.combatPreResolved = true;
+      step.preResolvedReason = reason;
       step.abilityPreKilled = true;
       step.banana = false;
       step.orbs = 0;
@@ -10378,6 +10468,41 @@ export class GameServer {
         preKilledKeys.add(`${reel},${row}`);
       });
     };
+    const getTriggeredKillCellsForStep = (step) => {
+      const keys = this.collectHeavenHellStepAttackKillKeys(step);
+      return Array.from(keys).map((key) => {
+        const [reel, row] = key.split(",").map((value) => Math.floor(Number(value)));
+        return { key, reel, row };
+      }).filter((cell) => Number.isFinite(cell.reel) && Number.isFinite(cell.row));
+    };
+    const resolveStepGargoyleEscapes = (step) => {
+      if (gargoyleFleeDistance <= 0) return [];
+      const triggeredBy = getTriggeredKillCellsForStep(step);
+      if (triggeredBy.length === 0) return [];
+
+      const escapes = [];
+      for (let reel = 0; reel < this.width; reel++) {
+        for (let row = 0; row < this.height; row++) {
+          const symbol = getSymbolAt(reel, row);
+          if (symbol !== gargoyleDemonId) continue;
+          const killMatches = triggeredBy.filter((cell) => (
+            Math.max(Math.abs(cell.reel - reel), Math.abs(cell.row - row)) <= gargoyleFleeDistance
+          ));
+          if (killMatches.length === 0) continue;
+          markRemoved(reel, row, escapedKeys);
+          escapes.push({
+            reel,
+            row,
+            symbol,
+            triggeredBy: killMatches.map((cell) => ({ reel: cell.reel, row: cell.row }))
+          });
+        }
+      }
+      if (escapes.length > 0) {
+        step.gargoyleEscapesAfterStep = escapes;
+      }
+      return escapes;
+    };
 
     heroPath.forEach((step, pathIndex) => {
       if (step?.banana !== true) return;
@@ -10387,10 +10512,15 @@ export class GameServer {
         const reel = Number(banana?.reel);
         const row = Number(banana?.row);
         if (!Number.isFinite(reel) || !Number.isFinite(row)) return true;
-        return killedKeys.has(`${reel},${row}`);
+        return removedKeys.has(`${reel},${row}`);
       });
       if (allPreKilled) {
-        markStepAbilityPreKilled(step, bananaTargets);
+        const preResolvedReason = bananaTargets.some((banana) => (
+          escapedKeys.has(`${Number(banana?.reel)},${Number(banana?.row)}`)
+        ))
+          ? "gargoyleEscape"
+          : "ability";
+        markStepCombatPreResolved(step, bananaTargets, preResolvedReason);
         return;
       }
 
@@ -10482,6 +10612,7 @@ export class GameServer {
                 source: isDivineXOriginCellKill ? "divineX" : "divineStrike",
                 isBoss: symbol === bossDemonId,
                 isMultiplierDemon: symbol === multiplierDemonId,
+                isGargoyleDemon: symbol === gargoyleDemonId,
                 weightedKills: symbol === bossDemonId ? weightedBossKills : 1,
                 killCountMultiplier: 1,
                 divineXDoubleKill: false,
@@ -10560,6 +10691,7 @@ export class GameServer {
               source: "divineX",
               isBoss: symbol === bossDemonId,
               isMultiplierDemon: symbol === multiplierDemonId,
+              isGargoyleDemon: symbol === gargoyleDemonId,
               weightedKills: symbol === bossDemonId ? weightedBossKills : 1,
               killCountMultiplier: 1,
               divineXDoubleKill: false,
@@ -10595,11 +10727,19 @@ export class GameServer {
           targets: xTargetEntries
         });
       }
+
+      resolveStepGargoyleEscapes(step);
     });
 
     divineAbilityExtraKills.forEach((entry) => {
       if (huntResult.reels?.[entry.reel]) {
         huntResult.reels[entry.reel][entry.row] = 0;
+      }
+    });
+    escapedKeys.forEach((key) => {
+      const [reel, row] = key.split(",").map((value) => Math.floor(Number(value)));
+      if (huntResult.reels?.[reel]) {
+        huntResult.reels[reel][row] = 0;
       }
     });
 
@@ -10659,9 +10799,7 @@ export class GameServer {
     const heavenHell = this.ensureHeavenHellState(gameState);
     const bonusState = heavenHell?.bonus;
     const bonusConfig = this.getHeavenHellConfig()?.bonus || {};
-    const symbolConfig = bonusConfig?.symbols || {};
-    const multiplierDemonId = Number(symbolConfig?.multiplierDemon ?? serverConfig.symbolsMapping?.banana2 ?? 12);
-    const bossDemonId = Number(symbolConfig?.bossDemon ?? serverConfig.symbolsMapping?.banana3 ?? 13);
+    const { multiplierDemonId, bossDemonId, gargoyleDemonId } = this.getHeavenHellSymbolIds();
     const weightedBossKills = Math.max(1, Math.floor(Number(bonusConfig?.boss?.killsGranted ?? 9) || 9));
     const bossMultiplierGain = Math.max(0, Math.floor(Number(bonusConfig?.boss?.multiplierGain ?? 2) || 2));
     const portalBonusSpawn = bonusConfig?.portalBonusSpawn || {};
@@ -10741,6 +10879,7 @@ export class GameServer {
       const symbol = Number(entry.symbol);
       const isBoss = symbol === bossDemonId;
       const isMultiplierDemon = symbol === multiplierDemonId;
+      const isGargoyleDemon = symbol === gargoyleDemonId;
       const killKey = `${Number(entry.reel)},${Number(entry.row)}`;
       const abilityBoost = abilityGuaranteedKillBoosts.get(killKey);
       return {
@@ -10748,6 +10887,7 @@ export class GameServer {
         symbol,
         isBoss,
         isMultiplierDemon,
+        isGargoyleDemon,
         weightedKills: isBoss ? weightedBossKills : 1,
         killCountMultiplier: 1,
         divineXDoubleKill: false,
@@ -10783,7 +10923,7 @@ export class GameServer {
     let weightedKills = 0;
     killEntries.forEach((entry) => {
       weightedKills += Math.max(1, Math.floor(Number(entry.weightedKills) || 1));
-      if (isBonus && entry.isMultiplierDemon) {
+      if (isBonus && entry.isMultiplierDemon && this.canHeavenHellMultiplierDemonProcFromKill(entry)) {
         bonusState.globalMultiplier += multiplierDemonGain;
       }
       if (isBonus && entry.isBoss) {

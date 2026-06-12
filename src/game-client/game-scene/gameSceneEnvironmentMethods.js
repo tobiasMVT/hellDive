@@ -969,6 +969,7 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         this.load.image("11", "assets/helldive/characters/demon_imp.png");
         this.load.image("12", "assets/helldive/characters/demon_brute.png");
         this.load.image("13", "assets/helldive/characters/demon_boss_3x3.png");
+        this.load.image("21", "assets/helldive/characters/demon_gargyole.png");
         this.load.image(String(BONUS_MYSTERY_FEATURE_SYMBOL_ID), "assets/symbols/mystery.png");
         this.load.image(String(MERGE_GUN_FEATURE_SYMBOL_ID), "assets/symbols/gun.png");
         this.load.image(String(LIGHTNING_BEE_FEATURE_SYMBOL_ID), "assets/symbols/bumblebee.png");

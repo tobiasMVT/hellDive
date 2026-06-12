@@ -45,9 +45,8 @@
         "winMainGame_min10": 1,
 
         "bonus_min0.1_max50": 7,
-        "bonusPentagram": 1,
         "bonus_min50_max200": 2,
-        "bonus_max1000": 1
+        "bonus_max10010": 111111
     },
     "bonus": {
         "bonus": 1,
@@ -530,6 +529,7 @@
         "banana": 11,
         "banana2": 12,
         "banana3": 13,
+        "gargoyleDemon": 21,
         "mystery": 14,
         "mysteryWild": 15,
         "time": 16,
@@ -972,6 +972,7 @@
     },
     "heavenHell": {
         "enabled": true,
+        "multiplierDemonProcOnAbilitesOnly": true,
         "main": {
             "portalTriggerChancePerKill": 0.01,
             "portalTriggerChancePerHuntAction": 0,
@@ -1033,7 +1034,7 @@
                     },
                     "2": {
                         "chance": 0.5,
-                        "radius": 3
+                        "radius": 2
                     }
                 },
                 "divineX": {
@@ -1112,7 +1113,8 @@
                 "symbolLootTables": {
                     "11": "normal_demon",
                     "12": "multiplier_demon",
-                    "13": "boss_demon"
+                    "13": "boss_demon",
+                    "21": "gargoyle_demon"
                 },
                 "tables": {
                     "normal_demon": [
@@ -1168,6 +1170,28 @@
                             "value": 5,
                             "weight": 35
                         }
+                    ],
+                    "gargoyle_demon": [
+                        {
+                            "value": 0.1,
+                            "weight": 28
+                        },
+                        {
+                            "value": 0.2,
+                            "weight": 28
+                        },
+                        {
+                            "value": 0.4,
+                            "weight": 24
+                        },
+                        {
+                            "value": 0.6,
+                            "weight": 14
+                        },
+                        {
+                            "value": 1,
+                            "weight": 6
+                        }
                     ]
                 },
                 "values": [
@@ -1199,6 +1223,7 @@
                 "dropChance": {
                     "normal": 0.02,
                     "multiplier": 0.08,
+                    "gargoyle": 0.12,
                     "boss": 1.0
                 },
                 "respinChanceByReelCount": {
@@ -1387,7 +1412,14 @@
             "symbols": {
                 "demon": 11,
                 "multiplierDemon": 12,
-                "bossDemon": 13
+                "bossDemon": 13,
+                "gargoyleDemon": 21
+            },
+            "gargoyleInjection": {
+                "chance": 0.2,
+                "minGargoyles": 1,
+                "maxGargoyles": 3,
+                "fleeDistance": 3
             },
             "demonWave": {
                 "enabled": true,

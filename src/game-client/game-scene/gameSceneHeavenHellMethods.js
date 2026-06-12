@@ -964,8 +964,21 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
       },
 
     hideNonHeavenHellBonusSymbols(gameState = {}) {
-        const demonSet = new Set([11, 12, 13]);
-        const heroId = Number(gameState?.symbolsMapping?.hero || 10);
+        const demonSet = new Set([
+          Number(clientConfig?.symbolsMapping?.banana || 11),
+          Number(clientConfig?.symbolsMapping?.banana2 || 12),
+          Number(clientConfig?.symbolsMapping?.banana3 || 13),
+          Number(
+            clientConfig?.heavenHell?.bonus?.symbols?.gargoyleDemon ??
+            clientConfig?.symbolsMapping?.gargoyleDemon ??
+            21
+          )
+        ]);
+        const heroId = Number(
+          clientConfig?.symbolsMapping?.hero ??
+          gameState?.symbolsMapping?.hero ??
+          10
+        );
         for (let reel = 0; reel < (this.reelSprites?.length || 0); reel++) {
           const column = this.reelSprites?.[reel];
           if (!column) continue;
@@ -1879,9 +1892,193 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
     getHeavenHellMultiplierDemonId() {
         return Number(
           clientConfig?.heavenHell?.bonus?.symbols?.multiplierDemon ??
-          clientConfig?.symbolsMapping?.zombie2 ??
+          clientConfig?.symbolsMapping?.banana2 ??
           12
         );
+      },
+
+    getHeavenHellBossDemonId() {
+        return Number(
+          clientConfig?.heavenHell?.bonus?.symbols?.bossDemon ??
+          clientConfig?.symbolsMapping?.banana3 ??
+          13
+        );
+      },
+
+    getHeavenHellGargoyleDemonId() {
+        return Number(
+          clientConfig?.heavenHell?.bonus?.symbols?.gargoyleDemon ??
+          clientConfig?.symbolsMapping?.gargoyleDemon ??
+          21
+        );
+      },
+
+    getHeavenHellBossMultiplierGain() {
+        // Client does not currently receive an explicit per-kill boss multiplier event.
+        // Mirror the current server default so multiplier-demon orb budget stays aligned.
+        return 2;
+      },
+
+    buildHeavenHellMultiplierOrbPlan(gameState = {}) {
+        if (gameState?.isBonus !== true || !gameState?.heavenHell?.bonus) {
+          return { allowedKeys: new Set(), totalBudget: 0 };
+        }
+
+        const orderedKills = [];
+        const killMap = new Map();
+        const multiplierDemonId = this.getHeavenHellMultiplierDemonId();
+        const bossDemonId = this.getHeavenHellBossDemonId();
+        const resolveKillFlags = (reel, row, flags = {}) => {
+          const normalizedReel = Math.floor(Number(reel));
+          const normalizedRow = Math.floor(Number(row));
+          const spriteSymbolId = Number(this.reelSprites?.[normalizedReel]?.[normalizedRow]?.symbolKey);
+          return {
+            isMultiplierDemon: flags?.isMultiplierDemon === true || spriteSymbolId === multiplierDemonId,
+            isBoss: flags?.isBoss === true || spriteSymbolId === bossDemonId
+          };
+        };
+        const pushKill = (reel, row, {
+          isMultiplierDemon = false,
+          isBoss = false,
+          abilityTriggered = false
+        } = {}) => {
+          const normalizedReel = Math.floor(Number(reel));
+          const normalizedRow = Math.floor(Number(row));
+          if (!Number.isFinite(normalizedReel) || !Number.isFinite(normalizedRow)) return;
+
+          const key = `${normalizedReel},${normalizedRow}`;
+          const resolvedFlags = resolveKillFlags(normalizedReel, normalizedRow, {
+            isMultiplierDemon,
+            isBoss
+          });
+          let entry = killMap.get(key);
+          if (!entry) {
+            entry = {
+              key,
+              reel: normalizedReel,
+              row: normalizedRow,
+              isMultiplierDemon: false,
+              isBoss: false,
+              abilityTriggered: false
+            };
+            killMap.set(key, entry);
+            orderedKills.push(entry);
+          }
+
+          entry.isMultiplierDemon = entry.isMultiplierDemon || resolvedFlags.isMultiplierDemon === true;
+          entry.isBoss = entry.isBoss || resolvedFlags.isBoss === true;
+          entry.abilityTriggered = entry.abilityTriggered || abilityTriggered === true;
+        };
+
+        const heroPath = Array.isArray(gameState?.heroPath) ? gameState.heroPath : [];
+        heroPath.forEach((step) => {
+          const abilityTriggered =
+            step?.divineChargeProc === true ||
+            step?.divineStrikeProc === true ||
+            step?.divineXProc === true;
+
+          if (step?.banana === true) {
+            const bananaTargets =
+              Array.isArray(step?.eatenBananas) && step.eatenBananas.length > 0
+                ? step.eatenBananas
+                : [{ reel: step?.reel, row: step?.row }];
+            bananaTargets.forEach((target) => {
+              pushKill(target?.reel, target?.row, {
+                isMultiplierDemon: target?.isMultiplierDemon === true,
+                isBoss: target?.isBoss === true,
+                abilityTriggered
+              });
+            });
+          }
+
+          const strikeTargets = Array.isArray(step?.divineStrikeTargets) ? step.divineStrikeTargets : [];
+          strikeTargets.forEach((target) => {
+            const hitCells = Array.isArray(target?.hitCells) ? target.hitCells : [];
+            hitCells.forEach((cell) => {
+              if (cell?.killed !== true) return;
+              pushKill(cell?.reel, cell?.row, {
+                isMultiplierDemon: cell?.isMultiplierDemon === true,
+                isBoss: cell?.isBoss === true,
+                abilityTriggered: true
+              });
+            });
+          });
+
+          const xTargets = Array.isArray(step?.divineXTargets) ? step.divineXTargets : [];
+          xTargets.forEach((target) => {
+            if (target?.killed !== true) return;
+            pushKill(target?.reel, target?.row, {
+              isMultiplierDemon: target?.isMultiplierDemon === true,
+              isBoss: target?.isBoss === true,
+              abilityTriggered: true
+            });
+          });
+        });
+
+        const startMultiplier = Math.max(
+          1,
+          Math.floor(Number(this.currentMultiplier ?? gameState?.multiplier ?? 1) || 1)
+        );
+        const finalMultiplier = Math.max(
+          1,
+          Math.floor(Number(gameState?.heavenHell?.bonus?.globalMultiplier ?? gameState?.multiplier ?? startMultiplier) || startMultiplier)
+        );
+        const pentagramAdded = Math.max(
+          0,
+          Math.floor(Number(gameState?.heavenHell?.bonus?.pentagram?.completionEventThisAction?.totalAdded ?? 0) || 0)
+        );
+        const bossGainTotal = orderedKills.reduce((sum, entry) => (
+          entry.isBoss === true ? sum + this.getHeavenHellBossMultiplierGain() : sum
+        ), 0);
+        const totalBudget = Math.max(0, finalMultiplier - startMultiplier - pentagramAdded - bossGainTotal);
+
+        const multiplierKills = orderedKills.filter((entry) => entry.isMultiplierDemon === true);
+        const abilityMultiplierKills = multiplierKills.filter((entry) => entry.abilityTriggered === true);
+        const baseMultiplierKills = multiplierKills.filter((entry) => entry.abilityTriggered !== true);
+        const prioritizedKills = totalBudget <= abilityMultiplierKills.length
+          ? abilityMultiplierKills
+          : [...abilityMultiplierKills, ...baseMultiplierKills];
+        const allowedKeys = new Set(
+          prioritizedKills
+            .slice(0, totalBudget)
+            .map((entry) => entry.key)
+        );
+
+        return {
+          allowedKeys,
+          totalBudget
+        };
+      },
+
+    prepareHeavenHellMultiplierOrbPlan(gameState = {}) {
+        this._heavenHellMultiplierOrbPlan = this.buildHeavenHellMultiplierOrbPlan(gameState);
+        return this._heavenHellMultiplierOrbPlan;
+      },
+
+    shouldConsumeHeavenHellMultiplierOrbAt(reel, row, { gameState = null, isMultiplierDemon = null } = {}) {
+        const normalizedReel = Math.floor(Number(reel));
+        const normalizedRow = Math.floor(Number(row));
+        if (!Number.isFinite(normalizedReel) || !Number.isFinite(normalizedRow)) return false;
+
+        const resolvedGameState = gameState || this._heavenHellActiveGameState;
+        if (resolvedGameState?.isBonus !== true || !resolvedGameState?.heavenHell?.bonus) {
+          return isMultiplierDemon === true;
+        }
+
+        const multiplierDemonId = this.getHeavenHellMultiplierDemonId();
+        const sprite = this.reelSprites?.[normalizedReel]?.[normalizedRow];
+        const spriteSymbolId = Number(sprite?.symbolKey);
+        const isMultiplierKill = isMultiplierDemon === true || spriteSymbolId === multiplierDemonId;
+        if (!isMultiplierKill) return false;
+
+        const plan = this._heavenHellMultiplierOrbPlan || this.prepareHeavenHellMultiplierOrbPlan(resolvedGameState);
+        const key = `${normalizedReel},${normalizedRow}`;
+        if (!plan?.allowedKeys?.has(key)) {
+          return false;
+        }
+
+        plan.allowedKeys.delete(key);
+        return true;
       },
 
     dropHeavenHellMultiplierDemonOrb(x, y) {
@@ -1927,7 +2124,10 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         if (resolvedGameState?.heavenHell?.bonus && resolvedGameState?.isBonus === true) {
           this.tickHeavenHellKillMeterOnKill(reel, row, resolvedGameState, { killWeight });
         }
-        if (isMultiplierDemonKill) {
+        if (isMultiplierDemonKill && this.shouldConsumeHeavenHellMultiplierOrbAt(reel, row, {
+          gameState: resolvedGameState,
+          isMultiplierDemon
+        })) {
           this.dropHeavenHellMultiplierDemonOrb(target.x, target.y);
         }
     
@@ -2117,6 +2317,83 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           divineXDoubleKill,
           gameState: resolvedGameState
         });
+      },
+
+    async playHeavenHellQueuedGargoyleEscapes(escapeEntries = [], gameState = null, { stepQuickStop = false } = {}) {
+        const escapes = Array.isArray(escapeEntries) ? escapeEntries : [];
+        if (escapes.length === 0) return;
+
+        const animateOne = (escape) => new Promise((resolve) => {
+          const reel = Number(escape?.reel);
+          const row = Number(escape?.row);
+          if (!Number.isFinite(reel) || !Number.isFinite(row)) {
+            resolve();
+            return;
+          }
+
+          const sprite = this.reelSprites?.[reel]?.[row] || null;
+          if (this.reelSprites?.[reel]) {
+            this.reelSprites[reel][row] = null;
+          }
+          if (!sprite || sprite.destroyed) {
+            resolve();
+            return;
+          }
+
+          const target = this.getGridCellCenter(reel, row);
+          const escapeDuration = stepQuickStop ? 1 : 150;
+          const driftX = stepQuickStop ? 0 : Phaser.Math.Between(-18, 18);
+          const riseY = stepQuickStop ? 0 : Phaser.Math.Between(92, 118);
+          const trailTexture = sprite.texture?.key || String(escape?.symbol || this.getHeavenHellGargoyleDemonId?.() || 21);
+
+          this.tweens.killTweensOf(sprite);
+          this.destroyBananaBackplate?.(sprite);
+          sprite.setDepth(DEPTH_HERO + 45);
+
+          const trail = this.add.image(target.x, target.y + 10, trailTexture)
+            .setDepth(DEPTH_HERO + 44)
+            .setScale((sprite.scaleX || 1) * 0.92, (sprite.scaleY || 1) * 0.92)
+            .setAlpha(0.2)
+            .setTint(0xCFEFFF);
+          const shadow = this.add.ellipse(target.x, target.y + 30, 34, 12, 0x000000, 0.22)
+            .setDepth(DEPTH_HERO + 40);
+
+          let remainingTweens = 2;
+          const finish = () => {
+            remainingTweens -= 1;
+            if (remainingTweens > 0) return;
+            if (trail && !trail.destroyed) trail.destroy();
+            if (shadow && !shadow.destroyed) shadow.destroy();
+            if (!sprite.destroyed) sprite.destroy();
+            resolve();
+          };
+
+          this.tweens.add({
+            targets: sprite,
+            x: target.x + driftX,
+            y: target.y - riseY,
+            alpha: 0,
+            angle: stepQuickStop ? (sprite.angle || 0) : Phaser.Math.Between(-16, 16),
+            scaleX: (sprite.scaleX || 1) * 0.82,
+            scaleY: (sprite.scaleY || 1) * 0.82,
+            duration: escapeDuration,
+            ease: "Cubic.easeOut",
+            onComplete: finish
+          });
+          const trailTweenConfig = {
+            targets: [trail, shadow],
+            alpha: 0,
+            duration: escapeDuration,
+            ease: "Quad.easeOut",
+            onComplete: finish
+          };
+          if (!stepQuickStop) {
+            trailTweenConfig.y = target.y - 10;
+          }
+          this.tweens.add(trailTweenConfig);
+        });
+
+        await Promise.all(escapes.map((escape) => animateOne(escape)));
       },
 
     playHeavenHellAngelStrikeSlash(from, to, { scale = 1 } = {}) {
@@ -4719,7 +4996,10 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                 divineXDoubleKill: cell?.divineXDoubleKill === true,
                 isMultiplierDemon: cell?.isMultiplierDemon === true
               });
-            } else if (cell?.isMultiplierDemon === true) {
+            } else if (cell?.isMultiplierDemon === true && this.shouldConsumeHeavenHellMultiplierOrbAt(cellReel, cellRow, {
+              gameState,
+              isMultiplierDemon: true
+            })) {
               this.dropHeavenHellMultiplierDemonOrb(cellCenter.x, cellCenter.y);
             }
             if (this.reelSprites?.[cellReel]) {
@@ -4945,7 +5225,10 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                     divineXDoubleKill: cell?.divineXDoubleKill === true,
                     isMultiplierDemon: cell?.isMultiplierDemon === true
                   });
-                } else if (cell?.isMultiplierDemon === true) {
+                } else if (cell?.isMultiplierDemon === true && this.shouldConsumeHeavenHellMultiplierOrbAt(cellReel, cellRow, {
+                  gameState,
+                  isMultiplierDemon: true
+                })) {
                   this.dropHeavenHellMultiplierDemonOrb(cellCenter.x, cellCenter.y);
                 }
                 if (this.reelSprites?.[cellReel]) {
@@ -4984,7 +5267,10 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                   divineXDoubleKill: target?.divineXDoubleKill === true,
                   isMultiplierDemon: target?.isMultiplierDemon === true
                 });
-              } else if (target?.isMultiplierDemon === true) {
+              } else if (target?.isMultiplierDemon === true && this.shouldConsumeHeavenHellMultiplierOrbAt(reel, row, {
+                gameState,
+                isMultiplierDemon: true
+              })) {
                 this.dropHeavenHellMultiplierDemonOrb(center.x, center.y);
               }
               if (this.reelSprites?.[reel]) {

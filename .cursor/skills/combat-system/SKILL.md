@@ -36,3 +36,5 @@ Spin → cluster wins → explode → redrop → repeat until no wins
 Combat should feel fast and impactful. Orchestration in `Client.js`; fly/impact/VFX in `GameScene.js`.
 
 Angel position persistence: see `angel-system`.
+
+Hell bonus gargoyle escape timing: see `gargoyle-system`.

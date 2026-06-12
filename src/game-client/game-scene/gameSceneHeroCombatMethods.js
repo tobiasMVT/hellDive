@@ -200,7 +200,10 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         const heavenHellGameState = huntBehavior?.heavenHellGameState || null;
         const firstHeavenHellBonusEntryAttack = huntBehavior?.firstHeavenHellBonusEntryAttack === true;
         if (heavenHellGameState?.heavenHell?.bonus && heavenHellGameState?.isBonus === true) {
+          this.prepareHeavenHellMultiplierOrbPlan?.(heavenHellGameState);
           this.prepareHeavenHellKillMeterForAction(heavenHellGameState);
+        } else {
+          this._heavenHellMultiplierOrbPlan = null;
         }
         let heroFootprintSize = Math.max(
           1,
@@ -259,6 +262,18 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         const syncAngelMultiplierDisplay = (rawValue, options = {}) => {
           if (!isMainGameAngelHunt) return null;
           return this.setHeroAngelMultiplierDisplay?.(rawValue, options);
+        };
+        const playStepGargoyleEscapes = async (pathStep, options = {}) => {
+          if (!isHeavenHellBonusHunt) return;
+          const escapes = Array.isArray(pathStep?.gargoyleEscapesAfterStep)
+            ? pathStep.gargoyleEscapesAfterStep
+            : [];
+          if (escapes.length === 0) return;
+          await this.playHeavenHellQueuedGargoyleEscapes?.(
+            escapes,
+            heavenHellGameState,
+            options
+          );
         };
         const bloodSlowMoDuration = 900; // Extended slow-motion blood splatter
         
@@ -2088,6 +2103,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         await playInlineMergeGunCollections(pathStartIndex);
         await playInlineBonusMysteryCollections(pathStartIndex);
         await playInlineLightningBeeCollections(pathStartIndex);
+        await playStepGargoyleEscapes(startStep, { stepQuickStop: false });
     
         refreshMonkeyStrengthBadge();
         
@@ -2653,7 +2669,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
               const bananaSprite = resolveBananaSpriteAtCell(bananaTarget.reel, bananaTarget.row);
               const bananaCellCenter = getCellCenter(bananaTarget.reel, bananaTarget.row);
               const bananaAffectedPos = affectedPositions.find((pos) => pos.reel === bananaTarget.reel && pos.row === bananaTarget.row);
-              const multiplierDemonId = Number(clientConfig?.symbolsMapping?.zombie2 || 12);
+              const multiplierDemonId = Number(clientConfig?.symbolsMapping?.banana2 || 12);
               const targetSymbolId = Number(
                 bananaTarget?.bananaId ??
                 bananaSprite?.symbolKey ??
@@ -2771,7 +2787,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
 
             bananaTargets.forEach((bananaTarget) => {
               const bananaSprite = resolveBananaSpriteAtCell(bananaTarget.reel, bananaTarget.row);
-              const multiplierDemonId = Number(clientConfig?.symbolsMapping?.zombie2 || 12);
+              const multiplierDemonId = Number(clientConfig?.symbolsMapping?.banana2 || 12);
               const targetSymbolId = Number(
                 bananaTarget?.bananaId ??
                 bananaSprite?.symbolKey ??
@@ -2889,6 +2905,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             await playInlineMergeGunCollections(i);
             await playInlineBonusMysteryCollections(i);
             await playInlineLightningBeeCollections(i);
+            await playStepGargoyleEscapes(step, { stepQuickStop });
     
             const speedMultiplier = getHuntSpeedMultiplier(step, { afterStep: true });
             currentSegmentSpeed = Math.max(

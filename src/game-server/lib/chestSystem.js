@@ -140,10 +140,15 @@ export function generateChest({
   symbol = 0,
   isBoss = false,
   isMultiplierDemon = false,
+  isGargoyleDemon = false,
   pendingId = 1
 } = {}) {
   const dropChanceTable = asObject(chestConfig.dropChance);
-  const normalizedSource = isBoss ? "boss" : (isMultiplierDemon ? "multiplier" : source || "normal");
+  const normalizedSource = isBoss
+    ? "boss"
+    : (isMultiplierDemon
+      ? "multiplier"
+      : (isGargoyleDemon ? "gargoyle" : (source || "normal")));
   const dropChance = clampProbability(dropChanceTable[normalizedSource], 0);
   if (dropChance <= 0 || Math.random() >= dropChance) {
     return null;
@@ -174,6 +179,7 @@ export function generateChest({
     symbol: Number(symbol),
     isBoss: isBoss === true,
     isMultiplierDemon: isMultiplierDemon === true,
+    isGargoyleDemon: isGargoyleDemon === true,
     highlight: resolveChestHighlight(selected.key, selected.chestType)
   };
 }
@@ -490,7 +496,8 @@ export function resolveChestSequence({
         totalChestsOpened: 0,
         freeSpinsAdded: 0,
         lootDropsAdded: 0,
-        abilityGains: { divineStrike: 0, divineX: 0, divineCharge: 0 }
+        abilityGains: { divineStrike: 0, divineX: 0, divineCharge: 0 },
+        finalHeroPosition: null
       }
     };
   }
@@ -502,7 +509,8 @@ export function resolveChestSequence({
     freeSpinsAdded: 0,
     lootDropsAdded: 0,
     multiplierAdded: 0,
-    abilityGains: { divineStrike: 0, divineX: 0, divineCharge: 0 }
+    abilityGains: { divineStrike: 0, divineX: 0, divineCharge: 0 },
+    finalHeroPosition: null
   };
 
   asArray(pendingChests).forEach((pendingChest) => {
@@ -561,6 +569,10 @@ export function resolveChestSequence({
       spins
     });
     summary.totalChestsOpened += 1;
+    summary.finalHeroPosition = {
+      reel: Math.floor(Number(pendingChest?.reel) || 0),
+      row: Math.floor(Number(pendingChest?.row) || 0)
+    };
   });
 
   return {

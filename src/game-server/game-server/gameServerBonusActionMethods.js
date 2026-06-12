@@ -680,6 +680,23 @@ export function createGameServerBonusActionMethods(deps = {}) {
         resumeActionBeforeRewards,
         resumeActionAfterRewards
       };
+      const finalChestHeroPosition = chestResult?.summary?.finalHeroPosition;
+      if (
+        finalChestHeroPosition &&
+        Number.isFinite(Number(finalChestHeroPosition.reel)) &&
+        Number.isFinite(Number(finalChestHeroPosition.row))
+      ) {
+        const normalizedChestHeroPosition = this.normalizeHeroAnchorForSize(
+          finalChestHeroPosition,
+          gameState.heroFootprintSize || 1
+        );
+        if (normalizedChestHeroPosition) {
+          gameState.heroPosition = normalizedChestHeroPosition;
+          if (gameState.bonusStageEvent && typeof gameState.bonusStageEvent === "object") {
+            gameState.bonusStageEvent.heroPosition = normalizedChestHeroPosition;
+          }
+        }
+      }
       bonusState.chestRewardResumeAction = null;
       gameState.multiplier = Math.max(1, Math.floor(Number(bonusState.globalMultiplier || 1)));
       this.syncHeavenHellChestCounters(gameState);

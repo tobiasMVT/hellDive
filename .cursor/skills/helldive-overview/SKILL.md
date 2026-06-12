@@ -20,6 +20,7 @@ Cluster-pay slot with an action-combat layer. Demons appear on the board; after 
 | Client layering | `client-architecture` | Client = flow; GameScene = presentation |
 | Angel position | `angel-system` | Persistent board position; counts as Wild |
 | Combat | `combat-system` | Closest demon first; demons never attack back |
+| Gargoyle | `gargoyle-system` | Hell-bonus gargoyles can flee between attacks when nearby demons die |
 | Loot | `loot-system` | Visible on board until Collect Phase |
 | Abilities | `ability-system` | Unlocked in bonus; all config in `server_config.json` |
 | Pentagram | `pentagram-system` | Bonus-only overlay hit by Divine Strike / Divine X, upgrades center multiplier on completion |

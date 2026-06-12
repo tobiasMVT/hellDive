@@ -114,7 +114,8 @@
     "symbolsMapping": {
         "bonusMysteryFeature": 18,
         "mergeGunFeature": 19,
-        "lightningBeeFeature": 20
+        "lightningBeeFeature": 20,
+        "gargoyleDemon": 21
     },
     "paytable": {
         "1": { "15": 10, "14": 7.5, "13": 6.5, "12": 5.5, "11": 4.5, "10": 3.5, "9": 2.5, "8": 2, "7": 1.5, "6": 1, "5": 0.5 },

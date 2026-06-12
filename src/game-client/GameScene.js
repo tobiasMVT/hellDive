@@ -36,7 +36,8 @@ const resolveSymbolId = (value, fallback) => {
 const BANANA_SYMBOL_IDS = Array.from(new Set([
   resolveSymbolId(clientConfig.symbolsMapping?.banana, 11),
   resolveSymbolId(clientConfig.symbolsMapping?.banana2, 12),
-  resolveSymbolId(clientConfig.symbolsMapping?.banana3, 13)
+  resolveSymbolId(clientConfig.symbolsMapping?.banana3, 13),
+  resolveSymbolId(clientConfig.symbolsMapping?.gargoyleDemon, 21)
 ]));
 const BONUS_MYSTERY_FEATURE_SYMBOL_ID = resolveSymbolId(clientConfig.symbolsMapping?.bonusMysteryFeature, 18);
 const MERGE_GUN_FEATURE_SYMBOL_ID = resolveSymbolId(clientConfig.symbolsMapping?.mergeGunFeature, 19);
@@ -650,6 +651,7 @@ export class GameScene extends Phaser.Scene {
     this.heavenHellRippleFx = [];
     this.heavenHellDivineGroundFx = [];
     this.heavenHellBonusEntryAngelArrivalPlayed = false;
+    this._heavenHellMultiplierOrbPlan = null;
   }
 
   /** @deprecated Use inline hunt charge wind-up + impact instead. */

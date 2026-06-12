@@ -3345,7 +3345,8 @@ export function createGameSceneHeroEffectsMethods(deps = {}) {
           
           const bananaIds = [
             clientConfig.symbolsMapping?.banana || 11,
-            clientConfig.symbolsMapping?.banana3 || 13
+            clientConfig.symbolsMapping?.banana3 || 13,
+            clientConfig.symbolsMapping?.gargoyleDemon || 21
           ];
           return bananaIds.includes(Number(symbol));
         };
