@@ -43,6 +43,7 @@ export function createClientActionMethods(deps = {}) {
 
     async handleRespinAction(gameState) {
       this.scene.setCurrentAction?.("respin");
+      this.scene.syncMainGameHeroWildState?.(gameState);
 
       if (!gameState.reelsAfterDrop || !gameState.dropEvent) {
         this.scene.emitOutcomeRevealed?.();
@@ -57,6 +58,7 @@ export function createClientActionMethods(deps = {}) {
 
     async handleBananaHuntAction(gameState) {
       this.scene.setCurrentAction?.(ACTION_BANANA_HUNT);
+      this.scene.syncMainGameHeroWildState?.(gameState);
       this.scene.setHeroAngelMultiplierDisplay?.(gameState?.heroAngelStartMultiplier ?? null, {
         showBadge: Number.isFinite(Number(gameState?.heroAngelStartMultiplier)),
         clearBadge: !Number.isFinite(Number(gameState?.heroAngelStartMultiplier))

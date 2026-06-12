@@ -542,7 +542,6 @@ export class GameScene extends Phaser.Scene {
     this.heroWildActiveBadge = null;
     this.heroWildActiveBadgeFollow = null;
     this.heroWildActiveBadgeText = "W";
-    this.heroWildTrailMarks = [];
     this.currentHeroAngelMultiplierDisplay = null;
     this._heroPreviewConsoleCommand = null;
     this._heroPreviewHelpCommand = null;

@@ -45,7 +45,7 @@
         "winMainGame_min10": 1,
 
         "bonus_min0.1_max50": 7,
-        "bonusPentagram": 10000,
+        "bonusPentagram": 1,
         "bonus_min50_max200": 2,
         "bonus_max1000": 1
     },
@@ -1058,7 +1058,7 @@
                 }
             },
             "pentagram": {
-                "enabled": true,
+                "enabled": false,
                 "debugShowTriggerCells": true,
                 "points": [
                     {

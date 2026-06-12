@@ -1259,7 +1259,6 @@ export function createGameSceneBonusPresentationMethods(deps = {}) {
           
           this.clearMonkeyWildStrengthBadge();
           this.clearHeroWildActiveBadge();
-          this.clearHeroWildTrailMarks?.();
           this.showMainGameHeroAtCenter?.(weapon || this.currentHeroWeapon || "staff");
           
           // Slide out old symbols - WAIT for them to finish before creating new ones

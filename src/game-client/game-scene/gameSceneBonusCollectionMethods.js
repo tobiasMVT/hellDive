@@ -2431,7 +2431,6 @@ export function createGameSceneBonusCollectionMethods(deps = {}) {
           this.heroSprite = null;
           this.clearMonkeyWildStrengthBadge();
           this.clearHeroWildActiveBadge();
-          this.clearHeroWildTrailMarks();
         }
     
         if (Array.isArray(this.reelSprites)) {

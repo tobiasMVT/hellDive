@@ -61,7 +61,9 @@ export function buildSegmentFlow({ gameState, scene, timing, waitCancellable, ca
         checkpoint: false,
         enabled: hasClusters,
         run: async () => {
-          await scene.highlightClusters(gameState.clusters, 900);
+          await scene.highlightClusters(gameState.clusters, 900, {
+            activeWildPositions: scene.getMainGameActiveWildPositions?.(gameState) || null
+          });
         },
         onSkipAction: () => {
           if (typeof scene.skipHighlightPhase === "function") {
@@ -127,7 +129,9 @@ export function buildSegmentFlow({ gameState, scene, timing, waitCancellable, ca
         checkpoint: false,
         enabled: hasClusters,
         run: async () => {
-          await scene.highlightClusters(gameState.clusters, 900);
+          await scene.highlightClusters(gameState.clusters, 900, {
+            activeWildPositions: scene.getMainGameActiveWildPositions?.(gameState) || null
+          });
         },
         onSkipAction: () => {
           if (typeof scene.skipHighlightPhase === "function") {

@@ -48,7 +48,11 @@ export function createClientHeavenHellMethods() {
     },
 
     getHeavenHellPentagramPresentationState(gameState = {}) {
-      if (!this.isHeavenHellEnabled(gameState) || gameState?.isBonus !== true) {
+      if (
+        !this.isHeavenHellEnabled(gameState) ||
+        gameState?.isBonus !== true ||
+        gameState?.heavenHell?.bonus?.pentagram?.enabled !== true
+      ) {
         return gameState;
       }
 

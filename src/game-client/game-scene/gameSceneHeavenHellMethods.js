@@ -223,7 +223,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
 
     getHeavenHellPentagramStepEvents(gameState = {}, pathIndex = -1) {
         const pentagram = gameState?.heavenHell?.bonus?.pentagram;
-        if (!pentagram || gameState?.isBonus !== true) {
+        if (!pentagram || gameState?.isBonus !== true || pentagram?.enabled !== true) {
           return { activations: [], completionEvent: null };
         }
         const activations = (Array.isArray(pentagram?.activationsThisAction) ? pentagram.activationsThisAction : [])
@@ -1230,7 +1230,6 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         this.heroSprite = null;
         this.clearMonkeyWildStrengthBadge();
         this.clearHeroWildActiveBadge();
-        this.clearHeroWildTrailMarks();
     
         await this.waitForPresentation(120, { skippable: true });
     

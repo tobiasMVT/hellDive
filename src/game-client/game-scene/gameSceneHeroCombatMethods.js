@@ -2063,6 +2063,25 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           if (!isBonus || startWaitsForBananaUpgrade || startBananaMeterArrivalPromises.length === 0) {
             syncMeterFromStepState(startStep);
           }
+        } else if (!this.isHeroAtStartingPosition?.(startPos)) {
+          const startWildPositions = Array.isArray(startStep?.footprintCells) && startStep.footprintCells.length > 0
+            ? startStep.footprintCells
+            : [{ reel: startPos.reel, row: startPos.row }];
+          if (Array.isArray(startStep?.impactClusters) && startStep.impactClusters.length > 0) {
+            applyImpactWinCountUp(startStep);
+            await this.resolveBananaImpactClusters(
+              { reel: startPos.reel, row: startPos.row },
+              resolvedBananaMeterLevel,
+              {
+                precomputedClusters: startStep.impactClusters,
+                activeWildPositions: startWildPositions,
+                waitForFastForward: false,
+                fallbackAutoExplodeMs: 0,
+                noClusterSlowMoMs: 80,
+                clusterSlowMoMs: 140
+              }
+            );
+          }
         }
         emitRushingMonkeyStepTrail(startStep, Array.isArray(startStep?.footprintCells) ? startStep.footprintCells : []);
         await playInlineMergeGunActivations(pathStartIndex);
@@ -2072,7 +2091,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
     
         refreshMonkeyStrengthBadge();
         
-        // Thunderkong rule: wild-strength banana-check triggers only after monkey moves to a banana.
+        // Main-game angel wild is active on any off-center board cell.
     
         // Track current acceleration segment. Momentum chain builds speed across consecutive kills.
         const initialSpeedMultiplier = getHuntSpeedMultiplier(startStep);
@@ -2156,22 +2175,6 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             1,
             Math.floor(Number(step?.footprintSize ?? heroFootprintSize) || 1)
           );
-          if (
-            isBananaStep &&
-            prevStep?.banana === true &&
-            !stepQuickStop &&
-            !is3x3Troll &&
-            bananasEncountered > 0 &&
-            previousFootprintSize <= 1 &&
-            currentStepFootprintSize <= 1 &&
-            Math.max(1, Math.floor(Number(this.currentHeroFootprintSize) || 1)) <= 1
-          ) {
-            this.leaveHeroWildTrailMark(this.heroSprite?.x ?? targetX, this.heroSprite?.y ?? targetY, {
-              heroFootprintSize: currentStepFootprintSize,
-              holdMs: 1000,
-              durationMs: 260
-            });
-          }
           const prevAffectedPos = affectedPositions.find(pos => pos.reel === prevStep.reel && pos.row === prevStep.row);
           
           if (prevAffectedPos && (prevAffectedPos.stepType === "mystery" || prevAffectedPos.stepType === "mysteryWild") && !is3x3Troll) {
@@ -3344,7 +3347,6 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         this.clearMonkeyWildStrengthBadge();
         this.currentHeroAngelMultiplierDisplay = null;
         this.clearHeroWildActiveBadge({ force: true });
-        this.clearHeroWildTrailMarks();
         this.currentHeroFootprintSize = 1;
         this.currentHeroRushActive = false;
         this.currentBonusStage = 0;
@@ -4385,6 +4387,22 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         
       },
 
+    syncMainGameHeroWildState(gameState = {}) {
+        const heroPosition = gameState?.heroPosition || null;
+        if (this.isHeroAtStartingPosition?.(heroPosition)) {
+          return false;
+        }
+
+        const footprintSize = Math.max(1, Math.floor(Number(gameState?.heroFootprintSize) || 1));
+        this.applyHeroModel?.({
+          weapon: this.currentHeroWeapon || "staff",
+          reel: Number(heroPosition.reel),
+          row: Number(heroPosition.row),
+          footprintSize
+        });
+        return true;
+      },
+
     showMainGameHeroAtCenter(weapon = "staff") {
         const heroX = GRID_OFFSET_X + (clientConfig.area.width * 70) / 2;
         const heroY = GRID_OFFSET_Y + (clientConfig.area.height * 70) / 2;
@@ -4401,7 +4419,6 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         this.clearMonkeyWildStrengthBadge();
         this.currentHeroAngelMultiplierDisplay = null;
         this.clearHeroWildActiveBadge({ force: true });
-        this.clearHeroWildTrailMarks?.();
 
         if (!this.heroSprite || this.heroSprite.destroyed) {
           this.heroSprite = this.add.image(heroX, heroY, heroTexture)

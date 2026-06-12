@@ -1,16 +1,2 @@
-I wanne add other features in this game.
+// andra gången stjhärnas tänds behövs dubbelt? ger dubbelt?
 
-While the monkey is in bonus there can land a special "mystery" symbol. THat if collected will reveal it identity
-
-u can use this sprite for now
-minor
-D:\slot ideas\Cluster - template\src\game-client\assets\symbols\mystery_feature
-
-
-if a symbol is adjajcent to a winning cluster OR is runned over by the monkey or monkey is standing adjacent to the mystery symbol they will be collected.
-
-we need somekind of metre somewhere which indicates the mystery collected
-
-so lets starts with the collecting part. When that is done we can dig deeper inot the actual features.
-
-any questions feel free to ask.

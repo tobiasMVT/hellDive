@@ -32,6 +32,39 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
         this.symbolsGroup.clear(true, true); // remove all sprites
       },
 
+    getHeroStartingPosition() {
+        return clientConfig.heroStartingPosition || { reel: 4, row: 2 };
+      },
+
+    isHeroAtStartingPosition(heroPosition = null) {
+        if (!heroPosition || !Number.isFinite(Number(heroPosition.reel)) || !Number.isFinite(Number(heroPosition.row))) {
+          return true;
+        }
+        const startingPos = this.getHeroStartingPosition();
+        return (
+          Math.floor(Number(heroPosition.reel)) === Math.floor(Number(startingPos.reel)) &&
+          Math.floor(Number(heroPosition.row)) === Math.floor(Number(startingPos.row))
+        );
+      },
+
+    getMainGameActiveWildPositions(gameState = {}) {
+        const heroPosition = gameState?.heroPosition || null;
+        if (this.isHeroAtStartingPosition(heroPosition)) {
+          return null;
+        }
+        const footprintSize = Math.max(1, Math.floor(Number(gameState?.heroFootprintSize) || 1));
+        const cells = [];
+        for (let reelOffset = 0; reelOffset < footprintSize; reelOffset++) {
+          for (let rowOffset = 0; rowOffset < footprintSize; rowOffset++) {
+            cells.push({
+              reel: Math.floor(Number(heroPosition.reel)) + reelOffset,
+              row: Math.floor(Number(heroPosition.row)) + rowOffset
+            });
+          }
+        }
+        return cells;
+      },
+
     getHeroWildActiveBadgeText(strength = null) {
         const currentAction = String(this.currentAction || "");
         const angelMultiplierDisplay = Number(this.currentHeroAngelMultiplierDisplay);
@@ -199,78 +232,6 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
           this.heroWildActiveBadge.destroy();
         }
         this.heroWildActiveBadge = null;
-      },
-
-    leaveHeroWildTrailMark(x = null, y = null, options = {}) {
-        if (!this.shouldShowHeroWildBadgeForCurrentAction()) return;
-        if (this.shouldPersistHeroWildActiveBadge()) return;
-        if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return;
-        const footprintSize = Math.max(1, Math.floor(Number(options.heroFootprintSize ?? this.currentHeroFootprintSize) || 1));
-        if (footprintSize > 1) return;
-        const centerX = GRID_OFFSET_X + (clientConfig.area.width * 70) / 2;
-        const centerY = GRID_OFFSET_Y + (clientConfig.area.height * 70) / 2;
-        const isMainGameCenterMark =
-          (this.currentAction === "spin" || this.currentAction === "respin" || this.currentAction === "bananaHunt") &&
-          Math.abs(Number(x) - centerX) <= 6 &&
-          Math.abs(Number(y) - centerY) <= 6;
-        if (isMainGameCenterMark) return;
-    
-        const duration = Math.max(180, Math.floor(Number(options.durationMs) || 430));
-        const holdMs = Math.max(0, Math.floor(Number(options.holdMs) || 0));
-        const labelText = String(options.text || this.heroWildActiveBadgeText || this.getHeroWildActiveBadgeText() || "W");
-        const mark = this.add.text(Number(x), Number(y) + 2, labelText, {
-          fontSize: "35px",
-          fontFamily: '"Cinzel", "Times New Roman", serif',
-          fontStyle: "bold",
-          color: "#FFF7C2",
-          stroke: "#2F230D",
-          strokeThickness: 6
-        })
-          .setOrigin(0.5)
-          .setDepth(DEPTH_HERO + 4)
-          .setAlpha(0.9)
-          .setScale(0.98);
-    
-        mark.setShadow(0, 2, "#000000", 5, true, true);
-        this.heroWildTrailMarks.push(mark);
-    
-        const fadeMark = () => {
-          if (!mark || mark.destroyed) return;
-          mark._heroWildTrailFadeTimer = null;
-          this.tweens.add({
-            targets: mark,
-            alpha: 0,
-            scale: 1.28,
-            y: mark.y + 8,
-            duration,
-            ease: 'Sine.easeOut',
-            onComplete: () => {
-              this.heroWildTrailMarks = this.heroWildTrailMarks.filter((entry) => entry !== mark);
-              if (!mark.destroyed) mark.destroy();
-            }
-          });
-        };
-    
-        if (holdMs > 0) {
-          mark._heroWildTrailFadeTimer = this.time.delayedCall(holdMs, fadeMark);
-        } else {
-          fadeMark();
-        }
-      },
-
-    clearHeroWildTrailMarks() {
-        if (!Array.isArray(this.heroWildTrailMarks)) {
-          this.heroWildTrailMarks = [];
-          return;
-        }
-        this.heroWildTrailMarks.forEach((mark) => {
-          if (!mark || mark.destroyed) return;
-          mark._heroWildTrailFadeTimer?.remove?.(false);
-          mark._heroWildTrailFadeTimer = null;
-          this.tweens.killTweensOf(mark);
-          mark.destroy();
-        });
-        this.heroWildTrailMarks = [];
       },
 
     updateMonkeyWildStrengthBadge(strength = 1) {

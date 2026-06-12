@@ -56,7 +56,11 @@ Client reads per-step flags from authoritative `heroPath` (see `ability-system` 
 
 ## Wild Mechanic
 
-Occupied demon position = Wild symbol for cluster evaluation. Angel does not leave the cell after win resolution.
+Angel acts as **Wild** on any off-center board cell (not at `heroStartingPosition`). Center position is never wild.
+
+- Applies during spin/respin cluster evaluation and hunt impact checks
+- After killing a demon, angel occupies that cell and remains wild there
+- Angel does not leave the cell after win resolution
 
 ## State Implication
 

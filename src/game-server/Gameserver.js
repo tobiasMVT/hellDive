@@ -3025,6 +3025,33 @@ export class GameServer {
     };
   }
 
+  getHeroStartingPosition() {
+    return serverConfig.heroStartingPosition || { reel: 4, row: 2 };
+  }
+
+  isHeroAtStartingPosition(anchor = null) {
+    if (!anchor || !Number.isFinite(anchor.reel) || !Number.isFinite(anchor.row)) {
+      return true;
+    }
+    const startingPos = this.getHeroStartingPosition();
+    return (
+      Math.floor(Number(anchor.reel)) === Math.floor(Number(startingPos.reel)) &&
+      Math.floor(Number(anchor.row)) === Math.floor(Number(startingPos.row))
+    );
+  }
+
+  shouldHeroActAsWild(anchor = null) {
+    return !this.isHeroAtStartingPosition(anchor);
+  }
+
+  getHeroWildCellsForClusterEval(heroState = null) {
+    const anchor = heroState?.anchor || heroState?.position || null;
+    if (!this.shouldHeroActAsWild(anchor)) {
+      return [];
+    }
+    return this.buildHeroFootprintState(anchor, heroState?.size || 1).cells;
+  }
+
   markHeroFootprintWalked(walkedPositions, anchor, footprintSize = 1) {
     if (!(walkedPositions instanceof Set)) return;
     this.getHeroFootprintCells(anchor, footprintSize).forEach((cell) => {
@@ -6004,10 +6031,11 @@ export class GameServer {
 
   /**
    * Find all clusters of size >= minSize
-   * Hero acts as wild only while bananas are present on the board.
+   * Hero acts as wild on any off-center board cell.
    * Bananas/Monsters do NOT participate in clusters
    * Cluster checks are banana-position driven:
    * - for each banana, we test neighboring paying symbols as cluster seeds
+   * - off-center hero cells also seed neighboring cluster checks
    * - if no bananas exist, we fall back to full-board seed scanning
    * Monkey wild can contribute to multiple clusters.
    * Returns array of cluster objects: { symbol, positions: [{reel, row}, ...] }
@@ -6023,9 +6051,12 @@ export class GameServer {
     const forceFullBoardScan = options?.forceFullBoardScan === true;
     const clusters = [];
     const seenClusterKeys = new Set();
-    const heroFootprint = this.buildHeroFootprintState(heroState?.anchor || heroState?.position || null, heroState?.size || 1);
+    const heroWildCells = this.getHeroWildCellsForClusterEval(heroState);
+    const activeWildCellKeys = new Set(heroWildCells.map((cell) => `${cell.reel},${cell.row}`));
+    const wildStrength = useMainGameWildOverride
+      ? this.getMainGameHeroWildStrengthByMeterLevel(bananaMeterLevel)
+      : this.getHeroWildStrengthByMeterLevel(bananaMeterLevel);
 
-    // Helper to get unique key for position
     const key = (reel, row) => `${reel},${row}`;
     const bananaPositions = [];
     for (let reel = 0; reel < this.width; reel++) {
@@ -6036,11 +6067,10 @@ export class GameServer {
         }
       }
     }
-    
-    // Helper to get symbol at position
+
     const getSymbol = (reel, row) => {
       if (reel < 0 || reel >= this.width || row < 0 || row >= this.height) return null;
-      if (heroFootprint.cellKeys.has(key(reel, row))) return this.heroId;
+      if (activeWildCellKeys.has(key(reel, row))) return this.heroId;
       return reels[reel]?.[row];
     };
 
@@ -6060,11 +6090,11 @@ export class GameServer {
       symbol !== this.mysteryWildId &&
       !this.isPersistentBonusFeatureSymbol(symbol);
 
-    // Flood fill to find cluster starting from a position
     const floodFill = (startReel, startRow, targetSymbol) => {
-      const positions = [];
       const queue = [{ reel: startReel, row: startRow }];
       const localVisited = new Set();
+      const positions = [];
+      const touchedWildKeys = new Set();
 
       while (queue.length > 0) {
         const { reel, row } = queue.shift();
@@ -6074,67 +6104,72 @@ export class GameServer {
         localVisited.add(posKey);
 
         const symbol = getSymbol(reel, row);
-        
-        // Skip if invalid, house, banana, or doesn't match
         if (!symbol || symbol === "HOUSE" || symbol === 0 || this.isDemon(symbol)) continue;
         if (this.isHouse(reel, row)) continue;
         if (this.isPersistentBonusFeatureSymbol(symbol)) continue;
+
+        if (activeWildCellKeys.has(posKey)) {
+          touchedWildKeys.add(posKey);
+          queue.push(...getNeighbors(reel, row));
+          continue;
+        }
+
         if (symbol !== targetSymbol && symbol !== this.mysteryWildId) continue;
 
         positions.push({ reel, row, symbol });
         queue.push(...getNeighbors(reel, row));
       }
 
-      return positions;
+      return { positions, touchedWildKeys };
     };
 
     const tryClusterFromStart = (reel, row, symbol) => {
-      const cluster = floodFill(reel, row, symbol);
-      if (cluster.length === 0) return;
+      const clusterData = floodFill(reel, row, symbol);
+      const positions = clusterData.positions;
+      if (positions.length === 0) return;
 
-      const clusterKey = `${symbol}|${cluster
+      const clusterKey = `${symbol}|${positions
         .map((pos) => key(pos.reel, pos.row))
         .sort()
         .join(";")}`;
       if (seenClusterKeys.has(clusterKey)) return;
       seenClusterKeys.add(clusterKey);
 
-      const heroWildCount = 0;
-      const effectiveSize = cluster.length;
+      const heroWildCount = clusterData.touchedWildKeys.size;
+      const effectiveSize = positions.length + heroWildCount * Math.max(1, wildStrength);
+      if (effectiveSize < minSize) return;
 
-      if (effectiveSize >= minSize) {
-        clusters.push({
-          symbol,
-          size: cluster.length,
-          effectiveSize,
-          heroWildCount,
-          positions: cluster
-        });
-      }
+      clusters.push({
+        symbol,
+        size: positions.length,
+        effectiveSize,
+        heroWildCount,
+        positions
+      });
     };
 
     const candidateStartsByKey = new Map();
+    const addCandidateStart = (reel, row, symbol) => {
+      if (!isValidClusterStartSymbol(symbol)) return;
+      candidateStartsByKey.set(key(reel, row), { reel, row, symbol });
+    };
+
+    heroWildCells.forEach((wildCell) => {
+      getNeighbors(wildCell.reel, wildCell.row).forEach((neighbor) => {
+        addCandidateStart(neighbor.reel, neighbor.row, getSymbol(neighbor.reel, neighbor.row));
+      });
+    });
 
     if (!forceFullBoardScan && bananaPositions.length > 0) {
-      // Check clusters around each banana position.
       bananaPositions.forEach(({ reel, row }) => {
         getNeighbors(reel, row).forEach((neighbor) => {
-          const nSymbol = getSymbol(neighbor.reel, neighbor.row);
-          if (!isValidClusterStartSymbol(nSymbol)) return;
-          candidateStartsByKey.set(key(neighbor.reel, neighbor.row), {
-            reel: neighbor.reel,
-            row: neighbor.row,
-            symbol: nSymbol
-          });
+          addCandidateStart(neighbor.reel, neighbor.row, getSymbol(neighbor.reel, neighbor.row));
         });
       });
     } else {
-      // Fallback: if no bananas are on board, scan all paying symbols.
       for (let reel = 0; reel < this.width; reel++) {
         for (let row = 0; row < this.height; row++) {
-          const symbol = getSymbol(reel, row);
-          if (!isValidClusterStartSymbol(symbol)) continue;
-          candidateStartsByKey.set(key(reel, row), { reel, row, symbol });
+          addCandidateStart(reel, row, getSymbol(reel, row));
         }
       }
     }
@@ -6151,11 +6186,12 @@ export class GameServer {
       return null;
     }
 
-    const heroFootprint = this.buildHeroFootprintState(heroState?.anchor || heroState?.position || null, heroState?.size || 1);
+    const heroAnchor = heroState?.anchor || heroState?.position || null;
+    const heroFootprint = this.buildHeroFootprintState(heroAnchor, heroState?.size || 1);
     if (activeWildCellKeys?.has?.(`${reel},${row}`)) {
       return this.heroId;
     }
-    if (heroFootprint.cellKeys.has(`${reel},${row}`)) {
+    if (heroFootprint.cellKeys.has(`${reel},${row}`) && this.shouldHeroActAsWild(heroAnchor)) {
       return this.heroId;
     }
 
@@ -7523,10 +7559,12 @@ export class GameServer {
           bananaId: cell.bananaId,
           orbs: this.calculateOrbDrops(weaponIdOrName)
         }));
-      heroState.activeWildCells = heroState.cells.map((cell) => ({
-        reel: cell.reel,
-        row: cell.row
-      }));
+      heroState.activeWildCells = this.shouldHeroActAsWild(anchor)
+        ? heroState.cells.map((cell) => ({
+            reel: cell.reel,
+            row: cell.row
+          }))
+        : [];
       heroState.activeWildCellKeys = new Set(heroState.activeWildCells.map((cell) => `${cell.reel},${cell.row}`));
       heroState.useMainGameWildOverride = gameState?.isBonus !== true;
 
@@ -7918,7 +7956,7 @@ export class GameServer {
     }));
     const startStepEntry = fullPath[fullPath.length - 1];
     
-    if (rushActive || startContext.hasBanana) {
+    if (rushActive || startContext.hasBanana || this.shouldHeroActAsWild(currentPos)) {
       recordAffectedCells(startContext.footprintCells);
     }
     if (shouldCollectFeaturesForStep(startContext)) {
@@ -7970,6 +8008,33 @@ export class GameServer {
       }
       if (startProgression.growthTriggered) {
         this.markHeroFootprintWalked(walkedPositions, currentPos, currentHeroFootprintSize);
+      }
+    } else if (this.shouldHeroActAsWild(currentPos)) {
+      const clusterResult = this.applyDemonCheckClusterExplosions(
+        huntReels,
+        currentPos,
+        currentMeterLevel,
+        minClusterSize,
+        huntBetSize,
+        huntMultiplier,
+        startContext.heroState,
+        {
+          includeHeroWildCells: gameState?.isBonus === true
+        }
+      );
+      if (clusterResult.hasClusters) {
+        if (awardImpactPayouts) {
+          clusterWinTwa += Number(clusterResult.twa || 0);
+          clusterWinTbm += Number(clusterResult.tbm || 0);
+        }
+        if (Array.isArray(clusterResult.collectedSymbols) && clusterResult.collectedSymbols.length > 0) {
+          collectedSymbolDetails.push(...clusterResult.collectedSymbols);
+        }
+        startStepEntry.impactClusters = clusterResult.clusters;
+        startStepEntry.impactWinTwa = awardImpactPayouts ? Number(clusterResult.twa || 0) : 0;
+        startStepEntry.impactWinTbm = awardImpactPayouts ? Number(clusterResult.tbm || 0) : 0;
+        startStepEntry.impactWinCumulativeTwa = clusterWinTwa;
+        startStepEntry.impactWinCumulativeTbm = clusterWinTbm;
       }
     } else if (startContext.hasHero) {
       startContext.footprintCells.forEach((cell) => {
@@ -9376,7 +9441,7 @@ export class GameServer {
     const heavenHell = this.ensureHeavenHellState(gameState);
     const bonusState = heavenHell?.bonus;
     const pentagram = bonusState?.pentagram;
-    if (!bonusState || !pentagram || !pentagram.pendingCompletionReward) return null;
+    if (!bonusState || !pentagram || pentagram.enabled !== true || !pentagram.pendingCompletionReward) return null;
 
     const reward = pentagram.pendingCompletionReward;
     const totalAdded = Math.max(0, Math.floor(Number(reward?.totalAdded) || 0));
