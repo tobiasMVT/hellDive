@@ -3,6 +3,17 @@
 
   layout: {
     mustSeeBounds: { x: 15, y: 0, width: 575, height: 711 },
+    // Scene background (heaven_city / hell bonus floor) — centered on mustSeeBounds.
+    background: {
+      offsetX: 0,
+      offsetY: -560,
+      scale: 1.5,
+      bleedFactor: 1.04,
+      widthPadding: 40,
+      heightPadding: 80,
+      alignY: "top",
+      depth: 0,
+    },
     freeArea: {
       minBottomPx: 200,
       fitPaddingPx: 0,

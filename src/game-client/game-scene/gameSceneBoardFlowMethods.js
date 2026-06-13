@@ -565,42 +565,172 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
           overlay.setFlipY(Boolean(source?.flipY));
         }
     
+        const overlayPeakAlpha = isHeroWild ? 0.68 : 0.74;
+
         const tweenConfig = {
           targets: overlay,
-          alpha: { from: 0, to: 0.96 },
+          alpha: { from: 0, to: overlayPeakAlpha },
           duration: blinkHalfMs,
-          yoyo: true,
-          repeat: WIN_HIGHLIGHT_INTENSITY_BLINKS - 1,
           ease: "Sine.easeInOut"
         };
         if (!noScalePop && !isHeroWild) {
-          tweenConfig.scaleX = overlayScaleX * 1.045;
-          tweenConfig.scaleY = overlayScaleY * 1.045;
+          tweenConfig.scaleX = overlayScaleX * 1.05;
+          tweenConfig.scaleY = overlayScaleY * 1.05;
         }
-        this.tweens.add(tweenConfig);
-        return overlay;
+        const overlayTween = this.tweens.add(tweenConfig);
+
+      return {
+          overlay,
+          cleanup: () => {
+            if (overlayTween) {
+              overlayTween.stop();
+            }
+            if (overlay && !overlay.destroyed) {
+              overlay.destroy();
+            }
+          }
+        };
+      },
+
+    getClusterAngelMultiplierBadgeValue(cluster = null) {
+        const explicitMultiplier = Math.floor(Number(
+          cluster?.angelMultiplierDisplay ??
+          cluster?.angelMultiplierApplied ??
+          cluster?.heroAngelMultiplier
+        ));
+        if (Number.isFinite(explicitMultiplier) && explicitMultiplier > 1) {
+          return explicitMultiplier;
+        }
+
+        const heroWildCount = Math.max(0, Math.floor(Number(cluster?.heroWildCount) || 0));
+        const clusterMultiplier = Math.floor(Number(cluster?.multiplier));
+        if (heroWildCount > 0 && Number.isFinite(clusterMultiplier) && clusterMultiplier > 1) {
+          return clusterMultiplier;
+        }
+
+        return null;
+      },
+
+    createClusterAngelMultiplierBadge(pos = null, multiplier = null, blinkHalfMs = 180) {
+        const resolvedMultiplier = Math.max(0, Math.floor(Number(multiplier) || 0));
+        if (!pos || resolvedMultiplier <= 1) {
+          return null;
+        }
+
+        const source = getReelSymbolRenderable(this.reelSprites?.[pos.reel]?.[pos.row]);
+        if (!source || source.destroyed) {
+          return null;
+        }
+
+        const worldMatrix = typeof source.getWorldTransformMatrix === "function"
+          ? source.getWorldTransformMatrix()
+          : null;
+        const fallbackCenter = this.getGridCellCenter(pos.reel, pos.row);
+        const x = worldMatrix && Number.isFinite(Number(worldMatrix.tx))
+          ? Number(worldMatrix.tx)
+          : (Number.isFinite(Number(source?.x)) ? Number(source.x) : fallbackCenter.x);
+        const y = worldMatrix && Number.isFinite(Number(worldMatrix.ty))
+          ? Number(worldMatrix.ty)
+          : (Number.isFinite(Number(source?.y)) ? Number(source.y) : fallbackCenter.y);
+        const depth = Math.max(
+          DEPTH_SYMBOLS + 1.6,
+          (Number(source?.depth) || getBoardSymbolDepth(this.getDisplayObjectSymbolId?.(source))) + 1.4
+        );
+
+        const badge = this.add.text(x, y + 18, `x${resolvedMultiplier}`, {
+          fontSize: "22px",
+          fontFamily: '"Cinzel", "Times New Roman", serif',
+          fontStyle: "bold",
+          color: "#FFF7C2",
+          stroke: "#2F230D",
+          strokeThickness: 5
+        })
+          .setOrigin(0.5)
+          .setDepth(depth)
+          .setAlpha(0);
+        badge.setShadow(0, 2, "#000000", 4, true, true);
+
+        const badgeTween = this.tweens.add({
+          targets: badge,
+          alpha: { from: 0, to: 1 },
+          scale: { from: 0.86, to: 1.04 },
+          duration: Math.max(90, Math.floor(Number(blinkHalfMs) || 180)),
+          ease: "Sine.easeOut",
+          yoyo: true
+        });
+
+        return {
+          badge,
+          cleanup: ({ lingerMs = 0 } = {}) => {
+            if (badgeTween) {
+              badgeTween.stop();
+            }
+            if (!badge || badge.destroyed) {
+              return;
+            }
+            const fadeDuration = Math.max(120, Number(lingerMs) || 0);
+            if (fadeDuration <= 0) {
+              badge.destroy();
+              return;
+            }
+            this.tweens.killTweensOf(badge);
+            this.tweens.add({
+              targets: badge,
+              alpha: 0,
+              y: badge.y - 12,
+              duration: fadeDuration,
+              ease: "Sine.easeOut",
+              onComplete: () => {
+                if (!badge.destroyed) {
+                  badge.destroy();
+                }
+              }
+            });
+          }
+        };
       },
 
     async highlightClusters(clusters, duration = 500, options = {}) {
         const { showWinLabels = true, excludeCellKeys = null, activeWildPositions = null } = options;
         const cellSize = 70;
         const highlights = [];
+        const multiplierBadges = [];
         const winLabels = [];
         const excludedKeys = excludeCellKeys instanceof Set ? excludeCellKeys : new Set();
         const rawDuration = Math.max(1, Math.floor(Number(duration) || 500));
         const blinkHalfMs = Math.max(
-          70,
-          Math.min(130, Math.floor(rawDuration / Math.max(1, WIN_HIGHLIGHT_INTENSITY_BLINKS * 2)))
+          110,
+          Math.min(220, Math.floor(rawDuration * 0.35))
         );
         const resolvedHighlightDuration = Math.max(
           rawDuration,
-          (blinkHalfMs * WIN_HIGHLIGHT_INTENSITY_BLINKS * 2) + 30
+          blinkHalfMs + 30
         );
         const labelExcludedKeys = new Set(excludedKeys);
         (Array.isArray(this.mergeGunAreas) ? this.mergeGunAreas : []).forEach((area) => {
           (Array.isArray(area?.positions) ? area.positions : []).forEach((position) => {
             labelExcludedKeys.add(`${position.reel},${position.row}`);
           });
+        });
+        if (this._winHighlightBoardDimOverlay && !this._winHighlightBoardDimOverlay.destroyed) {
+          this._winHighlightBoardDimOverlay.destroy();
+        }
+        const boardDimOverlay = this.add.rectangle(
+          GRID_OFFSET_X + (clientConfig.area.width * cellSize) / 2,
+          GRID_OFFSET_Y + (clientConfig.area.height * cellSize) / 2,
+          clientConfig.area.width * cellSize,
+          clientConfig.area.height * cellSize,
+          0x04070d,
+          1
+        )
+          .setDepth(DEPTH_SYMBOLS + 0.75)
+          .setAlpha(0);
+        this._winHighlightBoardDimOverlay = boardDimOverlay;
+        this.tweens.add({
+          targets: boardDimOverlay,
+          alpha: 0.4,
+          duration: Math.min(140, blinkHalfMs),
+          ease: "Sine.easeOut"
         });
         
         // Play wins highlight sound
@@ -728,6 +858,7 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
           if (Number(cluster?.heroWildCount || 0) > 0) {
             addHeroWinHighlight();
           }
+          const clusterAngelMultiplier = this.getClusterAngelMultiplierBadgeValue(cluster);
           cluster.positions.forEach(pos => {
             const cellKey = `${pos.reel},${pos.row}`;
             const normalizedSymbol = Math.floor(Number(pos.symbol ?? cluster?.symbol));
@@ -750,9 +881,16 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
               highlightedIntensityKeys.add(highlightKey);
               highlights.push(overlay);
             }
+
+            if (!isHeroWildPosition && clusterAngelMultiplier > 1) {
+              const badge = this.createClusterAngelMultiplierBadge(pos, clusterAngelMultiplier, blinkHalfMs);
+              if (badge) {
+                multiplierBadges.push(badge);
+              }
+            }
           });
         });
-    
+
         await new Promise((resolve) => {
           let settled = false;
           let timerId = null;
@@ -769,13 +907,28 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
             if (this._highlightPhaseCleanup === finish) {
               this._highlightPhaseCleanup = null;
             }
+            if (skipped && boardDimOverlay && !boardDimOverlay.destroyed) {
+              boardDimOverlay.destroy();
+              if (this._winHighlightBoardDimOverlay === boardDimOverlay) {
+                this._winHighlightBoardDimOverlay = null;
+              }
+            }
     
             highlights.forEach((highlight) => {
-              if (highlight && !highlight.destroyed) {
+              if (highlight?.cleanup) {
+                highlight.cleanup();
+              } else if (highlight && !highlight.destroyed) {
                 highlight.destroy();
               }
             });
-    
+            multiplierBadges.forEach((badge) => {
+              if (badge?.cleanup) {
+                badge.cleanup({ lingerMs: 400 });
+              } else if (badge && !badge.destroyed) {
+                badge.destroy();
+              }
+            });
+
             if (skipped) {
               winLabels.forEach((label) => {
                 if (label && !label.destroyed) {
@@ -1110,6 +1263,9 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
     async explodeSymbols(clusters) {
         const cellSize = 70;
         const promises = [];
+        const boardDimOverlay = this._winHighlightBoardDimOverlay && !this._winHighlightBoardDimOverlay.destroyed
+          ? this._winHighlightBoardDimOverlay
+          : null;
         
         // Play wins explode and payout sounds together
         this.playSfx('wins_explode', { volume: 0.5 });
@@ -1234,6 +1390,26 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
         });
     
         await Promise.all(promises);
+
+        if (boardDimOverlay && !boardDimOverlay.destroyed) {
+          await new Promise((resolve) => {
+            this.tweens.add({
+              targets: boardDimOverlay,
+              alpha: 0,
+              duration: 180,
+              ease: "Sine.easeInOut",
+              onComplete: () => {
+                if (boardDimOverlay && !boardDimOverlay.destroyed) {
+                  boardDimOverlay.destroy();
+                }
+                if (this._winHighlightBoardDimOverlay === boardDimOverlay) {
+                  this._winHighlightBoardDimOverlay = null;
+                }
+                resolve();
+              }
+            });
+          });
+        }
       },
 
     async dropExistingSymbols() {

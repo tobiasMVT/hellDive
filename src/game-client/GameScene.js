@@ -195,7 +195,7 @@ const HERO_STAGE_TEXTURE_KEYS = {
   giant2: "tk_stage5",
   giant3: "tk_stage6"
 };
-const WIN_HIGHLIGHT_INTENSITY_BLINKS = 3;
+const WIN_HIGHLIGHT_INTENSITY_BLINKS = 1;
 const WIN_HIGHLIGHT_INTENSITY_TEXTURE_KEYS = {
   1: "1_intensity",
   2: "2_intensity",

@@ -166,6 +166,7 @@ export function createGameSceneLayoutMethods(deps = {}) {
         };
         this.eventBus?.emit("layout:gamescene:mustSeeRect", projectedMustSeeRect);
         this.redrawMustSeeBoundsOverlay();
+        this.applySceneBackgroundLayout?.();
       },
 
     emitRoundStarted() {

@@ -3370,10 +3370,9 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         this.currentHeroTextureKey = HERO_STAGE_TEXTURE_KEYS.base;
         this.heavenHellBonusEntryAngelArrivalPlayed = false;
         this.resetBonusFruitPile();
-        if (!this.isInBonusMode) {
-          this.showMainGameHeroAtCenter?.(this.currentHeroWeapon || "staff");
-        }
-        
+        // Keep the current sprite position here. Main-game spin transition owns the
+        // visual return-to-center so the angel can fly back instead of snapping.
+
         // Clean up ALL banana backplates from current sprites
         if (this.reelSprites) {
           for (let reel = 0; reel < this.reelSprites.length; reel++) {
@@ -4420,11 +4419,15 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         return true;
       },
 
-    showMainGameHeroAtCenter(weapon = "staff") {
+    showMainGameHeroAtCenter(weapon = "staff", options = {}) {
         const heroX = GRID_OFFSET_X + (clientConfig.area.width * 70) / 2;
         const heroY = GRID_OFFSET_Y + (clientConfig.area.height * 70) / 2;
         const heroTexture = getHeroTexture(weapon, { footprintSize: 1, rushActive: false, bonusStage: 0 });
         const heroScale = getHeroScaleForFootprint(1, heroTexture);
+        const animateFromCurrentPosition = options?.animateFromCurrentPosition === true;
+        const moveSpeedPixelsPerSecond = Math.max(180, Number(options?.moveSpeedPixelsPerSecond) || 420);
+        const minimumMoveDurationMs = Math.max(140, Number(options?.minimumMoveDurationMs) || 260);
+        const maximumMoveDurationMs = Math.max(minimumMoveDurationMs, Number(options?.maximumMoveDurationMs) || 900);
 
         this.currentHeroWeapon = weapon;
         this.currentHeroFootprintSize = 1;
@@ -4443,11 +4446,32 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             .setDepth(DEPTH_HERO)
             .setAlpha(1);
         } else {
+          const startX = Number(this.heroSprite.x || heroX);
+          const startY = Number(this.heroSprite.y || heroY);
+          const distanceToCenter = Phaser.Math.Distance.Between(startX, startY, heroX, heroY);
+          const shouldAnimate = animateFromCurrentPosition && distanceToCenter > 6;
           this.tweens.killTweensOf(this.heroSprite);
           this.heroSprite
             .setVisible(true)
-            .setAlpha(1)
-            .setPosition(heroX, heroY);
+            .setAlpha(1);
+
+          if (shouldAnimate) {
+            const moveDuration = Phaser.Math.Clamp(
+              Math.round((distanceToCenter / moveSpeedPixelsPerSecond) * 1000),
+              minimumMoveDurationMs,
+              maximumMoveDurationMs
+            );
+            this.heroSprite.setPosition(startX, startY);
+            this.tweens.add({
+              targets: this.heroSprite,
+              x: heroX,
+              y: heroY,
+              duration: moveDuration,
+              ease: "Sine.easeInOut"
+            });
+          } else {
+            this.heroSprite.setPosition(heroX, heroY);
+          }
         }
 
         this.heroSprite

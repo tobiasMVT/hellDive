@@ -675,6 +675,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
     
         if (immediate || fade === false || !this.add || !this.tweens) {
           this.mainBackground.setTexture(desiredTexture);
+          this.applySceneBackgroundLayout?.({ textureKey: desiredTexture });
           this._hellDiveBackgroundTargetTexture = null;
           return;
         }
@@ -699,6 +700,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           onComplete: () => {
             if (this.mainBackground && !this.mainBackground.destroyed) {
               this.mainBackground.setTexture(desiredTexture);
+              this.applySceneBackgroundLayout?.({ textureKey: desiredTexture });
             }
             if (fadeImage && !fadeImage.destroyed) {
               fadeImage.destroy();

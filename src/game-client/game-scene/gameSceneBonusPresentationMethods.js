@@ -1259,7 +1259,9 @@ export function createGameSceneBonusPresentationMethods(deps = {}) {
           
           this.clearMonkeyWildStrengthBadge();
           this.clearHeroWildActiveBadge();
-          this.showMainGameHeroAtCenter?.(weapon || this.currentHeroWeapon || "staff");
+          this.showMainGameHeroAtCenter?.(weapon || this.currentHeroWeapon || "staff", {
+            animateFromCurrentPosition: true
+          });
           
           // Slide out old symbols - WAIT for them to finish before creating new ones
           await this.slideOutOldSymbols();
@@ -1425,10 +1427,7 @@ export function createGameSceneBonusPresentationMethods(deps = {}) {
         // Note: Bananas are now regular animated sprites, not special sprites
         this.createOrUpdateHouse(this.currentMultiplier || 1);
         this.createOrUpdateHero(reels);
-        if (executedAction === 'spin') {
-          this.showMainGameHeroAtCenter?.(weapon || this.currentHeroWeapon || "staff");
-        }
-        
+
         // Refresh all banana backplates after drop
         this.refreshAllBananaBackplates();
         

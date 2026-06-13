@@ -190,7 +190,7 @@ export function createGameServerMainActionMethods(deps = {}) {
       }
     },
 
-    handleRespinAction(gameState, betSize) {
+    handleRespinAction(gameState, betSize, { heavenHellEnabled } = {}) {
       if (!gameState.reelsBeforeDrop) {
         console.error("❌ SERVER ERROR: reelsBeforeDrop is missing on respin!");
         gameState.reelsBeforeDrop = gameState.reels;
@@ -241,11 +241,14 @@ export function createGameServerMainActionMethods(deps = {}) {
 
       const multiplier = gameState.multiplier || 1;
       const resolveRespinClusterResult = (reels) => {
+        const angelCarryMultiplier = heavenHellEnabled && Number.isFinite(Number(gameState.heroAngelMultiplier))
+          ? Math.max(1, Math.floor(Number(gameState.heroAngelMultiplier) || 1))
+          : 1;
         let clusterResult = this.processClusters(
           reels,
           betSize,
           serverConfig.minClusterSize || 4,
-          multiplier,
+          multiplier * angelCarryMultiplier,
           gameState.bananaMeter?.level,
           this.buildHeroFootprintState(gameState.heroPosition, gameState.heroFootprintSize || 1),
           true
@@ -255,7 +258,7 @@ export function createGameServerMainActionMethods(deps = {}) {
             reels,
             betSize,
             serverConfig.minClusterSize || 4,
-            multiplier,
+            multiplier * angelCarryMultiplier,
             gameState.bananaMeter?.level,
             this.buildHeroFootprintState(gameState.heroPosition, gameState.heroFootprintSize || 1),
             true

@@ -62,6 +62,34 @@ Angel acts as **Wild** on any off-center board cell (not at `heroStartingPositio
 - After killing a demon, angel occupies that cell and remains wild there
 - Angel does not leave the cell after win resolution
 
+## Main-Game Angel Multiplier
+
+Multiplier **ramps inside each demon hunt** — one tier per kill, doubling as the chain continues.
+
+Example starting from 1× carry:
+
+| Kill # in hunt | Applied to that kill's impact wins | Badge after kill | Queued for next kill |
+|----------------|-------------------------------------|------------------|----------------------|
+| 1 | 1× | 1× | 2× |
+| 2 | 2× | 2× | 4× |
+| 3 | 4× | 4× | 8× |
+
+Server: `applyMainGameAngelMultiplierProgression` in `executeDemonHunt`. Each `heroPath` step can carry `angelMultiplier` for client badges.
+
+Two persisted fields after a hunt — do not confuse them:
+
+| Field | Meaning |
+|-------|---------|
+| `heroAngelMultiplier` | **Last applied** tier from the hunt just finished (UI badge). Used for post-hunt respin cluster wins. `null` before any hunt this round. |
+| `heroAngelNextMultiplier` | **Next hunt's opening tier** (doubled after the final kill). Not for respin cluster math. |
+
+Rules:
+
+- Initial spin and pre-hunt respin wins: no angel multiplier (`heroAngelMultiplier` is null → carry `1`).
+- During demon hunt: impact wins use the progressive tier for that kill (see table above).
+- After demon hunt: post-hunt respin cluster wins use `heroAngelMultiplier` (last earned tier), **not** `heroAngelNextMultiplier`.
+- Hunt only runs once the win chain ends (no cluster wins left) and demons remain — see `combat-system`.
+
 ## State Implication
 
 Client and server must agree on Angel position across spins. Presentation in GameScene must reflect authoritative position from server state.

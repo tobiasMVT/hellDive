@@ -30,6 +30,7 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
     SCENE_SKY_TEXTURE_KEY,
     WIN_HIGHLIGHT_INTENSITY_TEXTURE_KEYS,
     clientConfig,
+    gameClientConfig,
     getReelSymbolRenderable,
     parseSpineAtlasFrames
   } = deps;
@@ -431,33 +432,55 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
     
         this.splitSkyBackdropLayers = layers;
         this.splitSkyCloudLayers = cloudLayers;
+        this._backgroundCloudRelativeSpecs = cloudSpecs.map((spec) => ({
+          offsetX: spec.offsetX,
+          offsetY: spec.y - bgAnchorY
+        }));
       },
 
-    initStormSky() {
-        // ========== POSITIONING CONFIG (tweak these!) ==========
-        const SKY_OFFSET_X = 0;           // Horizontal offset for sky
-        const SKY_OFFSET_Y = 0;           // Vertical offset for sky
-        const SKY_SCALE = 1.0;            // Scale multiplier for sky
-        
-        const FOREST_OFFSET_X = 0;        // Horizontal offset for forest
-        const FOREST_OFFSET_Y = -20;      // Vertical offset for forest (positive = down)
-        const FOREST_WIDTH = 620;         // Forest image width
-        const FOREST_HEIGHT = 680;        // Forest image height
-        
-        const EFFECTS_HEIGHT = GRID_OFFSET_Y + 50;  // Storm effects area height
-        // ========================================================
-        
-        const skyHeight = GRID_OFFSET_Y + FOREST_OFFSET_Y + 20;
-        const skyWidth = clientConfig.area.width * 70 + 40;
-        const centerX = GRID_OFFSET_X + skyWidth / 2 - 20;
-        const centerY = skyHeight / 2;
-        const sceneHeight = clientConfig.area.height * 70 + GRID_OFFSET_Y + 80;
-        
-        // === LAYER 0: Single scene background ===
-        const bgTargetWidth = skyWidth * SKY_SCALE;
-        const bgTargetHeight = sceneHeight;
-        const bgBleedFactor = 1.04;
-        const bgTexture = this.textures.get('main_background');
+    getBackgroundLayoutConfig() {
+        const defaults = {
+          offsetX: 0,
+          offsetY: 0,
+          scale: 1,
+          bleedFactor: 1.04,
+          widthPadding: 40,
+          heightPadding: 80,
+          alignY: "top",
+          depth: 0
+        };
+        return {
+          ...defaults,
+          ...(gameClientConfig?.layout?.background || {})
+        };
+      },
+
+    resolveBackgroundMustSeeBounds() {
+        const fallbackBounds = {
+          x: GRID_OFFSET_X,
+          y: 0,
+          width: clientConfig.area.width * 70,
+          height: clientConfig.area.height * 70 + GRID_OFFSET_Y
+        };
+        const configuredBounds = gameClientConfig?.layout?.mustSeeBounds || fallbackBounds;
+        if (this.layoutSnapshot?.mustSeeBounds) {
+          return { ...this.layoutSnapshot.mustSeeBounds };
+        }
+        if (typeof this.getLayoutContentBounds === "function") {
+          return { ...(this.getLayoutContentBounds().mustSeeBounds || configuredBounds) };
+        }
+        return { ...configuredBounds };
+      },
+
+    computeSceneBackgroundLayout(textureKey = "main_background") {
+        const cfg = this.getBackgroundLayoutConfig();
+        const mustSeeBounds = this.resolveBackgroundMustSeeBounds();
+        const centerX = mustSeeBounds.x + mustSeeBounds.width / 2;
+        const centerY = mustSeeBounds.y + mustSeeBounds.height / 2;
+        const bgTargetWidth = (mustSeeBounds.width + Number(cfg.widthPadding || 0)) * cfg.scale;
+        const bgTargetHeight = (mustSeeBounds.height + Number(cfg.heightPadding || 0)) * cfg.scale;
+        const bgBleedFactor = Number(cfg.bleedFactor) || 1.04;
+        const bgTexture = this.textures?.get?.(textureKey);
         const bgSource = bgTexture?.getSourceImage?.();
         const bgSourceWidth = Number(bgSource?.width) || 0;
         const bgSourceHeight = Number(bgSource?.height) || 0;
@@ -467,10 +490,139 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         const bgDisplayWidth = bgDisplayScale
           ? bgSourceWidth * bgDisplayScale
           : bgTargetWidth * bgBleedFactor;
-    
-        // Keep background locked to a fixed anchor so scale/bleed doesn't shift its focus point.
-        const bgAnchorX = centerX - bgTargetWidth / 2 + SKY_OFFSET_X - 300 + 20 + 20 + 20 + 20 - 25;
-        const bgAnchorY = SKY_OFFSET_Y + 52;
+        const bgDisplayHeight = bgDisplayScale
+          ? bgSourceHeight * bgDisplayScale
+          : bgTargetHeight * bgBleedFactor;
+        const bgAnchorX = centerX - bgDisplayWidth / 2 + Number(cfg.offsetX || 0);
+        const alignY = String(cfg.alignY || "top").toLowerCase();
+        const bgAnchorY = alignY === "center"
+          ? centerY - bgDisplayHeight / 2 + Number(cfg.offsetY || 0)
+          : mustSeeBounds.y + Number(cfg.offsetY || 0);
+        const effectsHeight = GRID_OFFSET_Y + 50;
+
+        return {
+          centerX,
+          centerY,
+          bgAnchorX,
+          bgAnchorY,
+          bgTargetWidth,
+          bgTargetHeight,
+          bgDisplayWidth,
+          bgDisplayHeight,
+          bgDisplayScale,
+          bgBleedFactor,
+          effectsHeight,
+          mustSeeBounds,
+          config: cfg
+        };
+      },
+
+    applySceneBackgroundLayout({ textureKey } = {}) {
+        if (!this.mainBackground || this.mainBackground.destroyed) {
+          return null;
+        }
+
+        const resolvedTextureKey = textureKey
+          || this.mainBackground.texture?.key
+          || "main_background";
+        const layout = this.computeSceneBackgroundLayout(resolvedTextureKey);
+        const {
+          centerX,
+          centerY,
+          bgAnchorX,
+          bgAnchorY,
+          bgTargetWidth,
+          bgTargetHeight,
+          bgDisplayWidth,
+          bgDisplayScale,
+          bgBleedFactor,
+          effectsHeight,
+          config
+        } = layout;
+
+        this.mainBackground
+          .setPosition(bgAnchorX, bgAnchorY)
+          .setDepth(Number(config.depth) || 0);
+        if (bgDisplayScale) {
+          this.mainBackground.setScale(bgDisplayScale);
+        } else {
+          this.mainBackground.setDisplaySize(bgTargetWidth * bgBleedFactor, bgTargetHeight * bgBleedFactor);
+        }
+
+        if (this._hellDiveBackgroundFade && !this._hellDiveBackgroundFade.destroyed) {
+          this._hellDiveBackgroundFade
+            .setPosition(bgAnchorX, bgAnchorY)
+            .setScale(this.mainBackground.scaleX || 1, this.mainBackground.scaleY || 1);
+        }
+
+        if (this.behindSkyImage && !this.behindSkyImage.destroyed) {
+          const behindSkyDisplayHeight = this.behindSkyImage.displayHeight || bgTargetHeight;
+          this.behindSkyImage
+            .setPosition(bgAnchorX, bgAnchorY)
+            .setDisplaySize(bgDisplayWidth, behindSkyDisplayHeight);
+        }
+        if (this.skyGapFill && !this.skyGapFill.destroyed) {
+          this.skyGapFill
+            .setPosition(bgAnchorX + bgDisplayWidth / 2, bgAnchorY + (this.skyGapFill.displayHeight || bgTargetHeight) / 2)
+            .setSize(bgDisplayWidth, this.skyGapFill.displayHeight || bgTargetHeight);
+        }
+        if (this.skyImage && !this.skyImage.destroyed && this.skyImage !== this.mainBackground) {
+          this.skyImage
+            .setPosition(bgAnchorX, bgAnchorY)
+            .setDisplaySize(bgDisplayWidth, this.skyImage.displayHeight || bgTargetHeight);
+        }
+
+        this.splitSkyBackdropBounds = {
+          x: bgAnchorX,
+          y: bgAnchorY,
+          width: bgDisplayWidth,
+          height: Math.max(
+            this.splitSkyBackdropBounds?.height || 0,
+            this.skyImage?.displayHeight || bgTargetHeight
+          )
+        };
+
+        if (Array.isArray(this.splitSkyCloudLayers) && Array.isArray(this._backgroundCloudRelativeSpecs)) {
+          this.splitSkyCloudLayers.forEach((cloud, index) => {
+            const spec = this._backgroundCloudRelativeSpecs[index];
+            if (!cloud || cloud.destroyed || !spec) return;
+            cloud.setPosition(centerX + spec.offsetX, bgAnchorY + spec.offsetY);
+          });
+        }
+
+        const skyFxBounds = this.splitSkyBackdropBounds;
+        const skyFxCenterX = skyFxBounds.x + skyFxBounds.width / 2;
+        const skyFxCenterY = skyFxBounds.y + skyFxBounds.height / 2;
+        if (this.skyBg && !this.skyBg.destroyed) {
+          this.skyBg.setPosition(skyFxCenterX, skyFxCenterY).setSize(skyFxBounds.width, effectsHeight);
+        }
+        if (this.skyGlow && !this.skyGlow.destroyed) {
+          this.skyGlow.setPosition(skyFxCenterX, skyFxCenterY).setSize(skyFxBounds.width, effectsHeight);
+        }
+        if (this.bonusSilhouette && !this.bonusSilhouette.destroyed) {
+          this.bonusSilhouette.setPosition(centerX, centerY);
+        }
+
+        this.sceneBackgroundLayout = layout;
+        return layout;
+      },
+
+    initStormSky() {
+        const layout = this.computeSceneBackgroundLayout("main_background");
+        const {
+          centerX,
+          centerY,
+          bgAnchorX,
+          bgAnchorY,
+          bgTargetWidth,
+          bgTargetHeight,
+          bgDisplayWidth,
+          bgDisplayScale,
+          bgBleedFactor,
+          effectsHeight,
+          config
+        } = layout;
+
         this.createSplitSkyBackdrop({
           centerX,
           bgAnchorX,
@@ -478,47 +630,46 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
           bgTargetWidth,
           bgTargetHeight,
           bgBleedFactor,
-          effectsHeight: EFFECTS_HEIGHT,
+          effectsHeight,
           bgDisplayWidth
         });
-    
+
         this.mainBackground = this.add.image(
           bgAnchorX,
           bgAnchorY,
-          'main_background'
+          "main_background"
         )
           .setOrigin(0, 0)
-          .setDepth(0);
-    
+          .setDepth(Number(config.depth) || 0);
+
         if (bgDisplayScale) {
           this.mainBackground.setScale(bgDisplayScale);
         } else {
-          // Fallback if texture metadata is unavailable at runtime.
           this.mainBackground.setDisplaySize(bgTargetWidth * bgBleedFactor, bgTargetHeight * bgBleedFactor);
         }
         if (!this.skyImage || this.skyImage.destroyed) {
           this.skyImage = this.mainBackground;
         }
-        
+
         const skyFxBounds = this.splitSkyBackdropBounds || {
-          x: centerX - skyWidth / 2,
-          y: centerY - EFFECTS_HEIGHT / 2,
-          width: skyWidth,
-          height: EFFECTS_HEIGHT
+          x: bgAnchorX,
+          y: bgAnchorY,
+          width: bgDisplayWidth,
+          height: effectsHeight
         };
         const skyFxCenterX = skyFxBounds.x + skyFxBounds.width / 2;
         const skyFxCenterY = skyFxBounds.y + skyFxBounds.height / 2;
     
         // === Split-sky darkening overlay (behind land, over sky/clouds) ===
-        this.skyBg = this.add.rectangle(skyFxCenterX, skyFxCenterY, skyFxBounds.width, skyFxBounds.height, 0x0a0a15)
+        this.skyBg = this.add.rectangle(skyFxCenterX, skyFxCenterY, skyFxBounds.width, effectsHeight, 0x0a0a15)
           .setDepth(-2.15)
           .setAlpha(0); // Starts clear, darkens with storm
-        
+
         // === Split-sky lightning glow layer (behind land, over sky/clouds) ===
-        this.skyGlow = this.add.rectangle(skyFxCenterX, skyFxCenterY, skyFxBounds.width, skyFxBounds.height, 0x4488FF)
+        this.skyGlow = this.add.rectangle(skyFxCenterX, skyFxCenterY, skyFxBounds.width, effectsHeight, 0x4488FF)
           .setDepth(-2.05)
           .setAlpha(0); // Hidden until lightning
-        
+
         // === BONUS silhouette (behind clouds during storm tease, in front when won) ===
         this.bonusSilhouette = this.add.image(centerX, centerY, 'bonus_silhouette')
           .setDepth(2.3) // Behind mist/clouds initially
@@ -548,6 +699,8 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
           callbackScope: this,
           loop: true
         });
+
+        this.sceneBackgroundLayout = layout;
       },
 
     startMistDriftAnimations(centerX) {
