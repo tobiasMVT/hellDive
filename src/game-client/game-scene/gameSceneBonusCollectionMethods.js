@@ -3025,6 +3025,7 @@ export function createGameSceneBonusCollectionMethods(deps = {}) {
         // The in-game yellow count-up stays hidden throughout bonus and only returns
         // when the final collect payout/count-up sequence begins.
         this.isInBonusMode = false;
+        this.setMainGamePortalVisible?.(true);
         this.suppressCountUpUntilBonusEndPayout = false;
         this.updateCountUp(baseTwa);
         this.bonusFruitPileTooltipVisible = false;

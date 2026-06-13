@@ -153,6 +153,7 @@ export function createGameSceneBonusPresentationMethods(deps = {}) {
 
     startBonusMode() {
         this.isInBonusMode = true;
+        this.setMainGamePortalVisible?.(false);
         if (typeof this.resetHeavenHellSoulPortalState === "function") {
           this.resetHeavenHellSoulPortalState();
         }

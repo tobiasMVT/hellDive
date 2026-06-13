@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "gifuct-js": "^2.1.2",
     "phaser": "^3.90.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0"

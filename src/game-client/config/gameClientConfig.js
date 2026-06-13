@@ -2,11 +2,11 @@
   gameName: "Thunderkong",
 
   layout: {
-    mustSeeBounds: { x: 15, y: 0, width: 575, height: 711 },
+    mustSeeBounds: { x: 15, y: 50, width: 575, height: 683 },
     // Scene background (heaven_city / hell bonus floor) — centered on mustSeeBounds.
     background: {
       offsetX: 0,
-      offsetY: -560,
+      offsetY: -500,
       scale: 1.5,
       bleedFactor: 1.04,
       widthPadding: 40,
@@ -21,7 +21,7 @@
       // Minimum bottom reserve (px) in landscape when controls move to right rail.
       // Lower = more game area height, higher = more space for bottom UI strip.
       landscapeMinBottomPx: 48,
-      // Minimum reserved right-side rail width (px) for spin/bet/autoplay stack.
+      // Minimum reserved right-side rail width (px) for spin/bet/autoplay stack. 
       // Lower = rail can appear on tighter screens, higher = more comfortable rail spacing.
       landscapeMinRightPx: 150,
       // Estimated combined height of the persistent bottom mini bars (sec/reg strip), in px.
@@ -40,6 +40,37 @@
       rightRailScaleMin: 0.85,
       // Upper clamp for right-rail control scale (relative to base button sizes).
       rightRailScaleMax: 1.5
+    },
+    // Main-game portal GIF at the soul-portal spot (replaces red dot when enabled).
+    mainGamePortal: {
+      enabled: true,
+      replaceDot: true,
+      anchor: {
+        reel: -1,
+        rowA: 5,
+        rowB: 6,
+        offsetX: -245,
+        offsetY: 15,
+      },
+      dot: {
+        offsetX: 0,
+        offsetY: 0,
+        radius: 8,
+      },
+      portal: {
+        offsetX: 0,
+        offsetY: 0,
+        scale: 0.2,
+        displaySize: 2080,
+        alpha: 1,
+        depth: 3 ,
+      },
+      mask: {
+        enabled: true,
+        radius: 90,
+        edgeSoftness: 1,
+        innerHold: 100,
+      },
     },
   },
 

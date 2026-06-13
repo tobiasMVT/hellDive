@@ -603,6 +603,8 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
           this.bonusSilhouette.setPosition(centerX, centerY);
         }
 
+        this.layoutMainGamePortalBackground?.();
+
         this.sceneBackgroundLayout = layout;
         return layout;
       },
@@ -1163,6 +1165,7 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         this.load.image('main_background', 'assets/helldive/backgrounds/heaven_city.png');
         this.load.image('helldive_heaven_bg', 'assets/helldive/backgrounds/heaven_city.png');
         this.load.image('helldive_hell_bonus_bg', 'assets/helldive/backgrounds/hell_bonus_floor.png');
+        this.load.image('helldive_main_portal_bg', 'assets/helldive/backgrounds/portal.gif');
         this.load.image('helldive_hell_wave_tile', 'assets/helldive/effects/hell_wave_tile.png');
         this.load.image('helldive_divine_wave_tile', 'assets/helldive/effects/divine_wave_tile.png');
         this.load.image('helldive_divine_ground', 'assets/helldive/effects/divine_ground.png');
@@ -1370,6 +1373,7 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         this.destroySoundVolumeTool();
         this.uninstallHeroPreviewConsoleCommands();
         this.cleanupSymbolBackdrops();
+        this.destroyMainGamePortalBackground?.();
       });
     
     
@@ -1417,6 +1421,7 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         
         // Initialize Thor's Storm Sky
         this.initStormSky();
+        this.ensureMainGamePortalBackground?.();
         
         this.createOrUpdateHouse(this.currentMultiplier)
         
