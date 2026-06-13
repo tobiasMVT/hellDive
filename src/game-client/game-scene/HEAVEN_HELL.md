@@ -41,12 +41,20 @@ Tuned via `gameClientConfig.layout.mainGamePortal`:
 | `anchor.reel/rowA/rowB/offsetX/offsetY` | Shared grid anchor for portal + soul FX |
 | `dot.offsetX/Y`, `dot.radius` | Portal anchor fine-tune (red dot only when `replaceDot: false`) |
 | `portal.offsetX/Y`, `portal.scale`, `portal.alpha`, `portal.depth` | Extra nudge, base size, opacity, draw order |
-| `mask.enabled` | Set `true` for circular soft clip; `false` shows full GIF while tuning |
-| `mask.radius` | Circular clip outer radius (px) |
-| `mask.edgeSoftness` | 0–1 fade band width at mask edge |
-| `mask.innerHold` | 0–1 solid opaque center fraction before fade |
+| `zoomFocus.reelA/reelB/rowA/rowB/offsetX/offsetY` | Separate camera zoom target when portal art and zoom sweet-spot differ |
+| `source` | `"gif"` or `"redPng"` — swap portal art without code changes |
+| `mask.growth.startRadius/startInnerHold` | Mask size at 0 kills |
+| `mask.growth.endRadius/endInnerHold` | Mask size at max kills (75) |
+| `mask.bonusEntry.radius/durationMs/cameraZoom` | Hell-dive zoom on bonus trigger |
 
 Hidden during bonus (`isInBonusMode`). Animated with `gifuct-js` frame decoding into a Phaser canvas texture.
+
+Bonus entry timing:
+
+- let the main-game resolve finish before the entry beats start
+- show `HELLDIVE...` first while the portal grows to full size
+- when the portal is open, fly the Angel into it
+- after the Angel vanishes, keep the current camera framing and ease it into the portal anchor dot over a longer zoom, then swap to the Hell background behind that whiteout
 
 ## Boundary
 

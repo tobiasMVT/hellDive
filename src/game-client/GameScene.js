@@ -16,7 +16,14 @@ import { createGameSceneHeroEffectsMethods } from "./game-scene/gameSceneHeroEff
 import { createGameSceneHeroCombatMethods } from "./game-scene/gameSceneHeroCombatMethods";
 import { createGameSceneBonusPresentationMethods } from "./game-scene/gameSceneBonusPresentationMethods";
 import { createGameSceneBoardFlowMethods } from "./game-scene/gameSceneBoardFlowMethods";
-import { decompressFrames, parseGIF } from "gifuct-js";
+import {
+  createGameSceneMainPortalMethods,
+  MAIN_GAME_PORTAL_CANVAS_KEY as MAIN_GAME_PORTAL_CANVAS_TEXTURE_KEY,
+  MAIN_GAME_PORTAL_MASK_KEY as MAIN_GAME_PORTAL_MASK_TEXTURE_KEY,
+  RED_PORTAL_FRAME_COUNT,
+  getRedPortalFrameKey,
+  getRedPortalFramePath,
+} from "./game-scene/gameSceneMainPortalMethods";
 
 // PAUSE 
 const EPS = 0.001;   // ~1000× slower
@@ -1182,426 +1189,28 @@ Object.assign(GameScene.prototype, createGameSceneHeroCombatMethods(gameSceneExt
 Object.assign(GameScene.prototype, createGameSceneBonusPresentationMethods(gameSceneExtractedDeps));
 Object.assign(GameScene.prototype, createGameSceneBoardFlowMethods(gameSceneExtractedDeps));
 
+const mainGamePortalDeps = {
+  ...gameSceneExtractedDeps,
+  Phaser,
+  GRID_OFFSET_X,
+  GRID_OFFSET_Y,
+  SOUL_PORTAL_DEPTH: DEPTH_HOUSE + 3,
+  SOUL_PORTAL_BASE_RADIUS: 8,
+  SOUL_PORTAL_KILLS_FOR_MAX_SIZE: 75,
+  SOUL_PORTAL_MAX_SCALE: 4,
+  MAIN_GAME_PORTAL_PRELOAD_KEY: "helldive_main_portal_bg",
+  MAIN_GAME_PORTAL_CANVAS_KEY: MAIN_GAME_PORTAL_CANVAS_TEXTURE_KEY,
+  MAIN_GAME_PORTAL_MASK_KEY: MAIN_GAME_PORTAL_MASK_TEXTURE_KEY,
+};
+Object.assign(GameScene.prototype, createGameSceneMainPortalMethods(mainGamePortalDeps));
+
 const originalHeavenHellDemonDeathFx = GameScene.prototype.playHeavenHellDemonDeathFx;
 const SOUL_PORTAL_DEPTH = DEPTH_HOUSE + 3;
 const SOUL_PORTAL_BASE_RADIUS = 8;
-const SOUL_PORTAL_KILLS_FOR_MAX_SIZE = 100;
+const SOUL_PORTAL_KILLS_FOR_MAX_SIZE = 75;
 const SOUL_PORTAL_MAX_SCALE = 4;
-const MAIN_GAME_PORTAL_PRELOAD_KEY = "helldive_main_portal_bg";
-const MAIN_GAME_PORTAL_CANVAS_KEY = "helldive_main_portal_canvas";
-const MAIN_GAME_PORTAL_MASK_KEY = "helldive_main_portal_mask";
 
 Object.assign(GameScene.prototype, {
-  getMainGamePortalConfig() {
-    const defaults = {
-      enabled: true,
-      replaceDot: true,
-      anchor: { reel: -1, rowA: 5, rowB: 6, offsetX: 40, offsetY: 15 },
-      dot: { offsetX: 0, offsetY: 0, radius: SOUL_PORTAL_BASE_RADIUS },
-      portal: { offsetX: 0, offsetY: 0, scale: 1, displaySize: 540, alpha: 1, depth: SOUL_PORTAL_DEPTH },
-      mask: { enabled: false, radius: 90, edgeSoftness: 0.35, innerHold: 0.55 },
-    };
-    const configured = gameClientConfig?.layout?.mainGamePortal || {};
-    return {
-      ...defaults,
-      ...configured,
-      anchor: { ...defaults.anchor, ...(configured.anchor || {}) },
-      dot: { ...defaults.dot, ...(configured.dot || {}) },
-      portal: { ...defaults.portal, ...(configured.portal || {}) },
-      mask: { ...defaults.mask, ...(configured.mask || {}) },
-    };
-  },
-
-  resolveMainGamePortalAnchor() {
-    const anchor = this.getMainGamePortalConfig().anchor || {};
-    const reelIndex = Number(anchor.reel);
-    const resolvedReel = reelIndex < 0
-      ? Math.max(0, clientConfig.area.width - 1)
-      : Math.max(0, Math.min(clientConfig.area.width - 1, reelIndex));
-    const rowA = Math.max(0, Math.min(clientConfig.area.height - 1, Number(anchor.rowA ?? 5)));
-    const rowB = Math.max(0, Math.min(clientConfig.area.height - 1, Number(anchor.rowB ?? 6)));
-    const cellA = this.getGridCellCenter(resolvedReel, rowA);
-    const cellB = this.getGridCellCenter(resolvedReel, rowB);
-    return {
-      x: cellA.x + Number(anchor.offsetX || 0),
-      y: ((cellA.y + cellB.y) * 0.5) + Number(anchor.offsetY || 0),
-    };
-  },
-
-  getHeavenHellBonusEntryPortalPosition() {
-    return this.resolveMainGamePortalAnchor();
-  },
-
-  getHeavenHellPortalSoulFlashPosition() {
-    const anchor = this.resolveMainGamePortalAnchor?.();
-    if (!anchor) {
-      return {
-        x: GRID_OFFSET_X + (clientConfig.area.width * 70),
-        y: GRID_OFFSET_Y + (clientConfig.area.height * 70 * 0.5),
-      };
-    }
-    const dot = this.getMainGamePortalConfig().dot || {};
-    return {
-      x: anchor.x + Number(dot.offsetX || 0),
-      y: anchor.y + Number(dot.offsetY || 0),
-    };
-  },
-
-  shouldMainGamePortalReplaceDot() {
-    const cfg = this.getMainGamePortalConfig();
-    return cfg.enabled === true && cfg.replaceDot !== false;
-  },
-
-  isMainGamePortalMaskEnabled() {
-    return this.getMainGamePortalConfig().mask?.enabled === true;
-  },
-
-  getMainGamePortalBaseScale() {
-    const portalCfg = this.getMainGamePortalConfig().portal || {};
-    return Number(portalCfg.scale) || 1;
-  },
-
-  getMainGamePortalDisplaySizePx(killCount = this.getHeavenHellSoulPortalKillCount()) {
-    const portalCfg = this.getMainGamePortalConfig().portal || {};
-    const basePx = Number(portalCfg.displaySize) || 540;
-    return basePx * this.getMainGamePortalBaseScale() * this.getHeavenHellSoulPortalMarkerScale(killCount);
-  },
-
-  getMainGamePortalScaledSize(killCount = this.getHeavenHellSoulPortalKillCount()) {
-    return this.getMainGamePortalDisplaySizePx(killCount);
-  },
-
-  getMainGamePortalGifUrl() {
-    return "assets/helldive/backgrounds/portal.gif";
-  },
-
-  applyMainGamePortalSpriteLayout(sprite, killCount = this.getHeavenHellSoulPortalKillCount()) {
-    if (!sprite || sprite.destroyed) return;
-    const cfg = this.getMainGamePortalConfig();
-    const portalCfg = cfg.portal || {};
-    const pos = this.getMainGamePortalDisplayPosition();
-    const sizePx = this.getMainGamePortalDisplaySizePx(killCount);
-
-    sprite
-      .setPosition(pos.x, pos.y)
-      .setDisplaySize(sizePx, sizePx)
-      .setAlpha(Number(portalCfg.alpha ?? 1))
-      .setDepth(Number(portalCfg.depth) || SOUL_PORTAL_DEPTH);
-  },
-
-  getMainGamePortalDisplayPosition() {
-    const dotPos = this.getHeavenHellPortalSoulFlashPosition();
-    const portal = this.getMainGamePortalConfig().portal || {};
-    return {
-      x: dotPos.x + Number(portal.offsetX || 0),
-      y: dotPos.y + Number(portal.offsetY || 0),
-    };
-  },
-
-  clearMainGamePortalMask() {
-    if (this._mainGamePortalSprite && !this._mainGamePortalSprite.destroyed) {
-      this._mainGamePortalSprite.clearMask();
-    }
-    if (this._mainGamePortalBitmapMask) {
-      this._mainGamePortalBitmapMask.destroy();
-      this._mainGamePortalBitmapMask = null;
-    }
-    if (this._mainGamePortalMaskSprite && !this._mainGamePortalMaskSprite.destroyed) {
-      this._mainGamePortalMaskSprite.destroy();
-    }
-    this._mainGamePortalMaskSprite = null;
-  },
-
-  applyMainGamePortalMask() {
-    if (!this.isMainGamePortalMaskEnabled()) {
-      this.clearMainGamePortalMask();
-      return;
-    }
-
-    this.ensureMainGamePortalMaskTexture();
-
-    if (!this._mainGamePortalMaskSprite || this._mainGamePortalMaskSprite.destroyed) {
-      this._mainGamePortalMaskSprite = this.add.image(0, 0, MAIN_GAME_PORTAL_MASK_KEY)
-        .setOrigin(0.5)
-        .setVisible(false);
-    }
-
-    if (this._mainGamePortalBitmapMask) {
-      this._mainGamePortalBitmapMask.destroy();
-    }
-    this._mainGamePortalBitmapMask = this._mainGamePortalMaskSprite.createBitmapMask();
-
-    if (this._mainGamePortalSprite && !this._mainGamePortalSprite.destroyed) {
-      this._mainGamePortalSprite.setMask(this._mainGamePortalBitmapMask);
-    }
-  },
-
-  ensureMainGamePortalMaskTexture() {
-    const maskCfg = this.getMainGamePortalConfig().mask || {};
-    const radius = Math.max(8, Number(maskCfg.radius) || 90);
-    const edgeSoftness = Phaser.Math.Clamp(Number(maskCfg.edgeSoftness ?? 0.35), 0.05, 1);
-    const innerHold = Phaser.Math.Clamp(Number(maskCfg.innerHold ?? 0.55), 0, 0.95);
-    const signature = `${radius}|${edgeSoftness}|${innerHold}`;
-    if (this._mainGamePortalMaskSignature === signature && this.textures?.exists?.(MAIN_GAME_PORTAL_MASK_KEY)) {
-      return;
-    }
-    this._mainGamePortalMaskSignature = signature;
-
-    if (this.textures?.exists?.(MAIN_GAME_PORTAL_MASK_KEY)) {
-      this.textures.remove(MAIN_GAME_PORTAL_MASK_KEY);
-    }
-
-    const size = Math.ceil(radius * 2);
-    const canvasTex = this.textures.createCanvas(MAIN_GAME_PORTAL_MASK_KEY, size, size);
-    const ctx = canvasTex.getContext();
-    const cx = size / 2;
-    const grad = ctx.createRadialGradient(cx, cx, 0, cx, cx, radius);
-    grad.addColorStop(0, "rgba(255,255,255,1)");
-    grad.addColorStop(innerHold, "rgba(255,255,255,1)");
-    const fadeEnd = Math.min(1, innerHold + edgeSoftness * (1 - innerHold));
-    grad.addColorStop(fadeEnd, "rgba(255,255,255,0)");
-    grad.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, size, size);
-    canvasTex.refresh();
-
-    if (this._mainGamePortalMaskSprite && !this._mainGamePortalMaskSprite.destroyed) {
-      this._mainGamePortalMaskSprite.setTexture(MAIN_GAME_PORTAL_MASK_KEY);
-    }
-  },
-
-  loadMainGamePortalGifFrames() {
-    if (this._mainGamePortalGifFrames?.length) {
-      return Promise.resolve(this._mainGamePortalGifFrames);
-    }
-    if (this._mainGamePortalGifLoadPromise) {
-      return this._mainGamePortalGifLoadPromise;
-    }
-
-    this._mainGamePortalGifLoadPromise = fetch(this.getMainGamePortalGifUrl())
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Portal GIF fetch failed: ${response.status}`);
-        }
-        return response.arrayBuffer();
-      })
-      .then((buffer) => {
-        const parsed = parseGIF(buffer);
-        const frames = decompressFrames(parsed, true);
-        this._mainGamePortalGifWidth = Number(parsed?.lsd?.width) || 540;
-        this._mainGamePortalGifHeight = Number(parsed?.lsd?.height) || 540;
-        this._mainGamePortalGifFrames = frames;
-        this._mainGamePortalFrameIndex = 0;
-        this._mainGamePortalFrameElapsed = 0;
-        return frames;
-      })
-      .catch((error) => {
-        console.warn("[MainGamePortal] GIF decode failed", error);
-        this._mainGamePortalGifFrames = null;
-        return null;
-      })
-      .finally(() => {
-        this._mainGamePortalGifLoadPromise = null;
-      });
-
-    return this._mainGamePortalGifLoadPromise;
-  },
-
-  ensureMainGamePortalPatchCanvas(width, height) {
-    if (!this._mainGamePortalPatchCanvas) {
-      this._mainGamePortalPatchCanvas = document.createElement("canvas");
-      this._mainGamePortalPatchCtx = this._mainGamePortalPatchCanvas.getContext("2d");
-      this._mainGamePortalPatchImageData = null;
-    }
-    if (this._mainGamePortalPatchCanvas.width !== width || this._mainGamePortalPatchCanvas.height !== height) {
-      this._mainGamePortalPatchCanvas.width = width;
-      this._mainGamePortalPatchCanvas.height = height;
-      this._mainGamePortalPatchImageData = null;
-    }
-  },
-
-  paintMainGamePortalGifFrame(frameIndex = 0) {
-    const frames = this._mainGamePortalGifFrames;
-    if (!frames?.length || !this.textures?.exists?.(MAIN_GAME_PORTAL_CANVAS_KEY)) {
-      return;
-    }
-
-    const frame = frames[frameIndex];
-    if (!frame?.patch || !frame?.dims) return;
-
-    const dims = frame.dims;
-    this.ensureMainGamePortalPatchCanvas(dims.width, dims.height);
-    const patchCtx = this._mainGamePortalPatchCtx;
-    if (
-      !this._mainGamePortalPatchImageData
-      || this._mainGamePortalPatchImageData.width !== dims.width
-      || this._mainGamePortalPatchImageData.height !== dims.height
-    ) {
-      this._mainGamePortalPatchImageData = patchCtx.createImageData(dims.width, dims.height);
-    }
-    this._mainGamePortalPatchImageData.data.set(frame.patch);
-    patchCtx.putImageData(this._mainGamePortalPatchImageData, 0, 0);
-
-    const tex = this.textures.get(MAIN_GAME_PORTAL_CANVAS_KEY);
-    const gifCtx = tex.getContext();
-    gifCtx.drawImage(this._mainGamePortalPatchCanvas, dims.left, dims.top);
-    tex.refresh();
-  },
-
-  beginMainGamePortalCanvasAnimation(frames) {
-    if (!frames?.length || !this._mainGamePortalSprite || this._mainGamePortalSprite.destroyed) {
-      return;
-    }
-
-    const width = this._mainGamePortalGifWidth || frames[0]?.dims?.width || 540;
-    const height = this._mainGamePortalGifHeight || frames[0]?.dims?.height || 540;
-
-    if (!this.textures.exists(MAIN_GAME_PORTAL_CANVAS_KEY)) {
-      this.textures.createCanvas(MAIN_GAME_PORTAL_CANVAS_KEY, width, height);
-    }
-
-    this._mainGamePortalAnimationReady = true;
-    this._mainGamePortalFrameIndex = 0;
-    this._mainGamePortalFrameElapsed = 0;
-    this._mainGamePortalSprite.setTexture(MAIN_GAME_PORTAL_CANVAS_KEY);
-
-    const gifCtx = this.textures.get(MAIN_GAME_PORTAL_CANVAS_KEY).getContext();
-    gifCtx.clearRect(0, 0, width, height);
-    this.paintMainGamePortalGifFrame(0);
-
-    if (!this._mainGamePortalUpdateHandler) {
-      this._mainGamePortalUpdateHandler = (_time, delta) => this.updateMainGamePortalCanvasFrame(_time, delta);
-      this.events.on("postupdate", this._mainGamePortalUpdateHandler);
-    }
-
-    this.applyMainGamePortalSpriteLayout(this._mainGamePortalSprite);
-  },
-
-  updateMainGamePortalCanvasFrame(_time, delta = 16) {
-    if (this._mainGamePortalPaused || !this._mainGamePortalGifFrames?.length) {
-      return;
-    }
-    if (!this.textures?.exists?.(MAIN_GAME_PORTAL_CANVAS_KEY)) {
-      return;
-    }
-
-    const frames = this._mainGamePortalGifFrames;
-    const currentFrame = frames[this._mainGamePortalFrameIndex];
-    const frameDelay = Math.max(16, Number(currentFrame?.delay) || 100);
-    this._mainGamePortalFrameElapsed += Number(delta) || 16;
-
-    if (this._mainGamePortalFrameElapsed < frameDelay) {
-      return;
-    }
-
-    this._mainGamePortalFrameElapsed = 0;
-    const nextIndex = (this._mainGamePortalFrameIndex + 1) % frames.length;
-    const nextFrame = frames[nextIndex];
-    const tex = this.textures.get(MAIN_GAME_PORTAL_CANVAS_KEY);
-    const gifCtx = tex.getContext();
-    const dims = nextFrame?.dims;
-    const isFullFrame = dims
-      && dims.left === 0
-      && dims.top === 0
-      && dims.width === tex.width
-      && dims.height === tex.height;
-
-    if (Number(nextFrame?.disposalType) === 2 || isFullFrame) {
-      gifCtx.clearRect(0, 0, tex.width, tex.height);
-    }
-
-    this._mainGamePortalFrameIndex = nextIndex;
-    this.paintMainGamePortalGifFrame(nextIndex);
-  },
-
-  layoutMainGamePortalBackground() {
-    const cfg = this.getMainGamePortalConfig();
-    if (!cfg.enabled) return;
-
-    this.applyMainGamePortalMask();
-
-    const pos = this.getMainGamePortalDisplayPosition();
-
-    if (this._mainGamePortalSprite && !this._mainGamePortalSprite.destroyed) {
-      this.applyMainGamePortalSpriteLayout(this._mainGamePortalSprite);
-    }
-
-    if (this._mainGamePortalMaskSprite && !this._mainGamePortalMaskSprite.destroyed) {
-      this._mainGamePortalMaskSprite.setPosition(pos.x, pos.y);
-    }
-  },
-
-  setMainGamePortalVisible(visible) {
-    const cfg = this.getMainGamePortalConfig();
-    const shouldShow = visible === true && cfg.enabled === true && this.isInBonusMode !== true;
-    this._mainGamePortalPaused = !shouldShow;
-
-    if (this._mainGamePortalSprite && !this._mainGamePortalSprite.destroyed) {
-      this._mainGamePortalSprite.setVisible(shouldShow);
-    }
-  },
-
-  destroyMainGamePortalBackground() {
-    if (this._mainGamePortalUpdateHandler) {
-      this.events.off("postupdate", this._mainGamePortalUpdateHandler);
-      this._mainGamePortalUpdateHandler = null;
-    }
-    this.clearMainGamePortalMask();
-    if (this._mainGamePortalSprite && !this._mainGamePortalSprite.destroyed) {
-      this._mainGamePortalSprite.destroy();
-    }
-    this._mainGamePortalSprite = null;
-    this._mainGamePortalGifFrames = null;
-    this._mainGamePortalGifLoadPromise = null;
-    this._mainGamePortalPatchCanvas = null;
-    this._mainGamePortalPatchCtx = null;
-    this._mainGamePortalPatchImageData = null;
-    this._mainGamePortalFrameIndex = 0;
-    this._mainGamePortalFrameElapsed = 0;
-    this._mainGamePortalAnimationReady = false;
-    this._mainGamePortalPaused = true;
-    this._mainGamePortalMaskSignature = null;
-    if (this.textures?.exists?.(MAIN_GAME_PORTAL_CANVAS_KEY)) {
-      this.textures.remove(MAIN_GAME_PORTAL_CANVAS_KEY);
-    }
-    if (this.textures?.exists?.(MAIN_GAME_PORTAL_MASK_KEY)) {
-      this.textures.remove(MAIN_GAME_PORTAL_MASK_KEY);
-    }
-  },
-
-  startMainGamePortalAnimation() {
-    if (this._mainGamePortalAnimationReady || this._mainGamePortalGifLoading) {
-      return;
-    }
-
-    this._mainGamePortalGifLoading = true;
-    this.loadMainGamePortalGifFrames()
-      .then((frames) => {
-        this._mainGamePortalGifLoading = false;
-        this.beginMainGamePortalCanvasAnimation(frames);
-      })
-      .catch(() => {
-        this._mainGamePortalGifLoading = false;
-      });
-  },
-
-  ensureMainGamePortalBackground() {
-    const cfg = this.getMainGamePortalConfig();
-    if (!cfg.enabled || !this.add || !this.textures) return null;
-    if (!this.textures.exists(MAIN_GAME_PORTAL_PRELOAD_KEY)) return null;
-
-    if (!this._mainGamePortalSprite || this._mainGamePortalSprite.destroyed) {
-      this._mainGamePortalSprite = this.add.image(0, 0, MAIN_GAME_PORTAL_PRELOAD_KEY)
-        .setOrigin(0.5)
-        .setDepth(Number(cfg.portal?.depth) || SOUL_PORTAL_DEPTH);
-    }
-
-    this.startMainGamePortalAnimation();
-    this.layoutMainGamePortalBackground();
-    this.setMainGamePortalVisible(this.isInBonusMode !== true);
-    return this._mainGamePortalSprite;
-  },
-
   shouldPlayHeavenHellSoulCollectionFx(gameState = null) {
     if (this.isInBonusMode === true) return false;
 
@@ -1682,17 +1291,7 @@ Object.assign(GameScene.prototype, {
   updateHeavenHellSoulPortalMarkerScale(killCount = this.getHeavenHellSoulPortalKillCount()) {
     if (this.shouldMainGamePortalReplaceDot()) {
       this.ensureMainGamePortalBackground();
-      const sprite = this._mainGamePortalSprite;
-      if (!sprite || sprite.destroyed) return;
-      const targetSize = this.getMainGamePortalDisplaySizePx(killCount);
-      this.tweens.killTweensOf(sprite);
-      this.tweens.add({
-        targets: sprite,
-        displayWidth: targetSize,
-        displayHeight: targetSize,
-        duration: 200,
-        ease: "Sine.easeOut"
-      });
+      void this.tweenMainGamePortalMaskLayout(killCount);
       return;
     }
 
@@ -1711,18 +1310,9 @@ Object.assign(GameScene.prototype, {
 
   pulseHeavenHellSoulPortalMarker() {
     if (this.shouldMainGamePortalReplaceDot()) {
-      const sprite = this._mainGamePortalSprite;
-      if (!sprite || sprite.destroyed) return;
-      const baseSize = this.getMainGamePortalDisplaySizePx();
-      this.tweens.killTweensOf(sprite);
-      sprite.setDisplaySize(baseSize, baseSize);
-      this.tweens.add({
-        targets: sprite,
-        displayWidth: baseSize * 1.06,
-        displayHeight: baseSize * 1.06,
+      void this.tweenMainGamePortalMaskLayout(this.getHeavenHellSoulPortalKillCount(), {
         duration: 100,
-        yoyo: true,
-        ease: "Sine.easeOut"
+        pulseScale: 1.06,
       });
       return;
     }

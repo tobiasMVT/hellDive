@@ -1166,6 +1166,12 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         this.load.image('helldive_heaven_bg', 'assets/helldive/backgrounds/heaven_city.png');
         this.load.image('helldive_hell_bonus_bg', 'assets/helldive/backgrounds/hell_bonus_floor.png');
         this.load.image('helldive_main_portal_bg', 'assets/helldive/backgrounds/portal.gif');
+        for (let frameIndex = 1; frameIndex <= 23; frameIndex += 1) {
+          this.load.image(
+            `helldive_red_portal_${String(frameIndex).padStart(2, "0")}`,
+            `assets/helldive/backgrounds/redportal/Lager ${frameIndex}.png`
+          );
+        }
         this.load.image('helldive_hell_wave_tile', 'assets/helldive/effects/hell_wave_tile.png');
         this.load.image('helldive_divine_wave_tile', 'assets/helldive/effects/divine_wave_tile.png');
         this.load.image('helldive_divine_ground', 'assets/helldive/effects/divine_ground.png');

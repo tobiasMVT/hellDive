@@ -1024,55 +1024,98 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           .setOrigin(0, 0)
           .setScrollFactor(0)
           .setDepth(9999);
+        const whiteLayer = this.add.rectangle(0, 0, width, height, 0xFFFFFF, 0)
+          .setOrigin(0, 0)
+          .setScrollFactor(0)
+          .setDepth(10001);
         const cellSize = 70;
         const houseCenterX = this.houseSprite?.x
           ?? (clientConfig.area.width / 2 * cellSize + GRID_OFFSET_X);
         const houseCenterY = this.houseSprite?.y
           ?? ((clientConfig.area.height - clientConfig.area.height / 2) * cellSize + GRID_OFFSET_Y);
-        const label = this.add.text(houseCenterX, houseCenterY, "DIVE INTO HELL", {
+        const label = this.add.text(houseCenterX, houseCenterY, "HELLDIVE...", {
           fontSize: "42px",
           fontFamily: '"Cinzel", "Times New Roman", serif',
-          fontStyle: "bold",
-          color: "#FFE9A0",
-          stroke: "#000000",
-          strokeThickness: 6
+          fontStyle: "bold italic",
+          color: "#FFF8E3",
+          stroke: "#7A1C00",
+          strokeThickness: 8
         })
           .setOrigin(0.5)
           .setDepth(10000)
           .setAlpha(0);
     
         const fadeCountUpPromise = this.fadeBonusEntryCountUpDisplay();
-        const angelDivePromise = this.playHeavenHellAngelDiveIntoPortal();
         this.tweens.add({
           targets: fadeLayer,
-          alpha: 1,
-          duration: 450,
+          alpha: 0.42,
+          duration: 320,
           ease: "Sine.easeOut"
         });
+
         this.tweens.add({
           targets: label,
           alpha: 1,
-          duration: 350,
+          scale: { from: 0.94, to: 1 },
+          duration: 260,
           ease: "Sine.easeOut"
         });
-    
+
+        const portalChargeDurationMs = 850;
+        const portalChargePromise = this.playMainGamePortalBonusEntryCharge?.({
+          durationMs: portalChargeDurationMs
+        });
+
         await Promise.all([
           fadeCountUpPromise,
-          angelDivePromise,
-          this.waitForPresentation(2000, { skippable: true })
+          portalChargePromise,
+          this.waitForPresentation(240, { skippable: true })
         ]);
+
+        const angelDivePromise = this.playHeavenHellAngelDiveIntoPortal();
+        this.tweens.add({
+          targets: label,
+          alpha: 0,
+          y: label.y - 24,
+          duration: 440,
+          ease: "Sine.easeIn"
+        });
+
+        await angelDivePromise;
+
+        await this.waitForPresentation(80, { skippable: true });
+
+        const portalDiveDurationMs = 1850;
+        const portalDivePromise = this.playMainGamePortalBonusEntryDive?.({
+          durationMs: portalDiveDurationMs
+        });
+        const whiteOutPromise = new Promise((resolve) => {
+          this.tweens.add({
+            targets: whiteLayer,
+            alpha: 1,
+            duration: portalDiveDurationMs,
+            ease: "Cubic.easeIn",
+            onComplete: resolve
+          });
+        });
+
+        await Promise.all([portalDivePromise, whiteOutPromise]);
+
+        this.updateHellDiveBackground?.({ isBonus: true }, { immediate: true, fade: false });
+        this.resetMainGamePortalBonusEntryPresentation?.();
     
         label.destroy();
         await new Promise((resolve) => {
           this.tweens.add({
-            targets: fadeLayer,
+            targets: [fadeLayer, whiteLayer],
             alpha: 0,
-            duration: 350,
+            duration: 240,
             ease: "Sine.easeIn",
             onComplete: resolve
           });
         });
         fadeLayer.destroy();
+        whiteLayer.destroy();
       },
 
     fadeBonusEntryCountUpDisplay(duration = 320) {
@@ -1100,6 +1143,12 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
       },
 
     getHeavenHellBonusEntryPortalPosition() {
+        if (typeof this.getMainGamePortalDisplayPosition === "function") {
+          const cfg = this.getMainGamePortalConfig?.();
+          if (cfg?.enabled) {
+            return this.getMainGamePortalDisplayPosition();
+          }
+        }
         const lastReel = Math.max(0, clientConfig.area.width - 1);
         const upperRow = Math.max(0, Math.min(clientConfig.area.height - 1, clientConfig.area.height - 2));
         const lowerRow = Math.max(0, upperRow - 1);
@@ -1261,7 +1310,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
 
     getHeavenHellSoulFlightDurationMs(startX, startY, endX, endY) {
         const distance = Math.max(1, Math.hypot(endX - startX, endY - startY));
-        return Phaser.Math.Clamp(Math.round(900 + distance * 2.35), 1200, 1800);
+        return Phaser.Math.Clamp(Math.round(420 + distance * 1.05), 560, 920);
       },
 
     getHeavenHellSoulDiveTweenDurationMs(flightMs) {
@@ -1301,7 +1350,8 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const power = Phaser.Math.Clamp(Number(intensity) || 1, 0.7, 2.2);
         const soulScale = 0.14 + power * 0.03;
         const ghostTint = divineXDoubleKill ? 0xFF55EE : 0xFF3311;
-        const particleTint = divineXDoubleKill ? 0xFF55EE : 0xFF2200;
+        const trailTint = divineXDoubleKill ? 0xFF7CF4 : 0xFF5A2A;
+        const particleTint = divineXDoubleKill ? 0xFF55EE : 0xFF3616;
         const fromX = Number(startX);
         const fromY = Number(startY);
         const flightMs = this.getHeavenHellSoulFlightDurationMs(fromX, fromY, portalTarget.x, portalTarget.y);
@@ -1319,12 +1369,13 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         this.spawnHeavenHellChargeLaunchTrails(fromX, fromY, portalTarget.x, portalTarget.y, {
           heroScale: soulScale,
           ghostTint,
+          trailTint,
           trailDurationMs: tweenDurationMs,
           depthBase: SOUL_COLLECT_TRAIL_DEPTH,
           useSoulOrbGhost: false
         });
 
-        await this.waitForPresentation?.(120, { skippable: true });
+        await this.waitForPresentation?.(55, { skippable: true });
 
         this.startFollowSpriteLightEmitter?.(soulSprite, {
           tint: particleTint,
@@ -2540,6 +2591,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
     spawnHeavenHellChargeLaunchTrails(fromX, fromY, toX, toY, {
         heroScale = 1,
         ghostTint = 0xBFE9FF,
+        trailTint = 0xFFFFFF,
         curvePointAt = null,
         trailDurationMs = null,
         depthBase = DEPTH_HERO + 39,
@@ -2580,7 +2632,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                   .setDepth(depthBase)
                   .setScale(0.56 + t * 0.34)
                   .setAlpha(0.5 * (1 - t * 0.3))
-                  .setTint(useSoulOrbGhost ? ghostTint : 0xFFFFFF)
+                  .setTint(trailTint)
                   .setBlendMode(Phaser.BlendModes.ADD)
               : null;
             if (trail) trail.setRotation(point.angle);
