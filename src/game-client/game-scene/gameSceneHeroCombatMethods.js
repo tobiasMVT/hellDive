@@ -1924,9 +1924,15 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
               if (isHeavenHellBonusHunt) {
                 const startChestDrops = Array.isArray(startStep?.chestDrops) ? startStep.chestDrops : [];
                 if (startChestDrops.length > 0) {
-                  await this.playHeavenHellQueuedChestDrops?.(startChestDrops);
+                  this.trackHeavenHellPendingGroundPresentation?.(
+                    this.playHeavenHellQueuedChestDrops?.(startChestDrops),
+                    { kind: "chest" }
+                  );
                 } else {
-                  await this.playHeavenHellQueuedChestDropsForCells?.([{ reel: startPos.reel, row: startPos.row }], heavenHellGameState);
+                  this.trackHeavenHellPendingGroundPresentation?.(
+                    this.playHeavenHellQueuedChestDropsForCells?.([{ reel: startPos.reel, row: startPos.row }], heavenHellGameState),
+                    { kind: "chest" }
+                  );
                 }
               }
             }
@@ -2010,7 +2016,8 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             startDivineXImpactPromise = this.playHeavenHellDivineXAtStep?.(startStep, heavenHellGameState, {
               stepQuickStop: false,
               origin: { x: startX, y: startY },
-              strikeAtTargets: true
+              strikeAtTargets: true,
+              waitForLootDrop: false
             });
           }
           if (isHeavenHellBonusHunt && startChargeLaunch) {
@@ -2018,7 +2025,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
               startStep,
               heavenHellGameState,
               { x: startX, y: startY },
-              { waitForLootDrop: startStep?.divineStrikeProc !== true }
+              { waitForLootDrop: false }
             );
             this.playHeavenHellAbilityComboPopup?.(startStep, { x: startX, y: startY }, { stepQuickStop: false });
           } else if (isHeavenHellBonusHunt && startStep?.divineStrikeProc === true) {
@@ -2029,7 +2036,8 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           if (isHeavenHellBonusHunt && startStep?.divineStrikeProc === true) {
             await this.playHeavenHellDivineStrikeAtStep?.(startStep, heavenHellGameState, {
               stepQuickStop: false,
-              origin: { x: startX, y: startY }
+              origin: { x: startX, y: startY },
+              waitForLootDrop: false
             });
           }
           if (startDivineXImpactPromise) {
@@ -2723,7 +2731,8 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
                       stepDivineXImpactPromise = this.playHeavenHellDivineXAtStep?.(step, heavenHellGameState, {
                         stepQuickStop,
                         origin: strikeFrom,
-                        strikeAtTargets: true
+                        strikeAtTargets: true,
+                        waitForLootDrop: false
                       });
                     }
                     const divineXKillWeight = isHeavenHellBonusHunt && step?.divineXProc === true
@@ -2762,7 +2771,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
                 step,
                 heavenHellGameState,
                 { x: targetX, y: targetY },
-                { waitForLootDrop: step?.divineStrikeProc !== true }
+                { waitForLootDrop: false }
               );
               this.playHeavenHellAbilityComboPopup?.(step, { x: targetX, y: targetY }, { stepQuickStop });
             } else if (isHeavenHellBonusHunt && step?.divineStrikeProc === true) {
@@ -2773,7 +2782,8 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             if (isHeavenHellBonusHunt && step?.divineStrikeProc === true) {
               await this.playHeavenHellDivineStrikeAtStep?.(step, heavenHellGameState, {
                 stepQuickStop,
-                origin: { x: targetX, y: targetY }
+                origin: { x: targetX, y: targetY },
+                waitForLootDrop: false
               });
             }
             if (stepDivineXImpactPromise) {
@@ -2813,9 +2823,15 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             if (isHeavenHellBonusHunt) {
               const stepChestDrops = Array.isArray(step?.chestDrops) ? step.chestDrops : [];
               if (stepChestDrops.length > 0) {
-                await this.playHeavenHellQueuedChestDrops?.(stepChestDrops);
+                this.trackHeavenHellPendingGroundPresentation?.(
+                  this.playHeavenHellQueuedChestDrops?.(stepChestDrops),
+                  { kind: "chest" }
+                );
               } else {
-                await this.playHeavenHellQueuedChestDropsForCells?.(bananaTargets, heavenHellGameState);
+                this.trackHeavenHellPendingGroundPresentation?.(
+                  this.playHeavenHellQueuedChestDropsForCells?.(bananaTargets, heavenHellGameState),
+                  { kind: "chest" }
+                );
               }
             }
 

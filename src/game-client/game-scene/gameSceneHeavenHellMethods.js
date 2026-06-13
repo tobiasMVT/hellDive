@@ -1576,6 +1576,38 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         return token;
       },
 
+    trackHeavenHellPendingGroundPresentation(promise, { kind = "loot" } = {}) {
+        if (!promise || typeof promise.then !== "function") {
+          return promise;
+        }
+        const propertyName = kind === "chest"
+          ? "_heavenHellPendingChestGroundPromises"
+          : "_heavenHellPendingLootGroundPromises";
+        if (!(this[propertyName] instanceof Set)) {
+          this[propertyName] = new Set();
+        }
+        const trackedPromise = Promise.resolve(promise).catch(() => null);
+        this[propertyName].add(trackedPromise);
+        trackedPromise.finally(() => {
+          this[propertyName]?.delete?.(trackedPromise);
+        });
+        return trackedPromise;
+      },
+
+    async waitForHeavenHellPendingGroundPresentation({ loot = true, chests = true } = {}) {
+        const waits = [];
+        if (loot && this._heavenHellPendingLootGroundPromises instanceof Set) {
+          waits.push(...this._heavenHellPendingLootGroundPromises);
+        }
+        if (chests && this._heavenHellPendingChestGroundPromises instanceof Set) {
+          waits.push(...this._heavenHellPendingChestGroundPromises);
+        }
+        if (waits.length === 0) {
+          return;
+        }
+        await Promise.allSettled(waits);
+      },
+
     clearHeavenHellLootGround() {
         (Array.isArray(this.heavenHellLootSprites) ? this.heavenHellLootSprites : []).forEach((entry) => {
           if (!entry || entry.destroyed) return;
@@ -1724,6 +1756,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           scale: 0.38,
           alpha: 0
         }).setDepth(DEPTH_HERO + 1);
+        this.registerHeavenHellGroundChestSprite(sprite, chest, index);
         const flash = this.add.circle(land.x, land.y - 6, 18, 0xFFF0B8, 0.18)
           .setDepth(DEPTH_HERO)
           .setBlendMode(Phaser.BlendModes.ADD)
@@ -1781,7 +1814,6 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         sprite.setPosition(land.x, land.y);
         sprite.setScale(0.44);
         sprite.setDepth(DEPTH_HERO);
-        this.registerHeavenHellGroundChestSprite(sprite, chest, index);
         return sprite;
       },
 
@@ -2521,6 +2553,8 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
     
         const heroX = Number(this.heroSprite.x);
         const heroY = Number(this.heroSprite.y);
+        const heroBaseScaleX = Number(this.heroSprite.scaleX || 1);
+        const heroBaseScaleY = Number(this.heroSprite.scaleY || heroBaseScaleX || 1);
         const chargeText = this.add.text(heroX, heroY - 78, "DIVINE CHARGE", {
           fontSize: "20px",
           fontFamily: '"Cinzel", "Times New Roman", serif',
@@ -2530,41 +2564,116 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           strokeThickness: 5
         }).setOrigin(0.5).setDepth(DEPTH_HERO + 42).setAlpha(0);
         this.tweens.add({ targets: chargeText, alpha: 1, y: heroY - 96, duration: 220, ease: "Sine.easeOut" });
-    
+
+        const chargeDurationMs = 1180;
         const chargeObjects = [];
-        for (let pulse = 0; pulse < 5; pulse++) {
-          for (let i = 0; i < 3; i++) {
-            const ring = this.add.circle(heroX, heroY, 22 + i * 10, 0xFFEAA0, 0.2 - i * 0.03)
-              .setDepth(DEPTH_HERO + 30 + i)
-              .setBlendMode(Phaser.BlendModes.ADD)
-              .setScale(0.55);
-            chargeObjects.push(ring);
-            this.tweens.add({
-              targets: ring,
-              scale: 2.4 + i * 0.35,
-              alpha: 0,
-              delay: pulse * 420 + i * 90,
-              duration: 520,
-              ease: "Cubic.easeOut"
-            });
-          }
-        }
-    
+        const chargeGlow = this.add.circle(heroX, heroY, 20, 0xF4E6A4, 0.24)
+          .setDepth(DEPTH_HERO + 31)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.75);
+        const chargeCore = this.add.circle(heroX, heroY, 11, 0xFFF8D8, 0.95)
+          .setDepth(DEPTH_HERO + 34)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.48);
+        const chargeHalo = this.add.circle(heroX, heroY, 30, 0xBFE9FF, 0.18)
+          .setDepth(DEPTH_HERO + 30)
+          .setStrokeStyle(3, 0xFFF1B8, 0.5)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.58);
+        const chargeBacklight = this.add.circle(heroX, heroY + 4, 42, 0x7FDBFF, 0.1)
+          .setDepth(DEPTH_HERO + 29)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.4, 0.32);
+        chargeObjects.push(chargeGlow, chargeCore, chargeHalo, chargeBacklight);
+
+        this.tweens.add({
+          targets: chargeGlow,
+          scale: 1.95,
+          alpha: 0.52,
+          duration: chargeDurationMs,
+          ease: "Cubic.easeIn"
+        });
+        this.tweens.add({
+          targets: chargeCore,
+          scale: 2.55,
+          alpha: 0.78,
+          duration: chargeDurationMs,
+          ease: "Cubic.easeIn"
+        });
+        this.tweens.add({
+          targets: chargeHalo,
+          scale: 1.72,
+          alpha: 0.62,
+          duration: chargeDurationMs,
+          ease: "Sine.easeInOut"
+        });
+        this.tweens.add({
+          targets: chargeHalo,
+          angle: 120,
+          duration: chargeDurationMs,
+          ease: "Sine.easeInOut"
+        });
+        this.tweens.add({
+          targets: chargeBacklight,
+          scaleX: 1.5,
+          scaleY: 1.18,
+          alpha: 0.28,
+          duration: chargeDurationMs,
+          ease: "Cubic.easeIn"
+        });
+
         if (!this.heroSprite.destroyed) {
           this.tweens.add({
             targets: this.heroSprite,
-            scaleX: (this.heroSprite.scaleX || 1) * 1.14,
-            scaleY: (this.heroSprite.scaleY || 1) * 1.14,
-            duration: 180,
-            yoyo: true,
-            repeat: 6,
-            ease: "Sine.easeInOut"
+            scaleX: heroBaseScaleX * 1.06,
+            scaleY: heroBaseScaleY * 1.06,
+            duration: chargeDurationMs,
+            ease: "Cubic.easeIn"
           });
         }
-    
-        await this.waitForPresentation(1500, { skippable: true });
-        chargeObjects.forEach((obj) => { if (obj && !obj.destroyed) obj.destroy(); });
-    
+
+        for (let i = 0; i < 12; i++) {
+          const angle = (Math.PI * 2 * i) / 12;
+          const startRadius = 16 + (i % 3) * 6;
+          const spark = this.add.circle(
+            heroX + Math.cos(angle) * startRadius,
+            heroY + Math.sin(angle) * startRadius * 0.82,
+            Phaser.Math.FloatBetween(2.6, 4.2),
+            i % 2 === 0 ? 0xFFF0A8 : 0xBFE9FF,
+            0.82
+          )
+            .setDepth(DEPTH_HERO + 33)
+            .setBlendMode(Phaser.BlendModes.ADD);
+          chargeObjects.push(spark);
+          this.tweens.add({
+            targets: spark,
+            x: heroX + Math.cos(angle) * Phaser.Math.Between(38, 54),
+            y: heroY + Math.sin(angle) * Phaser.Math.Between(28, 42),
+            alpha: 0.18,
+            scale: Phaser.Math.FloatBetween(1.4, 1.9),
+            delay: i * 28,
+            duration: chargeDurationMs - 80,
+            ease: "Cubic.easeIn"
+          });
+        }
+
+        this.playSfx?.("lightning_thor", { volume: 0.18, rate: 0.92 });
+        this.time.delayedCall(520, () => {
+          if (stepQuickStop) return;
+          this.playSfx?.("freespin_orb_appear", { volume: 0.16, rate: 0.86 });
+        });
+
+        await this.waitForPresentation(chargeDurationMs, { skippable: true });
+        chargeObjects.forEach((obj) => {
+          if (!obj || obj.destroyed) return;
+          this.tweens.killTweensOf(obj);
+          obj.destroy();
+        });
+        if (this.heroSprite && !this.heroSprite.destroyed) {
+          this.tweens.killTweensOf(this.heroSprite);
+          this.heroSprite.setScale(heroBaseScaleX, heroBaseScaleY);
+        }
+
         this.playSfx?.("attack_swing", { volume: 0.48 });
         const launchBurst = this.add.circle(heroX, heroY, 18, 0xDDF7FF, 0.72)
           .setDepth(DEPTH_HERO + 44)
@@ -2715,6 +2824,8 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         });
         if (waitForLootDrop) {
           await lootDropPromise;
+        } else {
+          this.trackHeavenHellPendingGroundPresentation(lootDropPromise, { kind: "loot" });
         }
       },
 
@@ -2979,6 +3090,9 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           token.setDepth(DEPTH_HERO + 55);
           token.setAlpha(0);
           token.setAngle(Phaser.Math.Between(-18, 18));
+          if (persistToGround) {
+            this.registerHeavenHellLootSprite(token, drop, dropIndex);
+          }
     
           const shadow = this.add.ellipse(startX, startY + 16, 22, 8, 0x000000, 0)
             .setDepth(DEPTH_HERO + 33);
@@ -3076,7 +3190,6 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                         token.setScale(0.34, 0.34);
                         token.setAlpha(0.96);
                         token.setDepth(DEPTH_HERO + 1);
-                        this.registerHeavenHellLootSprite(token, drop, dropIndex);
                         resolve();
                         return;
                       }
@@ -3837,6 +3950,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
       },
 
     async playHeavenHellChestRewardSequence(gameState = {}) {
+        await this.waitForHeavenHellPendingGroundPresentation({ loot: true, chests: true });
         const chestEvents = Array.isArray(gameState?.heavenHell?.bonus?.chestEventsThisAction)
           ? gameState.heavenHell.bonus.chestEventsThisAction
           : [];
@@ -4072,6 +4186,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
       },
 
     async playHeavenHellCollectPhase(gameState = {}) {
+        await this.waitForHeavenHellPendingGroundPresentation({ loot: true, chests: true });
         const settledDrops = Array.isArray(gameState?.heavenHell?.bonus?.lootGroundSettled)
           ? gameState.heavenHell.bonus.lootGroundSettled
           : [];
@@ -4919,7 +5034,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         return fxParts;
       },
 
-    async playHeavenHellDivineStrikeAtStep(step = {}, gameState = {}, { stepQuickStop = false, origin = null } = {}) {
+    async playHeavenHellDivineStrikeAtStep(step = {}, gameState = {}, { stepQuickStop = false, origin = null, waitForLootDrop = true } = {}) {
         if (stepQuickStop || step?.divineStrikeProc !== true) return;
         if (gameState?.heavenHell?.bonus && gameState?.isBonus === true) {
           this._heavenHellActiveGameState = gameState;
@@ -5069,19 +5184,24 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         await this.waitForPresentation(44, { skippable: true });
 
         if (lootCells.length > 0) {
-          await this.playHeavenHellLootDropPattern(gameState, {
+          const lootDropPromise = this.playHeavenHellLootDropPattern(gameState, {
             source: "divineStrike",
             launchFromDropCell: true,
             jitterStrength: this.getHeavenHellChargeLootJitter(step),
             filterCells: lootCells,
             persistToGround: true
           });
+          if (waitForLootDrop) {
+            await lootDropPromise;
+          } else {
+            this.trackHeavenHellPendingGroundPresentation(lootDropPromise, { kind: "loot" });
+          }
         }
 
         this.time.delayedCall(1800, () => this.clearHeavenHellDivineGroundFx?.({ fade: true }));
       },
 
-    async playHeavenHellDivineXAtStep(step = {}, gameState = {}, { stepQuickStop = false, origin = null, strikeAtTargets = false } = {}) {
+    async playHeavenHellDivineXAtStep(step = {}, gameState = {}, { stepQuickStop = false, origin = null, strikeAtTargets = false, waitForLootDrop = true } = {}) {
         if (stepQuickStop || step?.divineXProc !== true) return;
         if (gameState?.heavenHell?.bonus && gameState?.isBonus === true) {
           this._heavenHellActiveGameState = gameState;
@@ -5378,13 +5498,18 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         }
 
         if (lootCells.length > 0) {
-          await this.playHeavenHellLootDropPattern(gameState, {
+          const lootDropPromise = this.playHeavenHellLootDropPattern(gameState, {
             source: "divineX",
             launchFromDropCell: true,
             jitterStrength: this.getHeavenHellChargeLootJitter(step),
             filterCells: lootCells,
             persistToGround: true
           });
+          if (waitForLootDrop) {
+            await lootDropPromise;
+          } else {
+            this.trackHeavenHellPendingGroundPresentation(lootDropPromise, { kind: "loot" });
+          }
         }
 
         this.time.delayedCall(1800, () => this.clearHeavenHellDivineGroundFx?.({ fade: true }));
