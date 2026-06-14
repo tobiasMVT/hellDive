@@ -9156,6 +9156,107 @@ export class GameServer {
     return valid[valid.length - 1]?.value ?? 0;
   }
 
+  pickWeightedEntry(entries = []) {
+    const valid = Array.isArray(entries)
+      ? entries
+          .map((entry) => ({
+            entry,
+            weight: Number(entry?.weight)
+          }))
+          .filter((entry) => Number.isFinite(entry.weight) && entry.weight > 0)
+      : [];
+    if (valid.length === 0) return null;
+    const totalWeight = valid.reduce((sum, entry) => sum + entry.weight, 0);
+    let roll = Math.random() * totalWeight;
+    for (const entry of valid) {
+      roll -= entry.weight;
+      if (roll <= 0) return entry.entry ?? null;
+    }
+    return valid[valid.length - 1]?.entry ?? null;
+  }
+
+  getHeavenHellLootDropDefinitions(lootConfig = null) {
+    const config = lootConfig || this.getHeavenHellConfig()?.bonus?.loot || {};
+    const lootDrops = config?.lootDrops && typeof config.lootDrops === "object"
+      ? config.lootDrops
+      : {};
+    return Object.entries(lootDrops)
+      .map(([type, entry]) => ({
+        type: String(type || "").trim().toLowerCase(),
+        id: Number(entry?.id),
+        value: Number(entry?.value)
+      }))
+      .filter((entry) => entry.type && Number.isFinite(entry.value) && entry.value > 0)
+      .sort((left, right) => left.value - right.value || left.type.localeCompare(right.type));
+  }
+
+  getHeavenHellLootDropDefinitionByType(rawType = "", lootConfig = null) {
+    const normalizedType = String(rawType || "").trim().toLowerCase();
+    if (!normalizedType) return null;
+    return this.getHeavenHellLootDropDefinitions(lootConfig).find((entry) => entry.type === normalizedType) || null;
+  }
+
+  getHeavenHellLootDropDefinitionByValue(rawValue = 0, lootConfig = null, { allowNearest = false } = {}) {
+    const parsedValue = Number(rawValue);
+    if (!Number.isFinite(parsedValue) || parsedValue <= 0) return null;
+    const definitions = this.getHeavenHellLootDropDefinitions(lootConfig);
+    if (definitions.length === 0) return null;
+
+    const exact = definitions.find((entry) => Math.abs(entry.value - parsedValue) < 0.000001);
+    if (exact || allowNearest !== true) {
+      return exact || null;
+    }
+
+    let closest = definitions[0];
+    let closestDiff = Math.abs(definitions[0].value - parsedValue);
+    for (let index = 1; index < definitions.length; index++) {
+      const candidate = definitions[index];
+      const candidateDiff = Math.abs(candidate.value - parsedValue);
+      if (
+        candidateDiff < closestDiff ||
+        (Math.abs(candidateDiff - closestDiff) < 0.000001 && candidate.value < closest.value)
+      ) {
+        closest = candidate;
+        closestDiff = candidateDiff;
+      }
+    }
+    return closest;
+  }
+
+  resolveHeavenHellLootDropSelection(selectedEntry = null, lootConfig = null) {
+    const typeCandidate = typeof selectedEntry?.lootType === "string"
+      ? selectedEntry.lootType
+      : typeof selectedEntry?.value === "string"
+        ? selectedEntry.value
+        : "";
+    const byType = this.getHeavenHellLootDropDefinitionByType(typeCandidate, lootConfig);
+    if (byType) {
+      return {
+        lootType: byType.type,
+        lootId: Number.isFinite(byType.id) ? byType.id : null,
+        baseValue: byType.value
+      };
+    }
+
+    const byValue = this.getHeavenHellLootDropDefinitionByValue(selectedEntry?.value, lootConfig, {
+      allowNearest: true
+    });
+    if (byValue) {
+      return {
+        lootType: byValue.type,
+        lootId: Number.isFinite(byValue.id) ? byValue.id : null,
+        baseValue: byValue.value
+      };
+    }
+
+    const fallbackValue = Number(selectedEntry?.value);
+    return {
+      lootType: "",
+      lootId: null,
+      baseValue: Number.isFinite(fallbackValue) && fallbackValue > 0 ? fallbackValue : 0
+    };
+  }
+
   getHeavenHellLootTableKey(entry = {}, lootConfig = null) {
     const config = lootConfig || this.getHeavenHellConfig()?.bonus?.loot || {};
     if (typeof entry?.lootTableKey === "string" && entry.lootTableKey.length > 0) {
@@ -10311,7 +10412,9 @@ export class GameServer {
       if (!shouldDrop) return;
       const tableKey = this.getHeavenHellLootTableKey(entry, lootConfig);
       const valueEntries = this.getHeavenHellLootTableEntries(tableKey, lootConfig);
-      const amount = Number(this.pickWeightedValueFromEntries(valueEntries) || 0);
+      const selectedEntry = this.pickWeightedEntry(valueEntries);
+      const resolvedDrop = this.resolveHeavenHellLootDropSelection(selectedEntry, lootConfig);
+      const amount = Number(resolvedDrop?.baseValue || 0);
       if (!(amount > 0)) return;
       const pieceMultiplier = Math.max(
         1,
@@ -10324,6 +10427,9 @@ export class GameServer {
           row: Number(entry?.row),
           baseValue: amount,
           value: amount,
+          lootKind: resolvedDrop?.lootType || null,
+          lootType: resolvedDrop?.lootType || null,
+          lootId: resolvedDrop?.lootId ?? null,
           source: entry?.source || "demon",
           isBoss: entry?.isBoss === true,
           lootTableKey: tableKey,

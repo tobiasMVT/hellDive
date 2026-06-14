@@ -10,23 +10,34 @@ Demons may drop loot on kill. Loot stays **visible on board** and in game state 
 ## Drop Flow
 
 ```
-Demon destroyed → roll drop chance → if hit, pick value from demon-type table → spawn on board
+Demon destroyed -> roll drop chance -> if hit, pick loot type from demon-type table -> resolve value from lootDrops -> spawn on board
 ```
 
-All values in `server_config.json` — nothing hardcoded.
+All values in `server_config.json` - nothing hardcoded.
 
 ## Config Shape (example)
 
 ```json
 {
   "lootDropChance": 0.5,
-  "normal_demon": [0.1, 0.2, 0.3],
-  "multiplier_demon": [0.2, 0.3, 0.4],
-  "boss_demon": [0.5, 1.0, 2.0]
+  "tables": {
+    "normal_demon": [
+      { "value": "coin", "weight": 35 },
+      { "value": "emerald", "weight": 28 },
+      { "value": "ruby", "weight": 20 }
+    ]
+  },
+  "lootDrops": {
+    "coin": { "id": 1, "value": 0.1 },
+    "emerald": { "id": 2, "value": 0.2 },
+    "ruby": { "id": 3, "value": 0.3 }
+  }
 }
 ```
 
 Each demon type has its own independent table. Support new types via config only.
+
+Legacy numeric table entries may still be tolerated as fallback, but the preferred format is loot type names so texture + value stay aligned.
 
 ## Persistence
 
@@ -36,19 +47,19 @@ Each demon type has its own independent table. Support new types via config only
 
 ## Collect Phase (bonus end)
 
-**Formula:** `finalValue = lootValue × finalMultiplier` (per piece, then sum)
+**Formula:** `finalValue = lootValue x finalMultiplier` (per piece, then sum)
 
-Example: loot `[0.2, 0.4, 0.5]`, multiplier `×10` → `2 + 4 + 5 = 11.0`
+Example: loot `[0.2, 0.5, 1.0]`, multiplier `x10` -> `2 + 5 + 10 = 17.0`
 
 ## Presentation (GameScene)
 
 **Drop:** spawn at demon center, small arc upward, land near feet.
 
-**Collect:** all pieces activate → spiral/vortex to center → absorb at multiplier → per-item win labels + running total count-up.
+**Collect:** all pieces activate -> spiral/vortex to center -> absorb at multiplier -> per-item win labels + running total count-up.
 
 Orchestration timing in `Client.js`; animations in `GameScene.js`.
 
-**Client sprite lifecycle:** `syncHeavenHellLootGround` only **adds** missing tokens (tracked via `heavenHellRenderedLootKeys`). Never destroy/rebuild the full ground between bonus actions. Loot sprites are cleared only in `clearHeavenHellLootGround` — called after Collect Phase vortex and when exiting bonus back to main spin.
+**Client sprite lifecycle:** `syncHeavenHellLootGround` only **adds** missing tokens (tracked via `heavenHellRenderedLootKeys`). Never destroy/rebuild the full ground between bonus actions. Loot sprites are cleared only in `clearHeavenHellLootGround` - called after Collect Phase vortex and when exiting bonus back to main spin.
 
 Divine Charge guaranteed loot + multipliers: see `ability-system`.
 
@@ -85,12 +96,12 @@ pieces should form a visible pile around the impact point
 Example:
 
 Normal kill:
-●
+o
 
 Divine Charge:
-● ●
-●●
-● ●
+o o
+oo
+o o
 
 Players should immediately understand that extra loot was generated.
 
@@ -121,11 +132,12 @@ Loot positions are generated once and stored.
 Example:
 
 {
-value: 0.5,
-reel: 3,
-row: 4,
-offsetX: 22,
-offsetY: -14
+  value: 0.5,
+  lootType: "amethyst",
+  reel: 3,
+  row: 4,
+  offsetX: 22,
+  offsetY: -14
 }
 
 Offsets must persist for the entire bonus.

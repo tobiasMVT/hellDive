@@ -46,7 +46,7 @@
 
         "bonus_min0.1_max50": 7,
         "bonus_min50_max200": 2,
-        "bonus_max1000": 109999
+        "bonus_min_100_max1000": 109999
     },
     "bonus": {
         "bonus": 1,
@@ -1119,100 +1119,108 @@
                 "tables": {
                     "normal_demon": [
                         {
-                            "value": 0.1,
+                            "value": "coin",
                             "weight": 35
                         },
                         {
-                            "value": 0.2,
+                            "value": "emerald",
                             "weight": 28
                         },
                         {
-                            "value": 0.3,
+                            "value": "ruby",
                             "weight": 20
                         },
                         {
-                            "value": 0.4,
+                            "value": "ruby",
                             "weight": 12
                         },
                         {
-                            "value": 0.5,
-                            "weight": 5
+                            "value": "amethyst",
+                            "weight": 0
                         }
                     ],
                     "multiplier_demon": [
                         {
-                            "value": 0.1,
+                            "value": "coin",
                             "weight": 30
                         },
                         {
-                            "value": 0.2,
+                            "value": "emerald",
                             "weight": 30
                         },
                         {
-                            "value": 0.3,
+                            "value": "ruby",
                             "weight": 24
                         },
                         {
-                            "value": 0.5,
-                            "weight": 16
+                            "value": "amethyst",
+                            "weight": 0
                         }
                     ],
                     "boss_demon": [
                         {
-                            "value": 0.5,
+                            "value": "amethyst",
                             "weight": 30
                         },
                         {
-                            "value": 1,
+                            "value": "sapphire",
                             "weight": 35
                         },
                         {
-                            "value": 5,
-                            "weight": 35
+                            "value": "diamond",
+                            "weight": 0
                         }
                     ],
                     "gargoyle_demon": [
                         {
-                            "value": 0.1,
+                            "value": "coin",
                             "weight": 28
                         },
                         {
-                            "value": 0.2,
+                            "value": "emerald",
                             "weight": 28
                         },
                         {
-                            "value": 0.4,
+                            "value": "ruby",
                             "weight": 24
                         },
                         {
-                            "value": 0.6,
+                            "value": "amethyst",
                             "weight": 14
                         },
                         {
-                            "value": 1,
-                            "weight": 6
+                            "value": "sapphire",
+                            "weight": 0
                         }
                     ]
                 },
+                "lootDrops": {
+                    "coin": { "id": 1, "value": 0.1 },
+                    "emerald": { "id": 2, "value": 0.2 },
+                    "ruby": { "id": 3, "value": 0.3},
+                    "amethyst": { "id": 4, "value": 0.5},
+                    "sapphire": { "id": 5, "value": 1},
+                    "diamond": { "id": 6, "value": 5 }
+                },
                 "values": [
                     {
-                        "value": 0.1,
+                        "value": "coin",
                         "weight": 35
                     },
                     {
-                        "value": 0.2,
+                        "value": "emerald",
                         "weight": 28
                     },
                     {
-                        "value": 0.5,
+                        "value": "amethyst",
                         "weight": 20
                     },
                     {
-                        "value": 1,
+                        "value": "sapphire",
                         "weight": 12
                     },
                     {
-                        "value": 5,
+                        "value": "diamond",
                         "weight": 5
                     }
                 ]

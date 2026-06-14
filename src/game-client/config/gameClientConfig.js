@@ -9,6 +9,7 @@
     mustSeeBounds: { x: 15, y: 0, width: 575, height: 711 },
 
     // Scene background (heaven_city / hell bonus floor) — centered on mustSeeBounds.
+    // `bonus` overrides apply when helldive_hell_bonus_bg is active.
 
     background: {
 
@@ -27,6 +28,14 @@
       alignY: "top",
 
       depth: 0,
+
+      bonus: {
+
+        scale: 1,
+
+        offsetY: 0,
+
+      },
 
     },
 

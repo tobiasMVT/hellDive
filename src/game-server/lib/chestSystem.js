@@ -371,6 +371,7 @@ export function resolveRewards({
         baseValue: resolvedReward.baseValue,
         value: resolvedReward.baseValue,
         lootKind: symbol,
+        lootType: symbol,
         source: "chest",
         chestType: chest?.chestType || null,
         chestId: chest?.id ?? null,

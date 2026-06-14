@@ -1748,8 +1748,9 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const offsetX = Number.isFinite(Number(drop?.offsetX)) ? Number(drop.offsetX) : 0;
         const offsetY = Number.isFinite(Number(drop?.offsetY)) ? Number(drop.offsetY) : 0;
         const baseValue = Number(drop?.baseValue ?? drop?.value ?? 0);
+        const lootType = String(drop?.lootType || drop?.lootKind || "").toLowerCase();
         const source = String(drop?.source || "");
-        return `${reel},${row},${offsetX},${offsetY},${baseValue},${source},${Math.max(0, Math.floor(Number(index) || 0))}`;
+        return `${reel},${row},${offsetX},${offsetY},${baseValue},${lootType},${source},${Math.max(0, Math.floor(Number(index) || 0))}`;
       },
 
     isHeavenHellLootDropRendered(drop = {}, index = 0) {
@@ -2105,36 +2106,58 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const colorByBaseValue = {
           "0.1": 0x8BC5FF,
           "0.2": 0x7CFFB2,
-          "0.5": 0xFFE680,
-          "1": 0xFFB56A,
-          "5": 0xFF7B7B
+          "0.3": 0xFF7B7B,
+          "0.5": 0xC89BFF,
+          "1": 0x7BB7FF,
+          "5": 0xF8F8FF
         };
         return colorByBaseValue[String(Number(baseValue || 0))] || 0xFDD76A;
       },
 
     getHeavenHellLootTexture(dropOrValue = 0, index = 0) {
         const drop = dropOrValue && typeof dropOrValue === "object" ? dropOrValue : null;
-        const lootKind = String(drop?.lootKind || "").toLowerCase();
-        if (lootKind === "diamond") return "helldive_loot_diamond";
-        if (lootKind === "coin") return "helldive_loot_coin";
+        const lootKind = String(drop?.lootType || drop?.lootKind || "").toLowerCase();
+        const textureByLootKind = {
+          coin: "helldive_loot_coin",
+          emerald: "helldive_loot_emerald",
+          ruby: "helldive_loot_ruby",
+          amethyst: "helldive_loot_amethyst",
+          sapphire: "helldive_loot_sapphire",
+          diamond: "helldive_loot_diamond"
+        };
+        if (textureByLootKind[lootKind]) return textureByLootKind[lootKind];
         const baseValue = drop ? drop?.baseValue : dropOrValue;
         const normalized = Number(baseValue || 0);
-        if (normalized >= 5) return "helldive_loot_diamond";
-        if (normalized >= 1) return "helldive_loot_ruby";
-        if (normalized >= 0.5) return "helldive_loot_sapphire";
-        if (normalized >= 0.2) return "helldive_loot_emerald";
-        if (index % 7 === 0) return "helldive_loot_amethyst";
+        const textureByValue = {
+          "0.1": "helldive_loot_coin",
+          "0.2": "helldive_loot_emerald",
+          "0.3": "helldive_loot_ruby",
+          "0.5": "helldive_loot_amethyst",
+          "1": "helldive_loot_sapphire",
+          "5": "helldive_loot_diamond"
+        };
+        const exactTexture = textureByValue[String(normalized)];
+        if (exactTexture) return exactTexture;
+        if (Number.isFinite(normalized) && normalized > 0) {
+          const closestValue = Object.keys(textureByValue)
+            .map((value) => Number(value))
+            .reduce((closest, current) => {
+              const currentDiff = Math.abs(current - normalized);
+              const closestDiff = Math.abs(closest - normalized);
+              if (currentDiff < closestDiff) return current;
+              if (Math.abs(currentDiff - closestDiff) < 0.000001 && current < closest) return current;
+              return closest;
+            }, 0.1);
+          return textureByValue[String(closestValue)] || "helldive_loot_coin";
+        }
         return "helldive_loot_coin";
       },
 
     createHeavenHellLootToken(x, y, drop = {}, index = 0, { scale = 0.42 } = {}) {
-        const isBoss = drop?.isBoss === true;
-        if (isBoss) {
-          return this.add.image(x, y, "13").setScale(0.28).setAlpha(0.96);
-        }
         const textureKey = this.getHeavenHellLootTexture(drop, index);
         if (this.textures?.exists?.(textureKey)) {
-          return this.add.image(x, y, textureKey).setScale(scale).setAlpha(0.96);
+          const bossScale = drop?.isBoss === true ? Math.max(scale, 0.5) : scale;
+          return this.add.image(x, y, textureKey).setScale(bossScale).setAlpha(0.96);
         }
         return this.add.circle(x, y, 7, this.getHeavenHellLootDotColor(drop?.baseValue), 0.95);
       },

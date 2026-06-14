@@ -438,7 +438,7 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         }));
       },
 
-    getBackgroundLayoutConfig() {
+    getBackgroundLayoutConfig(textureKey = "main_background") {
         const defaults = {
           offsetX: 0,
           offsetY: 0,
@@ -449,10 +449,14 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
           alignY: "top",
           depth: 0
         };
-        return {
-          ...defaults,
-          ...(gameClientConfig?.layout?.background || {})
-        };
+        const configured = gameClientConfig?.layout?.background || {};
+        const { bonus: bonusOverrides, ...mainOverrides } = configured;
+        const base = { ...defaults, ...mainOverrides };
+        const isBonusBackground = textureKey === "helldive_hell_bonus_bg";
+        if (isBonusBackground && bonusOverrides && typeof bonusOverrides === "object") {
+          return { ...base, ...bonusOverrides };
+        }
+        return base;
       },
 
     resolveBackgroundMustSeeBounds() {
@@ -473,7 +477,7 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
       },
 
     computeSceneBackgroundLayout(textureKey = "main_background") {
-        const cfg = this.getBackgroundLayoutConfig();
+        const cfg = this.getBackgroundLayoutConfig(textureKey);
         const mustSeeBounds = this.resolveBackgroundMustSeeBounds();
         const centerX = mustSeeBounds.x + mustSeeBounds.width / 2;
         const centerY = mustSeeBounds.y + mustSeeBounds.height / 2;
