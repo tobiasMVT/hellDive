@@ -30,6 +30,17 @@ function asObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
+function resolveChestRespinDampeningMultiplier(chestConfig = {}, reelCount = 1) {
+  const dampeningConfig = asObject(chestConfig.respinDampening);
+  if (dampeningConfig.enabled !== true) return 1;
+
+  const normalizedReelCount = Math.max(1, Math.floor(Number(reelCount) || 1));
+  const reductionPerReel = clampProbability(dampeningConfig.chanceReductionPerReel, 1);
+  if (normalizedReelCount <= 1) return 1;
+
+  return Math.pow(reductionPerReel, normalizedReelCount - 1);
+}
+
 function getBonusState(gameState) {
   return asObject(gameState?.heavenHell?.bonus);
 }
@@ -120,6 +131,16 @@ function getChestTypeEntries(chestTypes = {}) {
     .filter((entry) => Number.isFinite(entry.weight) && entry.weight > 0);
 }
 
+function getChestTypeEntriesFromWeights(chestTypeWeights = {}, chestTypes = {}) {
+  return Object.entries(asObject(chestTypeWeights))
+    .map(([key, weight]) => ({
+      key,
+      weight: Number(weight),
+      chestType: asObject(chestTypes?.[key])
+    }))
+    .filter((entry) => Number.isFinite(entry.weight) && entry.weight > 0 && Object.keys(entry.chestType).length > 0);
+}
+
 function resolveChestHighlight(chestTypeKey, chestTypeConfig = {}) {
   const presentation = asObject(chestTypeConfig.presentation);
   return {
@@ -134,6 +155,8 @@ function resolveChestHighlight(chestTypeKey, chestTypeConfig = {}) {
 export function generateChest({
   chestConfig = {},
   chestTypes = {},
+  chestTypeWeights = null,
+  dropChanceOverride = null,
   source = "normal",
   reel = 0,
   row = 0,
@@ -149,12 +172,17 @@ export function generateChest({
     : (isMultiplierDemon
       ? "multiplier"
       : (isGargoyleDemon ? "gargoyle" : (source || "normal")));
-  const dropChance = clampProbability(dropChanceTable[normalizedSource], 0);
+  const dropChance = clampProbability(
+    dropChanceOverride ?? dropChanceTable[normalizedSource],
+    0
+  );
   if (dropChance <= 0 || Math.random() >= dropChance) {
     return null;
   }
 
-  const chestTypeEntries = getChestTypeEntries(chestTypes);
+  const chestTypeEntries = chestTypeWeights
+    ? getChestTypeEntriesFromWeights(chestTypeWeights, chestTypes)
+    : getChestTypeEntries(chestTypes);
   if (chestTypeEntries.length === 0) {
     return null;
   }
@@ -193,16 +221,20 @@ export function rollContinuation({
 } = {}) {
   const maxReels = Math.max(1, Math.floor(Number(chestConfig.maxReels ?? 6) || 6));
   const continuationChanceTable = asObject(chestConfig.respinChanceByReelCount);
-  const continuationChance = clampProbability(
+  const baseContinuationChance = clampProbability(
     continuationChanceTable[String(reelCount)] ?? continuationChanceTable[reelCount] ?? 0,
     0
   );
+  const dampeningMultiplier = resolveChestRespinDampeningMultiplier(chestConfig, reelCount);
+  const continuationChance = clampProbability(baseContinuationChance * dampeningMultiplier, 0);
   if (continuationChance <= 0 || Math.random() >= continuationChance) {
     return {
       triggered: false,
       symbol: null,
       nextReelCount: reelCount,
-      chance: continuationChance
+      chance: continuationChance,
+      baseChance: baseContinuationChance,
+      dampeningMultiplier
     };
   }
 
@@ -225,7 +257,9 @@ export function rollContinuation({
       triggered: false,
       symbol: null,
       nextReelCount: reelCount,
-      chance: continuationChance
+      chance: continuationChance,
+      baseChance: baseContinuationChance,
+      dampeningMultiplier
     };
   }
 
@@ -233,6 +267,8 @@ export function rollContinuation({
     triggered: true,
     symbol,
     chance: continuationChance,
+    baseChance: baseContinuationChance,
+    dampeningMultiplier,
     nextReelCount: symbol === "respinReel"
       ? Math.min(maxReels, reelCount + 1)
       : reelCount

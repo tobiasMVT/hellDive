@@ -38,15 +38,16 @@
         "noStrategy_min_10_max200": 0,
         "noStrategy_min_20_max500": 0,
         "noStrategy_min_20_max750": 0,
-        "noWin": 650,
+        "noWin": 850,
 
-        "winMainGame_min0.1_max10": 324,
-        "winMainGame_min10_max300": 15,
-        "winMainGame_min10": 1,
+        "winMainGame_min0.1_max10": 334,
+        "winMainGame_min10_max300": 10,
+        "winMainGame_min10": 0,
 
-        "bonus_min0.1_max50": 7,
+        "bonus_min0.1_max50": 2,
+        "bonus_min5_max50": 10,
         "bonus_min50_max200": 2,
-        "bonus_min_100_max1000": 109999
+        "bonus_min_100_max1000": 1
     },
     "bonus": {
         "bonus": 1,
@@ -989,7 +990,7 @@
             "portalBonusChanceOnEntry": 0.0,
             "maxFreespinsCap": 0,
             "maxBonusActionsPerRound": 0,
-            "spawnDampeningAfterFreerespins": 3,
+            "spawnDampeningAfterFreerespins": 2,
             "spawnDampeningFactorPerStep": 0.75,
             "maxFreerespinDampeningSteps": 0,
             "spawnChanceByStage": {
@@ -1109,6 +1110,7 @@
             },
             "loot": {
                 "baseDropChance": 0,
+                "bossDropFactor": 4,
                 "multiplierDemonSpawnChance": 0.1,
                 "symbolLootTables": {
                     "11": "normal_demon",
@@ -1228,6 +1230,10 @@
             "chests": {
                 "initialReelCount": 1,
                 "maxReels": 6,
+                "respinDampening": {
+                    "enabled": true,
+                    "chanceReductionPerReel": 0.5
+                },
                 "dropChance": {
                     "normal": 0.02,
                     "multiplier": 0.08,
@@ -1355,15 +1361,15 @@
                         "tint": "#E6FBFF"
                     },
                     "symbolWeights": {
-                        "coin": 24,
-                        "diamond": 24,
+                        "coin": 25,
+                        "diamond": 25,
                         "freeSpin": 15,
-                        "multiplier": 10,
-                        "divineStrike": 12,
+                        "multiplier": 15,
+                        "divineStrike": 10,
                         "divineX": 10,
                         "divineCharge": 10,
-                        "respin": 2,
-                        "respinReel": 11
+                        "respin": 10,
+                        "respinReel": 20
                     },
                     "rewardTable": {
                         "coin": [
@@ -1427,7 +1433,14 @@
                 "chance": 0.2,
                 "minGargoyles": 1,
                 "maxGargoyles": 3,
-                "fleeDistance": 3
+                "fleeDistance": 4,
+                "chestChance": 0.3,
+                "chestType": {
+                    "wooden": 0.6,
+                    "gold": 0.3,
+                    "divine": 0.1
+                }
+            
             },
             "demonWave": {
                 "enabled": true,

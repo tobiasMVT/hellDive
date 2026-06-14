@@ -105,6 +105,17 @@ export function createClientHeavenHellMethods() {
       this.scene.syncHeavenHellPentagram?.(stateForScene);
     },
 
+    renderHeavenHellBonusLootGround(gameState = {}, { layer = "behindDemons" } = {}) {
+      if (!this.isHeavenHellEnabled(gameState) || gameState?.isBonus !== true) {
+        return;
+      }
+
+      this.scene.renderHeavenHellLootGround?.(
+        gameState?.heavenHell?.bonus?.lootGround || [],
+        { layer }
+      );
+    },
+
     async syncHeavenHellAbilityUi(gameState = {}, { allowRewardFx = true } = {}) {
       if (!this.isHeavenHellEnabled(gameState)) {
         return false;

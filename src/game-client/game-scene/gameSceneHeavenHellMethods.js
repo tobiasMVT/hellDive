@@ -2,6 +2,7 @@ import { decompressFrames, parseGIF } from "gifuct-js";
 
 export function createGameSceneHeavenHellMethods(deps = {}) {
   const {
+    DEPTH_BANANAS,
     DEPTH_HERO,
     DEPTH_HOUSE,
     DEPTH_SYMBOLS,
@@ -2053,7 +2054,17 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         }
       },
 
-    syncHeavenHellLootGround(drops = []) {
+    getHeavenHellLootDepth(layer = "behindHero") {
+        if (layer === "frontOfHero") {
+          return DEPTH_HERO + 1;
+        }
+        if (layer === "behindDemons") {
+          return DEPTH_BANANAS - 1;
+        }
+        return DEPTH_HERO - 1;
+      },
+
+    syncHeavenHellLootGround(drops = [], { layer = "behindHero" } = {}) {
         if (!Array.isArray(this.heavenHellLootSprites)) {
           this.heavenHellLootSprites = [];
         }
@@ -2070,17 +2081,21 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           if (!Number.isFinite(reel) || !Number.isFinite(row)) continue;
           const position = this.getHeavenHellLootGroundPosition(drop, i);
           const token = this.createHeavenHellLootToken(position.x, position.y, drop, i, { scale: 0.34 });
-          token.setDepth(DEPTH_HERO - 1);
+          token.setDepth(this.getHeavenHellLootDepth(layer));
           this.registerHeavenHellLootSprite(token, drop, i);
         }
       },
 
-    renderHeavenHellLootGround(drops = []) {
-        this.syncHeavenHellLootGround(drops);
+    renderHeavenHellLootGround(drops = [], options = {}) {
+        this.syncHeavenHellLootGround(drops, options);
+        this.syncHeavenHellLootSpriteDepths(options?.layer || "behindHero");
       },
 
-    syncHeavenHellLootSpriteDepths(frontOfHero = false) {
-        const lootDepth = frontOfHero ? (DEPTH_HERO + 1) : (DEPTH_HERO - 1);
+    syncHeavenHellLootSpriteDepths(layer = "behindHero") {
+        const legacyLayer = typeof layer === "boolean"
+          ? (layer ? "frontOfHero" : "behindHero")
+          : layer;
+        const lootDepth = this.getHeavenHellLootDepth(legacyLayer);
         if (!Array.isArray(this.heavenHellLootSprites)) return;
         this.heavenHellLootSprites.forEach((entry) => {
           if (!entry || entry.destroyed || typeof entry.setDepth !== "function") return;

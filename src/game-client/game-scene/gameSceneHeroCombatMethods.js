@@ -1327,7 +1327,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
     
         const moveHeroLinearlyToTarget = async (targetX, targetY, duration, ease = 'Power3.easeIn', { featureApproach = false } = {}) => {
           if (!this.heroSprite || this.heroSprite.destroyed) return;
-          this.syncHeavenHellLootSpriteDepths(false);
+          this.syncHeavenHellLootSpriteDepths(isHeavenHellBonusHunt ? "behindDemons" : false);
           this.heroSprite.setDepth?.(DEPTH_HERO);
           const safeDuration = Math.max(1, Number(duration) || 1);
           const shouldUseFeatureApproach = featureApproach && safeDuration > 90;

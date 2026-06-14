@@ -9634,24 +9634,28 @@ export class GameServer {
 
     const chestConfig = this.getHeavenHellChestConfig();
     const chestTypes = this.getHeavenHellChestTypes();
+    const gargoyleConfig = this.getHeavenHellGargoyleConfig();
     const createdChests = [];
 
     killEntries.forEach((entry) => {
       const nextChestId = Math.max(1, Math.floor(Number(bonusState.nextChestId || 1) || 1));
+      const isGargoyleDemon = entry?.isGargoyleDemon === true;
       const chest = generateChest({
         chestConfig,
         chestTypes,
+        dropChanceOverride: isGargoyleDemon ? gargoyleConfig?.chestChance : null,
+        chestTypeWeights: isGargoyleDemon ? gargoyleConfig?.chestType : null,
         source: entry?.isBoss
           ? "boss"
           : (entry?.isMultiplierDemon
             ? "multiplier"
-            : (entry?.isGargoyleDemon ? "gargoyle" : "normal")),
+            : (isGargoyleDemon ? "gargoyle" : "normal")),
         reel: entry?.reel,
         row: entry?.row,
         symbol: entry?.symbol,
         isBoss: entry?.isBoss === true,
         isMultiplierDemon: entry?.isMultiplierDemon === true,
-        isGargoyleDemon: entry?.isGargoyleDemon === true,
+        isGargoyleDemon,
         pendingId: nextChestId
       });
       if (!chest) return;
@@ -10405,6 +10409,7 @@ export class GameServer {
     const bonusState = heavenHell.bonus;
     const lootConfig = this.getHeavenHellConfig()?.bonus?.loot || {};
     const baseDropChance = Number(lootConfig?.baseDropChance ?? 0.3);
+    const bossDropFactor = Math.max(1, Math.floor(Number(lootConfig?.bossDropFactor ?? 1) || 1));
     const drops = [];
 
     killEntries.forEach((entry) => {
@@ -10412,33 +10417,41 @@ export class GameServer {
       if (!shouldDrop) return;
       const tableKey = this.getHeavenHellLootTableKey(entry, lootConfig);
       const valueEntries = this.getHeavenHellLootTableEntries(tableKey, lootConfig);
-      const selectedEntry = this.pickWeightedEntry(valueEntries);
-      const resolvedDrop = this.resolveHeavenHellLootDropSelection(selectedEntry, lootConfig);
-      const amount = Number(resolvedDrop?.baseValue || 0);
-      if (!(amount > 0)) return;
+      const dropRollCount = entry?.isBoss === true ? bossDropFactor : 1;
       const pieceMultiplier = Math.max(
         1,
         Math.floor(Number(entry?.lootMultiplier ?? lootMultiplier ?? 1) || 1)
       );
-      for (let pieceIndex = 0; pieceIndex < pieceMultiplier; pieceIndex++) {
-        const offsets = this.getHeavenHellLootScatterOffsets(entry, pieceIndex, pieceMultiplier);
-        const drop = {
-          reel: Number(entry?.reel),
-          row: Number(entry?.row),
-          baseValue: amount,
-          value: amount,
-          lootKind: resolvedDrop?.lootType || null,
-          lootType: resolvedDrop?.lootType || null,
-          lootId: resolvedDrop?.lootId ?? null,
-          source: entry?.source || "demon",
-          isBoss: entry?.isBoss === true,
-          lootTableKey: tableKey,
-          pieceMultiplier,
-          offsetX: offsets.offsetX,
-          offsetY: offsets.offsetY
-        };
-        bonusState.lootGround.push(drop);
-        drops.push(drop);
+      const totalScatterCount = dropRollCount * pieceMultiplier;
+      let scatterIndex = 0;
+
+      for (let rollIndex = 0; rollIndex < dropRollCount; rollIndex++) {
+        const selectedEntry = this.pickWeightedEntry(valueEntries);
+        const resolvedDrop = this.resolveHeavenHellLootDropSelection(selectedEntry, lootConfig);
+        const amount = Number(resolvedDrop?.baseValue || 0);
+        if (!(amount > 0)) continue;
+
+        for (let pieceIndex = 0; pieceIndex < pieceMultiplier; pieceIndex++) {
+          const offsets = this.getHeavenHellLootScatterOffsets(entry, scatterIndex, totalScatterCount);
+          const drop = {
+            reel: Number(entry?.reel),
+            row: Number(entry?.row),
+            baseValue: amount,
+            value: amount,
+            lootKind: resolvedDrop?.lootType || null,
+            lootType: resolvedDrop?.lootType || null,
+            lootId: resolvedDrop?.lootId ?? null,
+            source: entry?.source || "demon",
+            isBoss: entry?.isBoss === true,
+            lootTableKey: tableKey,
+            pieceMultiplier: totalScatterCount,
+            offsetX: offsets.offsetX,
+            offsetY: offsets.offsetY
+          };
+          bonusState.lootGround.push(drop);
+          drops.push(drop);
+          scatterIndex += 1;
+        }
       }
     });
 

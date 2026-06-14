@@ -260,6 +260,77 @@ const distributionToKeyedObject = (distributionRows) => {
   return out;
 };
 
+const countExecutedActions = (states, actionName) =>
+  Array.isArray(states)
+    ? states.filter((state) => String(state?.executedAction || "") === actionName).length
+    : 0;
+
+const readBonusEndMultiplier = (state) => {
+  const fromBonus = Number(state?.heavenHell?.bonus?.globalMultiplier);
+  if (Number.isFinite(fromBonus) && fromBonus > 0) {
+    return Math.max(1, Math.floor(fromBonus));
+  }
+  const fromState = Number(state?.multiplier);
+  if (Number.isFinite(fromState) && fromState > 0) {
+    return Math.max(1, Math.floor(fromState));
+  }
+  return 1;
+};
+
+const readMainGameAngelMaxMultiplier = (states) => {
+  if (!Array.isArray(states) || !states.length) return 1;
+  let maxMultiplier = 1;
+  for (const state of states) {
+    if (isBonusPhaseState(state)) continue;
+    const candidates = [
+      Number(state?.heroAngelStartMultiplier),
+      Number(state?.heroAngelMultiplier),
+      Number(state?.heroAngelNextMultiplier)
+    ];
+    candidates.forEach((value) => {
+      if (Number.isFinite(value) && value > maxMultiplier) {
+        maxMultiplier = Math.max(1, Math.floor(value));
+      }
+    });
+  }
+  return maxMultiplier;
+};
+
+const emptyBonusBucketAgg = () => ({
+  count: 0,
+  sumTbm: 0,
+  sumPayout: 0,
+  sumFreespins: 0,
+  maxFreespins: 0,
+  sumFreerespins: 0,
+  maxFreerespins: 0,
+  sumDemonKillCount: 0,
+  maxDemonKillCount: 0,
+  sumEndMultiplier: 0,
+  maxEndMultiplier: 0
+});
+
+const bumpBonusRoundAgg = (map, key, tbm, payout = 0, extras = {}) => {
+  const prev = map.get(key) || emptyBonusBucketAgg();
+  const freespins = Math.max(0, Math.floor(Number(extras.freespins) || 0));
+  const freerespins = Math.max(0, Math.floor(Number(extras.freerespins) || 0));
+  const demonKillCount = Math.max(0, Math.floor(Number(extras.demonKillCount) || 0));
+  const endMultiplier = Math.max(1, Math.floor(Number(extras.endMultiplier) || 1));
+
+  prev.count += 1;
+  prev.sumTbm += tbm;
+  prev.sumPayout += payout;
+  prev.sumFreespins += freespins;
+  prev.maxFreespins = Math.max(prev.maxFreespins, freespins);
+  prev.sumFreerespins += freerespins;
+  prev.maxFreerespins = Math.max(prev.maxFreerespins, freerespins);
+  prev.sumDemonKillCount += demonKillCount;
+  prev.maxDemonKillCount = Math.max(prev.maxDemonKillCount, demonKillCount);
+  prev.sumEndMultiplier += endMultiplier;
+  prev.maxEndMultiplier = Math.max(prev.maxEndMultiplier, endMultiplier);
+  map.set(key, prev);
+};
+
 const bumpAgg = (map, key, tbm, payout = 0) => {
   const prev = map.get(key) || { count: 0, sumTbm: 0, sumPayout: 0 };
   prev.count += 1;
@@ -292,6 +363,62 @@ const buildAbilityRtpRows = (contributionTBM, contributionPayout, totalStake) =>
     totalContributionPayout: fourDecimals(contributionPayout[ability]),
     rtpPercent: totalStake > 0 ? fourDecimals((contributionPayout[ability] / totalStake) * 100) : 0
   }));
+
+const buildBonusBucketSummary = (agg, { totalStake = 0, completedRounds = 0, bonusRounds = 0 } = {}) => ({
+  rounds: agg.count,
+  shareOfAllRoundsPercent:
+    completedRounds > 0 ? twoDecimals((agg.count / completedRounds) * 100) : 0,
+  shareOfBonusesPercent:
+    bonusRounds > 0 ? twoDecimals((agg.count / bonusRounds) * 100) : 0,
+  totalTbm: Number(agg.sumTbm.toFixed(4)),
+  averageTbm: agg.count > 0 ? twoDecimals(agg.sumTbm / agg.count) : 0,
+  totalPayout: Number(agg.sumPayout.toFixed(4)),
+  averagePayout: agg.count > 0 ? twoDecimals(agg.sumPayout / agg.count) : 0,
+  rtpPercent: totalStake > 0 ? fourDecimals((agg.sumPayout / totalStake) * 100) : 0,
+  totalFreespins: agg.sumFreespins,
+  averageFreespins: agg.count > 0 ? twoDecimals(agg.sumFreespins / agg.count) : 0,
+  maxFreespins: agg.maxFreespins,
+  totalFreerespins: agg.sumFreerespins,
+  averageFreerespins: agg.count > 0 ? twoDecimals(agg.sumFreerespins / agg.count) : 0,
+  maxFreerespins: agg.maxFreerespins,
+  totalDemonKillCount: agg.sumDemonKillCount,
+  averageDemonKillCount: agg.count > 0 ? twoDecimals(agg.sumDemonKillCount / agg.count) : 0,
+  maxDemonKillCount: agg.maxDemonKillCount,
+  averageEndMultiplier: agg.count > 0 ? twoDecimals(agg.sumEndMultiplier / agg.count) : 0,
+  maxEndMultiplier: agg.maxEndMultiplier
+});
+
+const buildBonusDistributionRows = (countMap, { totalStake = 0, completedRounds = 0, bonusRounds = 0 } = {}) => {
+  const zeroAgg = countMap.get(BONUS_TBM_ZERO_KEY) || emptyBonusBucketAgg();
+  const zeroRow = {
+    key: BONUS_TBM_ZERO_KEY,
+    label: "0",
+    ...buildBonusBucketSummary(zeroAgg, { totalStake, completedRounds, bonusRounds })
+  };
+
+  const aboveZeroRows = BONUS_TBM_ABOVE_ZERO_BUCKETS.map((bucket) => {
+    const agg = countMap.get(bucket.key) || emptyBonusBucketAgg();
+    return {
+      key: bucket.key,
+      label: bucket.label,
+      ...buildBonusBucketSummary(agg, { totalStake, completedRounds, bonusRounds })
+    };
+  });
+
+  const uncategorized = countMap.has("uncategorized")
+    ? [{
+        key: "uncategorized",
+        label: "uncategorized",
+        ...buildBonusBucketSummary(countMap.get("uncategorized"), {
+          totalStake,
+          completedRounds,
+          bonusRounds
+        })
+      }]
+    : [];
+
+  return { zero: zeroRow, aboveZero: [...aboveZeroRows, ...uncategorized] };
+};
 
 const parseBool = (value, fallback = false) => {
   if (value === true || value === "true") return true;
@@ -369,6 +496,9 @@ let hitRounds = 0;
 let noHitRounds = 0;
 let maxWin = 0;
 let maxTbm = 0;
+let maxMainGameWin = 0;
+let maxBonusGameWin = 0;
+let maxMainGameAngelMultiplier = 1;
 
 let bonusRounds = 0;
 let totalBonusPhaseWin = 0;
@@ -441,6 +571,9 @@ for (let i = 1; i <= rounds; i += 1) {
   const { mainGameWin, bonusWin } = splitRoundTwaByPhase(states);
   mainGameWinsPerRound.push(mainGameWin);
   totalMainGameWin += mainGameWin;
+  maxMainGameWin = Math.max(maxMainGameWin, mainGameWin);
+  maxBonusGameWin = Math.max(maxBonusGameWin, bonusWin);
+  maxMainGameAngelMultiplier = Math.max(maxMainGameAngelMultiplier, readMainGameAngelMaxMultiplier(states));
 
   const roundAbilityContribution = readAbilityContribution(lastState);
   const roundAbilityProcs = readAbilityProcCounts(lastState);
@@ -459,8 +592,17 @@ for (let i = 1; i <= rounds; i += 1) {
   if (hadBonus) {
     const bonusPhaseTbm = roundBetSize > 0 ? bonusWin / roundBetSize : bonusWin;
     const bonusPhaseBucket = resolveBonusTbmBucketKey(bonusPhaseTbm);
+    const bonusFreespins = countExecutedActions(states, "freespin");
+    const bonusFreerespins = countExecutedActions(states, "freerespin");
+    const bonusDemonKillCount = readBonusKillCount(bonusSnapshot);
+    const bonusEndMultiplier = readBonusEndMultiplier(bonusSnapshot);
 
-    bumpAgg(finalTbmDistribution, resolveBonusTbmBucketKey(roundTbm), roundTbm, safeWin);
+    bumpBonusRoundAgg(finalTbmDistribution, resolveBonusTbmBucketKey(roundTbm), roundTbm, safeWin, {
+      freespins: bonusFreespins,
+      freerespins: bonusFreerespins,
+      demonKillCount: bonusDemonKillCount,
+      endMultiplier: bonusEndMultiplier
+    });
     bumpAgg(bonusPhaseDistribution, bonusPhaseBucket, bonusPhaseTbm, bonusWin);
     bonusRounds += 1;
     bonusWinsPerBonusRound.push(bonusWin);
@@ -479,7 +621,7 @@ for (let i = 1; i <= rounds; i += 1) {
     bumpAgg(tbmByDivineStrikeLevel, abilities.divineStrike, roundTbm, safeWin);
     bumpAgg(tbmByDivineChargeLevel, abilities.divineCharge, roundTbm, safeWin);
 
-    bonusEndKillCounts.push(readBonusKillCount(bonusSnapshot));
+    bonusEndKillCounts.push(bonusDemonKillCount);
   } else {
     noBonusStats.count += 1;
     noBonusStats.sumTbm += roundTbm;
@@ -548,7 +690,7 @@ const bonusRatePercent =
 const abilityRtpRows = buildAbilityRtpRows(abilityContributionTBM, abilityContributionPayout, totalStake);
 const trackedAbilityRtpPercent = abilityRtpRows.reduce((sum, row) => sum + row.rtpPercent, 0);
 
-const finalTbmDistributionRows = buildFinalTbmDistributionRows(finalTbmDistribution, {
+const finalTbmDistributionRows = buildBonusDistributionRows(finalTbmDistribution, {
   totalStake,
   completedRounds,
   bonusRounds
@@ -619,6 +761,9 @@ const report = {
     description: "Per completed round: win attributed to main-game actions (spin/respin) before bonus phase",
     sampleCount: completedRounds,
     averageWin: Number(avgMainGameWin.toFixed(6)),
+    maxWin: Number(maxMainGameWin.toFixed(6)),
+    maxMultiplier: maxMainGameAngelMultiplier,
+    maxAngelMultiplier: maxMainGameAngelMultiplier,
     variance: Number(mainGameVariance.toFixed(6)),
     stdDev: Number(mainGameStdDev.toFixed(6))
   },
@@ -633,6 +778,7 @@ const report = {
     bonusRatePercent,
     averageBonusPhaseWin:
       bonusRounds > 0 ? Number((totalBonusPhaseWin / bonusRounds).toFixed(4)) : 0,
+    maxWin: Number(maxBonusGameWin.toFixed(6)),
     averageRoundWinWhenBonus:
       bonusRounds > 0 ? Number((totalRoundWinWhenBonus / bonusRounds).toFixed(4)) : 0,
     bonusPhaseWinVariance: Number(bonusWinVariance.toFixed(6)),
