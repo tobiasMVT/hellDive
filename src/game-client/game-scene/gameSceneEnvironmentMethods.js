@@ -1178,6 +1178,8 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         this.load.image('helldive_divine_wrath_beam', 'assets/helldive/effects/divine_wrath_beam.png');
         this.load.image('helldive_demon_death_spatter', 'assets/helldive/effects/demon_death_spatter.png');
         this.load.image('helldive_divine_strike_slash', 'assets/helldive/effects/divine_strike_slash.png');
+        this.load.image('helldive_attack_gif_preload', 'assets/helldive/effects/attack.gif');
+        this.load.image('helldive_attack2_gif_preload', 'assets/helldive/effects/attack2.gif');
         this.load.image('helldive_loot_land_glow', 'assets/helldive/effects/loot_land_glow.png');
         this.load.image('helldive_portal_red', 'assets/helldive/effects/portal_red.png');
         this.load.image('helldive_angel_trail', 'assets/helldive/effects/angel_trail.png');
@@ -1192,6 +1194,9 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         this.load.image('bonus_chest', 'assets/chest.png'); // Golden chest for bonus
         this.load.image('helldive_chest_wooden', 'assets/chest_wooden.png');
         this.load.image('helldive_chest_divine', 'assets/chest_divine.png');
+        this.load.once?.('complete', () => {
+          this.primeHeavenHellAttackGifCache?.();
+        });
     
         // Combat sounds
         this.load.audio('banana_hit_1', 'assets/sounds/banana_attacked1.mp3');

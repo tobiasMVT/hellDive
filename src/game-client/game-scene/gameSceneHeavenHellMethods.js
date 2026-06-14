@@ -1,3 +1,5 @@
+import { decompressFrames, parseGIF } from "gifuct-js";
+
 export function createGameSceneHeavenHellMethods(deps = {}) {
   const {
     DEPTH_HERO,
@@ -15,6 +17,18 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
   const SOUL_COLLECT_TRAIL_DEPTH = DEPTH_HOUSE + 1;
   const SOUL_COLLECT_ORB_DEPTH = DEPTH_HOUSE + 2;
   const SOUL_COLLECT_INTAKE_DEPTH = DEPTH_HOUSE + 3;
+  const HEAVEN_HELL_ATTACK_GIF_DEFS = {
+    attack: {
+      path: "assets/helldive/effects/attack.gif",
+      texturePrefix: "helldive_attack_gif_frame_",
+      baseScale: 0.72
+    },
+    attack2: {
+      path: "assets/helldive/effects/attack2.gif",
+      texturePrefix: "helldive_attack2_gif_frame_",
+      baseScale: 0.84
+    }
+  };
 
   return {
     clearHeavenHellRippleFx() {
@@ -49,6 +63,188 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
             fx.destroy();
           }
         });
+      },
+
+    getHeavenHellAttackGifDefinition(effectId = "attack") {
+        return HEAVEN_HELL_ATTACK_GIF_DEFS[String(effectId || "attack")] || HEAVEN_HELL_ATTACK_GIF_DEFS.attack;
+      },
+
+    primeHeavenHellAttackGifCache() {
+        if (this._heavenHellAttackGifCachePrimed) return;
+        this._heavenHellAttackGifCachePrimed = true;
+        Object.keys(HEAVEN_HELL_ATTACK_GIF_DEFS).forEach((effectId) => {
+          void this.ensureHeavenHellAttackGifFrames(effectId);
+        });
+      },
+
+    async ensureHeavenHellAttackGifFrames(effectId = "attack") {
+        if (!this.textures) return null;
+        const definition = this.getHeavenHellAttackGifDefinition(effectId);
+        if (!definition?.path) return null;
+        if (!this._heavenHellAttackGifCache || typeof this._heavenHellAttackGifCache !== "object") {
+          this._heavenHellAttackGifCache = {};
+        }
+
+        const cacheKey = String(effectId || "attack");
+        const existing = this._heavenHellAttackGifCache[cacheKey];
+        if (existing?.frameKeys?.length) {
+          return existing;
+        }
+        if (existing?.loadPromise) {
+          return existing.loadPromise;
+        }
+
+        const loadPromise = fetch(definition.path)
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Attack GIF fetch failed: ${response.status}`);
+            }
+            return response.arrayBuffer();
+          })
+          .then((buffer) => {
+            const parsed = parseGIF(buffer);
+            const frames = decompressFrames(parsed, true);
+            const width = Math.max(1, Number(parsed?.lsd?.width) || Number(frames?.[0]?.dims?.width) || 1);
+            const height = Math.max(1, Number(parsed?.lsd?.height) || Number(frames?.[0]?.dims?.height) || 1);
+            const compositeCanvas = document.createElement("canvas");
+            compositeCanvas.width = width;
+            compositeCanvas.height = height;
+            const compositeCtx = compositeCanvas.getContext("2d");
+            const patchCanvas = document.createElement("canvas");
+            const patchCtx = patchCanvas.getContext("2d");
+            let patchImageData = null;
+            let previousFrame = null;
+            const frameKeys = [];
+            const frameDurations = [];
+
+            frames.forEach((frame, index) => {
+              const dims = frame?.dims;
+              if (!frame?.patch || !dims || !compositeCtx || !patchCtx) {
+                return;
+              }
+
+              if (previousFrame?.dims && Number(previousFrame?.disposalType) === 2) {
+                compositeCtx.clearRect(
+                  Number(previousFrame.dims.left) || 0,
+                  Number(previousFrame.dims.top) || 0,
+                  Number(previousFrame.dims.width) || 0,
+                  Number(previousFrame.dims.height) || 0
+                );
+              }
+
+              const isFullFrame =
+                Number(dims.left) === 0 &&
+                Number(dims.top) === 0 &&
+                Number(dims.width) === width &&
+                Number(dims.height) === height;
+              if (isFullFrame) {
+                compositeCtx.clearRect(0, 0, width, height);
+              }
+
+              if (patchCanvas.width !== dims.width || patchCanvas.height !== dims.height) {
+                patchCanvas.width = dims.width;
+                patchCanvas.height = dims.height;
+                patchImageData = null;
+              }
+              if (!patchImageData || patchImageData.width !== dims.width || patchImageData.height !== dims.height) {
+                patchImageData = patchCtx.createImageData(dims.width, dims.height);
+              }
+              patchImageData.data.set(frame.patch);
+              patchCtx.putImageData(patchImageData, 0, 0);
+              compositeCtx.drawImage(patchCanvas, dims.left, dims.top);
+
+              const frameKey = `${definition.texturePrefix}${String(index).padStart(2, "0")}`;
+              if (this.textures.exists(frameKey)) {
+                this.textures.remove(frameKey);
+              }
+              const frameTexture = this.textures.createCanvas(frameKey, width, height);
+              const frameCtx = frameTexture.getContext();
+              frameCtx.clearRect(0, 0, width, height);
+              frameCtx.drawImage(compositeCanvas, 0, 0);
+              frameTexture.refresh();
+
+              frameKeys.push(frameKey);
+              frameDurations.push(Math.max(16, Number(frame?.delay) || 66));
+              previousFrame = frame;
+            });
+
+            const resolved = {
+              frameKeys,
+              frameDurations,
+              width,
+              height,
+              baseScale: Number(definition.baseScale) || 1
+            };
+            this._heavenHellAttackGifCache[cacheKey] = resolved;
+            return resolved;
+          })
+          .catch((error) => {
+            console.warn(`[HeavenHell] Attack GIF decode failed for ${cacheKey}`, error);
+            this._heavenHellAttackGifCache[cacheKey] = { frameKeys: [], frameDurations: [], failed: true };
+            return null;
+          })
+          .finally(() => {
+            if (this._heavenHellAttackGifCache?.[cacheKey]?.loadPromise === loadPromise) {
+              delete this._heavenHellAttackGifCache[cacheKey].loadPromise;
+            }
+          });
+
+        this._heavenHellAttackGifCache[cacheKey] = {
+          ...(existing || {}),
+          loadPromise
+        };
+        return loadPromise;
+      },
+
+    playHeavenHellAttackGifBurst(effectId = "attack", x = 0, y = 0, {
+        angle = 0,
+        scale = 1,
+        depth = DEPTH_HERO + 53,
+        alpha = 1,
+        tint = null,
+        blendMode = Phaser.BlendModes.ADD
+      } = {}) {
+        const cacheKey = String(effectId || "attack");
+        const animation = this._heavenHellAttackGifCache?.[cacheKey];
+        if (!animation?.frameKeys?.length) {
+          void this.ensureHeavenHellAttackGifFrames(cacheKey);
+          return null;
+        }
+
+        const resolvedScale = Math.max(0.1, (Number(animation.baseScale) || 1) * (Number(scale) || 1));
+        const sprite = this.add.image(x, y, animation.frameKeys[0])
+          .setDepth(depth)
+          .setScale(resolvedScale)
+          .setAlpha(alpha)
+          .setAngle(angle)
+          .setBlendMode(blendMode);
+        if (tint !== null && tint !== undefined && typeof sprite.setTint === "function") {
+          sprite.setTint(tint);
+        }
+
+        const frameEvents = [];
+        let elapsed = 0;
+        for (let index = 1; index < animation.frameKeys.length; index += 1) {
+          elapsed += Math.max(16, Number(animation.frameDurations[index - 1]) || 66);
+          const frameKey = animation.frameKeys[index];
+          frameEvents.push(this.time.delayedCall(elapsed, () => {
+            if (!sprite || sprite.destroyed) return;
+            sprite.setTexture(frameKey);
+          }));
+        }
+        const totalDuration = elapsed + Math.max(16, Number(animation.frameDurations[animation.frameDurations.length - 1]) || 66);
+        const cleanup = () => {
+          frameEvents.forEach((event) => event?.remove?.(false));
+          if (sprite && !sprite.destroyed) {
+            sprite.destroy();
+          }
+        };
+        const destroyEvent = this.time.delayedCall(totalDuration, cleanup);
+        sprite.once?.("destroy", () => {
+          destroyEvent?.remove?.(false);
+          frameEvents.forEach((event) => event?.remove?.(false));
+        });
+        return sprite;
       },
 
     clearHeavenHellPentagramFx() {
@@ -666,6 +862,9 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
 
     updateHellDiveBackground(gameState = {}, { immediate = false, fade = true } = {}) {
         if (!this.mainBackground || this.mainBackground.destroyed || !this.textures) return;
+        if (gameState?.isBonus === true) {
+          this.primeHeavenHellAttackGifCache?.();
+        }
         const desiredTexture = this.getHellDiveBackgroundTextureKey?.(gameState) || "helldive_heaven_bg";
         if (!this.textures.exists(desiredTexture)) return;
         if (this.mainBackground.texture?.key === desiredTexture) return;
@@ -2481,7 +2680,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         await Promise.all(escapes.map((escape) => animateOne(escape)));
       },
 
-    playHeavenHellAngelStrikeSlash(from, to, { scale = 1 } = {}) {
+    playHeavenHellAngelStrikeSlash(from, to, { scale = 1, palette = "gold", gifEffect = null } = {}) {
         if (!from || !to) return;
         const midX = (from.x + to.x) * 0.5;
         const midY = (from.y + to.y) * 0.5;
@@ -2489,8 +2688,35 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const dy = to.y - from.y;
         const distance = Math.max(1, Math.sqrt(dx * dx + dy * dy));
         const angle = Phaser.Math.RadToDeg(Math.atan2(dy, dx));
-    
-        const strikeLine = this.add.rectangle(midX, midY, distance, 5 * scale, 0xEFFFFF, 0.55)
+        const paletteKey = String(palette || "gold").toLowerCase();
+        const paletteConfig = paletteKey === "divinex"
+          ? {
+              line: 0xFF9BF5,
+              lineAlpha: 0.62,
+              fallbackSlash: 0xFFD2FF,
+              sparkA: 0xFF8BF1,
+              sparkB: 0xFEE7FF,
+              gifTint: 0xFF93F6
+            }
+          : paletteKey === "charge"
+            ? {
+                line: 0xDDF7FF,
+                lineAlpha: 0.64,
+                fallbackSlash: 0xF2FDFF,
+                sparkA: 0xBFE9FF,
+                sparkB: 0xFFF3C8,
+                gifTint: 0xD7F6FF
+              }
+            : {
+                line: 0xEFFFFF,
+                lineAlpha: 0.55,
+                fallbackSlash: 0xFFF4B0,
+                sparkA: 0xFFF1A8,
+                sparkB: 0xBFE9FF,
+                gifTint: null
+              };
+
+        const strikeLine = this.add.rectangle(midX, midY, distance, 5 * scale, paletteConfig.line, paletteConfig.lineAlpha)
           .setDepth(DEPTH_HERO + 52)
           .setAngle(angle)
           .setBlendMode(Phaser.BlendModes.ADD)
@@ -2503,27 +2729,45 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           ease: "Cubic.easeOut",
           onComplete: () => strikeLine.destroy()
         });
-    
-        const slash = this.textures?.exists?.("helldive_divine_strike_slash")
-          ? this.add.image(midX, midY, "helldive_divine_strike_slash")
-              .setDepth(DEPTH_HERO + 53)
-              .setScale(0.5 * scale)
-              .setAlpha(0.98)
-              .setAngle(angle)
-              .setBlendMode(Phaser.BlendModes.ADD)
-          : this.add.rectangle(midX, midY, 150 * scale, 10 * scale, 0xFFF4B0, 0.88)
-              .setDepth(DEPTH_HERO + 53)
-              .setAngle(angle)
-              .setBlendMode(Phaser.BlendModes.ADD);
-        this.tweens.add({
-          targets: slash,
-          scaleX: (slash.scaleX || 1) * 1.5,
-          scaleY: (slash.scaleY || 1) * 1.14,
-          alpha: 0,
-          duration: 260,
-          ease: "Cubic.easeOut",
-          onComplete: () => slash.destroy()
+
+        const resolvedGifEffect = gifEffect || (
+          paletteKey === "divinex"
+            ? "attack2"
+            : (Phaser.Math.Between(0, 1) === 0 ? "attack" : "attack2")
+        );
+        const gifScale = Phaser.Math.Clamp((distance / 170) * (paletteKey === "charge" ? 1.1 : 1), 0.74, 1.22) * scale;
+        const gifSlash = this.playHeavenHellAttackGifBurst?.(resolvedGifEffect, midX, midY, {
+          angle,
+          scale: gifScale,
+          depth: DEPTH_HERO + 53,
+          alpha: 0.98,
+          tint: paletteConfig.gifTint
         });
+        if (!gifSlash) {
+          const slash = this.textures?.exists?.("helldive_divine_strike_slash")
+            ? this.add.image(midX, midY, "helldive_divine_strike_slash")
+                .setDepth(DEPTH_HERO + 53)
+                .setScale(0.5 * scale)
+                .setAlpha(0.98)
+                .setAngle(angle)
+                .setBlendMode(Phaser.BlendModes.ADD)
+            : this.add.rectangle(midX, midY, 150 * scale, 10 * scale, paletteConfig.fallbackSlash, 0.88)
+                .setDepth(DEPTH_HERO + 53)
+                .setAngle(angle)
+                .setBlendMode(Phaser.BlendModes.ADD);
+          if (paletteConfig.gifTint !== null && slash && typeof slash.setTint === "function") {
+            slash.setTint(paletteConfig.gifTint);
+          }
+          this.tweens.add({
+            targets: slash,
+            scaleX: (slash.scaleX || 1) * 1.5,
+            scaleY: (slash.scaleY || 1) * 1.14,
+            alpha: 0,
+            duration: 260,
+            ease: "Cubic.easeOut",
+            onComplete: () => slash.destroy()
+          });
+        }
     
         for (let i = 0; i < 10; i++) {
           const t = i / 9;
@@ -2531,7 +2775,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
             from.x + dx * t + Phaser.Math.Between(-8, 8),
             from.y + dy * t + Phaser.Math.Between(-8, 8),
             Phaser.Math.Between(2, 4) * scale,
-            i % 2 === 0 ? 0xFFF1A8 : 0xBFE9FF,
+            i % 2 === 0 ? paletteConfig.sparkA : paletteConfig.sparkB,
             0.75
           ).setDepth(DEPTH_HERO + 54).setBlendMode(Phaser.BlendModes.ADD);
           this.tweens.add({
@@ -2545,6 +2789,165 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
             onComplete: () => spark.destroy()
           });
         }
+      },
+
+    createHeavenHellDivineXCrossRays(center = null, { wave = 1 } = {}) {
+        if (!center) return [];
+        if (!Array.isArray(this.heavenHellDivineGroundFx)) {
+          this.heavenHellDivineGroundFx = [];
+        }
+
+        const waveIndex = Math.max(1, Math.floor(Number(wave) || 1));
+        const rayLength = 132 + waveIndex * 18;
+        const rayThickness = 10 + Math.min(4, waveIndex);
+        const beamA = this.add.rectangle(center.x, center.y, rayLength, rayThickness, 0xFF7BEF, 0.72)
+          .setAngle(45)
+          .setDepth(DEPTH_SYMBOLS + 16)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.2, 0.3)
+          .setAlpha(0);
+        const beamB = this.add.rectangle(center.x, center.y, rayLength, rayThickness, 0xFFC7FF, 0.76)
+          .setAngle(-45)
+          .setDepth(DEPTH_SYMBOLS + 17)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.2, 0.3)
+          .setAlpha(0);
+        const glowA = this.add.rectangle(center.x, center.y, rayLength * 1.12, rayThickness * 1.8, 0xFF53E3, 0.18)
+          .setAngle(45)
+          .setDepth(DEPTH_SYMBOLS + 15)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.18, 0.22)
+          .setAlpha(0);
+        const glowB = this.add.rectangle(center.x, center.y, rayLength * 1.12, rayThickness * 1.8, 0xFF98FA, 0.18)
+          .setAngle(-45)
+          .setDepth(DEPTH_SYMBOLS + 15)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.18, 0.22)
+          .setAlpha(0);
+        const core = this.add.circle(center.x, center.y, 10 + waveIndex, 0xFFF0FF, 0.34)
+          .setDepth(DEPTH_SYMBOLS + 18)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setScale(0.2)
+          .setAlpha(0);
+        const fxParts = [glowA, glowB, beamA, beamB, core];
+        this.heavenHellDivineGroundFx.push(...fxParts);
+
+        this.tweens.add({
+          targets: [beamA, beamB],
+          alpha: 0.96,
+          scaleX: 1.08,
+          scaleY: 1,
+          duration: 120,
+          ease: "Cubic.easeOut"
+        });
+        this.tweens.add({
+          targets: [glowA, glowB],
+          alpha: 0.34,
+          scaleX: 1.18,
+          scaleY: 1.06,
+          duration: 150,
+          ease: "Cubic.easeOut"
+        });
+        this.tweens.add({
+          targets: core,
+          alpha: 0.88,
+          scale: 1.4,
+          duration: 130,
+          ease: "Back.easeOut"
+        });
+
+        this.time.delayedCall(150 + waveIndex * 24, () => {
+          const activeFx = fxParts.filter((fx) => fx && !fx.destroyed);
+          if (activeFx.length === 0) return;
+          this.tweens.add({
+            targets: [beamA, beamB, glowA, glowB, core],
+            alpha: 0,
+            duration: 320 + waveIndex * 28,
+            ease: "Sine.easeOut",
+            onComplete: () => {
+              activeFx.forEach((fx) => {
+                if (fx && !fx.destroyed) fx.destroy();
+              });
+            }
+          });
+          this.tweens.add({
+            targets: [beamA, beamB],
+            scaleX: 1.42,
+            duration: 320,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: [glowA, glowB],
+            scaleX: 1.68,
+            duration: 340,
+            ease: "Sine.easeOut"
+          });
+          this.tweens.add({
+            targets: core,
+            scale: 2,
+            duration: 280,
+            ease: "Sine.easeOut"
+          });
+        });
+
+        return fxParts;
+      },
+
+    createHeavenHellDivineStrikeGroundGlitter(center = null, { wave = 0, intensity = 1 } = {}) {
+        if (!center) return [];
+        if (!Array.isArray(this.heavenHellDivineGroundFx)) {
+          this.heavenHellDivineGroundFx = [];
+        }
+
+        const waveIndex = Math.max(0, Math.floor(Number(wave) || 0));
+        const sparkleCount = Math.max(5, 7 + waveIndex + Math.floor(Number(intensity) || 0));
+        const sparkleRadius = 20 + waveIndex * 4 + Math.max(0, Number(intensity) || 0) * 3;
+        const sparkles = [];
+
+        for (let index = 0; index < sparkleCount; index += 1) {
+          const angle = (Math.PI * 2 * index) / sparkleCount;
+          const radius = Phaser.Math.Between(Math.max(12, sparkleRadius - 12), sparkleRadius + 6);
+          const sparkle = this.add.circle(
+            center.x + Math.cos(angle) * radius,
+            center.y + Math.sin(angle) * radius * 0.82,
+            Phaser.Math.FloatBetween(1.8, 3.8),
+            index % 2 === 0 ? 0xFFF8DC : 0xFFE89A,
+            0
+          )
+            .setDepth(DEPTH_SYMBOLS + 16)
+            .setBlendMode(Phaser.BlendModes.ADD)
+            .setScale(0.2);
+          sparkles.push(sparkle);
+        }
+
+        this.heavenHellDivineGroundFx.push(...sparkles);
+        sparkles.forEach((sparkle, index) => {
+          const rise = Phaser.Math.Between(4, 12);
+          this.tweens.add({
+            targets: sparkle,
+            alpha: 0.82,
+            scale: Phaser.Math.FloatBetween(0.85, 1.35),
+            delay: index * 28,
+            duration: 180,
+            yoyo: true,
+            repeat: 2,
+            ease: "Sine.easeInOut"
+          });
+          this.tweens.add({
+            targets: sparkle,
+            y: sparkle.y - rise,
+            delay: index * 28,
+            duration: 620 + waveIndex * 70,
+            ease: "Sine.easeOut",
+            onComplete: () => {
+              if (!sparkle.destroyed) {
+                sparkle.destroy();
+              }
+            }
+          });
+        });
+
+        return sparkles;
       },
 
     async playHeavenHellDivineChargeWindup(step = {}, { stepQuickStop = false } = {}) {
@@ -2788,7 +3191,11 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
     
         this.playSfx?.("lightning_thor_impact", { volume: 0.78 });
         this.playSfx?.("finisher_sword", { volume: 0.46 });
-        this.playHeavenHellAngelStrikeSlash?.({ x: heroX, y: heroY }, target, { scale: 1.22 });
+        this.playHeavenHellAngelStrikeSlash?.({ x: heroX, y: heroY }, target, {
+          scale: 1.22,
+          palette: "charge",
+          gifEffect: "attack2"
+        });
         this.cameras?.main?.shake?.(280, 0.011);
         const splash = this.textures?.exists?.("helldive_demon_splash")
           ? this.add.image(target.x, target.y, "helldive_demon_splash").setScale(0.5).setAlpha(0.96).setDepth(DEPTH_HERO + 49).setBlendMode(Phaser.BlendModes.ADD)
@@ -4753,6 +5160,10 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
 
         const fxParts = [litPlate, litPlateGlow, ground, rune, pentagram, innerRune, beam, sealGlow];
         this.heavenHellDivineGroundFx.push(...fxParts);
+        this.createHeavenHellDivineStrikeGroundGlitter?.(center, {
+          wave: waveIndex,
+          intensity: isCenter ? 2 : 1
+        });
 
         this.tweens.add({
           targets: [litPlate, litPlateGlow, ground, rune, pentagram, innerRune],
@@ -4933,6 +5344,10 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
 
         const fxParts = [plate, frame, star, pulse, beam, beamFlare];
         this.heavenHellDivineGroundFx.push(...fxParts);
+        this.createHeavenHellDivineStrikeGroundGlitter?.(center, {
+          wave: waveIndex,
+          intensity: isKilled ? 2 : 1
+        });
         let impactTriggered = false;
         const triggerImpact = () => {
           if (impactTriggered) return;
@@ -5285,11 +5700,16 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           if (!Number.isFinite(reel) || !Number.isFinite(row)) return null;
 
           const center = this.getGridCellCenter(reel, row);
+          this.createHeavenHellDivineXCrossRays?.(center, { wave });
           this.createHeavenHellDivineXWaveMarker?.(center, { wave });
 
           if (strikeAtTargets) {
             this.playSfx?.("attack_swing", { volume: 0.22, rate: 1.02 + wave * 0.03 });
-            this.playHeavenHellAngelStrikeSlash?.(originPoint, center, { scale: 0.82 + wave * 0.06 });
+            this.playHeavenHellAngelStrikeSlash?.(originPoint, center, {
+              scale: 0.82 + wave * 0.06,
+              palette: "divineX",
+              gifEffect: "attack2"
+            });
           } else {
             this.playSfx?.("lightning_thor", { volume: 0.22, rate: 1.14 + wave * 0.02 });
           }

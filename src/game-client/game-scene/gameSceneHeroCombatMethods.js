@@ -2420,6 +2420,9 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
           
           // Check if this step is approaching a banana
           if (isBananaStep) {
+            const bananaStrikeFrom = this.heroSprite && !this.heroSprite.destroyed
+              ? { x: Number(this.heroSprite.x || targetX), y: Number(this.heroSprite.y || targetY) }
+              : { x: targetX, y: targetY };
             if (!rushActive && !is3x3Troll) {
               if (!stepQuickStop) {
                 const swingSound = weapon === 'axe' ? 'attack_swing_axe' : 'attack_swing';
@@ -2471,6 +2474,12 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
               const impactFlash = this.add.circle(targetX, targetY, 22, 0xFFFFFF)
                 .setAlpha(0.7)
                 .setDepth(DEPTH_HERO + 1);
+
+              this.playHeavenHellAngelStrikeSlash?.(bananaStrikeFrom, { x: targetX, y: targetY }, {
+                scale: stepChargeLaunch ? 1.04 : 0.88,
+                palette: stepChargeLaunch ? "charge" : "gold",
+                gifEffect: stepChargeLaunch ? "attack2" : null
+              });
     
               this.tweens.add({
                 targets: impactFlash,
@@ -2548,6 +2557,12 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
               const quickFlash = this.add.circle(targetX, targetY, 18, 0xFFFFFF)
                 .setAlpha(0.6)
                 .setDepth(DEPTH_HERO + 1);
+
+              this.playHeavenHellAngelStrikeSlash?.(bananaStrikeFrom, { x: targetX, y: targetY }, {
+                scale: stepChargeLaunch ? 1.02 : 0.82,
+                palette: stepChargeLaunch ? "charge" : "gold",
+                gifEffect: rushActive || stepChargeLaunch ? "attack2" : "attack"
+              });
               
               this.tweens.add({
                 targets: quickFlash,
@@ -2719,7 +2734,9 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
                       ? { x: this.heroSprite.x, y: this.heroSprite.y }
                       : { x: targetX, y: targetY };
                     this.playHeavenHellAngelStrikeSlash?.(strikeFrom, bananaCellCenter, {
-                      scale: rushActive ? 0.9 : 0.72
+                      scale: rushActive ? 0.9 : 0.72,
+                      palette: stepChargeLaunch ? "charge" : "gold",
+                      gifEffect: stepChargeLaunch ? "attack2" : null
                     });
                     if (
                       !stepDivineXImpactPromise &&

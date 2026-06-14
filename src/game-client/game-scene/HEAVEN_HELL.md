@@ -7,6 +7,7 @@ Owns the Hell bonus presentation layer.
 - Heaven/Hell background swap
 - portal aura and ripple spawn
 - angel portal dive / arrival / charge / wrath FX
+- attack slash GIF playback (`attack.gif`, `attack2.gif`) via decoded frames, not native Phaser GIF animation
 - loot ground rendering and loot collect phase
 - Heaven/Hell kill meter and ability panel
 
@@ -59,3 +60,8 @@ Bonus entry timing:
 ## Boundary
 
 `Client.js` still decides when Heaven/Hell phases happen. This module only renders them.
+
+## GIF Note
+
+Slash GIFs in `assets/helldive/effects/` need the same kind of manual frame decode approach as the main-game portal.
+They do not autoplay as animated GIFs inside Phaser images.
