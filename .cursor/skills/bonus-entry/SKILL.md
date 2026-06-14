@@ -24,7 +24,8 @@ For the current Heaven/Hell flow:
 Main-game exit:
 
 - Fade the count-up display below the grid when the dive text appears
-- Show `DIVE INTO HELL`
+- Fade the board shadow backplates when `HELLDIVE...` appears (only when `layout.boardShadowBackplates.enabled` is true)
+- Show `HELLDIVE...`
 - Angel flies toward a portal near the top of the last reel
 - Angel shrinks into the portal and fully disappears
 - Portal flashes before the scene hands off
@@ -44,6 +45,9 @@ Hell arrival:
 
 - `fadeBonusEntryCountUpDisplay()`
   Fades the under-grid win count-up cleanly before bonus entry.
+
+- `fadeBoardShadowOverlayForBonusEntry()`
+  Fades the per-cell board shadow backplates when `HELLDIVE...` appears.
 
 - `playHeavenHellAngelDiveIntoPortal()`
   Main-board angel exit into the portal.

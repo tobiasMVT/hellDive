@@ -3026,6 +3026,7 @@ export function createGameSceneBonusCollectionMethods(deps = {}) {
         // when the final collect payout/count-up sequence begins.
         this.isInBonusMode = false;
         this.setMainGamePortalVisible?.(true);
+        this.createOrUpdateSymbolSpawnCurtain?.();
         this.suppressCountUpUntilBonusEndPayout = false;
         this.updateCountUp(baseTwa);
         this.bonusFruitPileTooltipVisible = false;

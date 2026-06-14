@@ -21,6 +21,7 @@ export function createGameSceneHeroEffectsMethods(deps = {}) {
     SYMBOL_POP_PARTICLE_ANIM_KEY,
     SYMBOL_POP_PARTICLE_FRAME_KEY_PREFIX,
     clientConfig,
+    gameClientConfig,
     getHeroScaleForFootprint,
     getHeroTexture,
     getReelSymbolRenderable,
@@ -3132,6 +3133,15 @@ export function createGameSceneHeroEffectsMethods(deps = {}) {
           });
           this.boardShadowRects = null;
         }
+
+        const boardShadowEnabled = gameClientConfig?.layout?.boardShadowBackplates?.enabled === true;
+        if (!boardShadowEnabled) {
+          if (this.boardShadowOverlay && !this.boardShadowOverlay.destroyed) {
+            this.boardShadowOverlay.destroy();
+          }
+          this.boardShadowOverlay = null;
+          return null;
+        }
     
         const cellSize = 70;
         const boardLeft = GRID_OFFSET_X;
@@ -3245,6 +3255,33 @@ export function createGameSceneHeroEffectsMethods(deps = {}) {
         overlay.strokePath();
     
         return overlay;
+      },
+
+    fadeBoardShadowOverlayForBonusEntry(duration = 1100) {
+        if (gameClientConfig?.layout?.boardShadowBackplates?.enabled !== true) {
+          return Promise.resolve(false);
+        }
+
+        const overlay = this.boardShadowOverlay;
+        if (!overlay || overlay.destroyed || overlay.visible !== true || overlay.alpha <= 0.01) {
+          return Promise.resolve(false);
+        }
+
+        this.tweens.killTweensOf(overlay);
+        return new Promise((resolve) => {
+          this.tweens.add({
+            targets: overlay,
+            alpha: 0,
+            duration,
+            ease: "Sine.easeInOut",
+            onComplete: () => {
+              if (overlay && !overlay.destroyed) {
+                overlay.setVisible(false);
+              }
+              resolve(true);
+            }
+          });
+        });
       },
 
     syncSymbolBackdrops() {

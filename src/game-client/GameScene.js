@@ -16,6 +16,7 @@ import { createGameSceneHeroEffectsMethods } from "./game-scene/gameSceneHeroEff
 import { createGameSceneHeroCombatMethods } from "./game-scene/gameSceneHeroCombatMethods";
 import { createGameSceneBonusPresentationMethods } from "./game-scene/gameSceneBonusPresentationMethods";
 import { createGameSceneBoardFlowMethods } from "./game-scene/gameSceneBoardFlowMethods";
+import { createGameSceneSymbolMaskMethods } from "./game-scene/gameSceneSymbolMaskMethods";
 import {
   createGameSceneMainPortalMethods,
   MAIN_GAME_PORTAL_CANVAS_KEY as MAIN_GAME_PORTAL_CANVAS_TEXTURE_KEY,
@@ -597,6 +598,8 @@ export class GameScene extends Phaser.Scene {
     this.bonusMultiplierFruitPresentationSignature = null;
     this._symbolBackdropSyncHandler = null;
     this.boardShadowOverlay = null;
+    this._symbolSpawnCurtainSprite = null;
+    this._symbolSpawnFadeWatcher = null;
     this.currentBonusStage = 0;
     this.currentHeroRushActive = false;
     this.currentHeroFootprintSize = 1;
@@ -1188,6 +1191,10 @@ Object.assign(GameScene.prototype, createGameSceneHeroEffectsMethods(gameSceneEx
 Object.assign(GameScene.prototype, createGameSceneHeroCombatMethods(gameSceneExtractedDeps));
 Object.assign(GameScene.prototype, createGameSceneBonusPresentationMethods(gameSceneExtractedDeps));
 Object.assign(GameScene.prototype, createGameSceneBoardFlowMethods(gameSceneExtractedDeps));
+Object.assign(GameScene.prototype, createGameSceneSymbolMaskMethods({
+  ...gameSceneExtractedDeps,
+  getReelSymbolRenderable
+}));
 
 const mainGamePortalDeps = {
   ...gameSceneExtractedDeps,

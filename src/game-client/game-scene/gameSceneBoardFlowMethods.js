@@ -1684,6 +1684,10 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
         const restoreReelCellVisibility = (cell) => {
           if (!cell || cell.destroyed) return;
           cell.setVisible?.(true);
+          if (typeof this.applySymbolSpawnFadeToCell === "function" && this.isSymbolSpawnCurtainEnabled?.()) {
+            this.applySymbolSpawnFadeToCell(cell);
+            return;
+          }
           cell.setAlpha?.(1);
           const renderable = getReelSymbolRenderable(cell);
           if (renderable && renderable !== cell && !renderable.destroyed) {
@@ -2984,10 +2988,6 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
         const promises = [];
         const dropDelayPerSymbol = 2;
         let iteration = 0;
-        
-        // Bottom edge of visible grid area (where symbols should start fading)
-        const gridBottom = clientConfig.area.height * cellSize + GRID_OFFSET_Y;
-        const fadeStartDistance = 35; // Start fading 35px before bottom edge (later fade)
     
         for (let reelIndex = 0; reelIndex < this.reelSprites.length; reelIndex++) {
           const reel = this.reelSprites[reelIndex];
@@ -3007,16 +3007,9 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
                 duration: slideDuration - reelIndex * 5,
                 delay: iteration * dropDelayPerSymbol + reelIndex * 50,
                 onUpdate: () => {
-                  // Safety check - sprite might be destroyed externally
                   if (sprite.destroyed) return;
-                  
-                  // Fade out as sprite approaches bottom of grid
-                  const distanceFromBottom = gridBottom - sprite.y;
-                  if (distanceFromBottom < fadeStartDistance && distanceFromBottom > 0) {
-                    // Fade from 1 to 0 as it gets closer to bottom
-                    sprite.setAlpha(distanceFromBottom / fadeStartDistance);
-                  } else if (distanceFromBottom <= 0) {
-                    sprite.setAlpha(0);
+                  if (typeof this.applySymbolSpawnFadeToCell === "function") {
+                    this.applySymbolSpawnFadeToCell(sprite);
                   }
                 },
                 onComplete: () => {

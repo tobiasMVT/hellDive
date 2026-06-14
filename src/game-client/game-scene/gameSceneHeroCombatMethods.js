@@ -3329,6 +3329,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
         this.stormLightningGolden = false;
         this.isInBonusMode = false; // Reset bonus mode flag
         this.setMainGamePortalVisible?.(true);
+        this.createOrUpdateSymbolSpawnCurtain?.();
         
         // Stop ambient lightning loops
         this.stopAmbientLightning();

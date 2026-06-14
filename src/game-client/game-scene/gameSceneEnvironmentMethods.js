@@ -1442,6 +1442,7 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         this.refreshLayoutDebugVisualization();
         this.applyLayoutSnapshot();
         this.syncSymbolBackdrops();
+        this.createOrUpdateSymbolSpawnCurtain?.();
       },
 
     createCountUpDisplay() {

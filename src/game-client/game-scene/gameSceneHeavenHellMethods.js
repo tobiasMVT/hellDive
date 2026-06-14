@@ -1245,6 +1245,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           .setAlpha(0);
     
         const fadeCountUpPromise = this.fadeBonusEntryCountUpDisplay();
+        const fadeBoardShadowPromise = this.fadeBoardShadowOverlayForBonusEntry?.();
         this.tweens.add({
           targets: fadeLayer,
           alpha: 0.42,
@@ -1267,6 +1268,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
 
         await Promise.all([
           fadeCountUpPromise,
+          fadeBoardShadowPromise,
           portalChargePromise,
           this.waitForPresentation(240, { skippable: true })
         ]);
