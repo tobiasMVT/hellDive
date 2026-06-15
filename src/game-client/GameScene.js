@@ -179,8 +179,8 @@ const SOUND_VOLUME_TOOL_SOUNDS = [
   { key: "mystery_reveal_succession", path: "assets/sounds/mystery_reveal_succession.opus", group: "Mystery" },
   { key: "orb_collect", path: "assets/sounds/orb_collect.opus", group: "Feature" },
   { key: "symbol_clear_addition", path: "assets/sounds/Thunderkong/symbol_clear_addition.mp3", group: "Feature" },
-  { key: "theme_bonus", path: "assets/sounds/Thunderkong/bonus.mp3", group: "Music", defaultBaseVolume: BONUS_THEME_VOLUME },
-  { key: "theme_main", path: "assets/sounds/Thunderkong/main.mp3", group: "Music", defaultBaseVolume: MAIN_THEME_VOLUME },
+  { key: "theme_bonus", path: "assets/sounds/helldive/bonusgame.mp3", group: "Music", defaultBaseVolume: BONUS_THEME_VOLUME },
+  { key: "theme_main", path: "assets/sounds/helldive/maingame.mp3", group: "Music", defaultBaseVolume: MAIN_THEME_VOLUME },
   { key: "troll_before_entrance", path: "assets/sounds/troll_before_entrance.mp3", group: "Troll" },
   { key: "troll_dies", path: "assets/sounds/troll_dies.mp3", group: "Troll" },
   { key: "troll_rushing_growl", path: "assets/sounds/troll_rushing_growl.mp3", group: "Troll" },
@@ -658,6 +658,7 @@ export class GameScene extends Phaser.Scene {
     this._heavenHellMeterRuntime = null;
     this._heavenHellPendingMeterSoulTrails = 0;
     this._heavenHellActiveGameState = null;
+    this._heavenHellGroundLootDisplayValue = 0;
     this.heavenHellLastRewardFxKey = null;
     this.heavenHellMeterBlinkTween = null;
     this.heavenHellRippleFx = [];

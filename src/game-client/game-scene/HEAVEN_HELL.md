@@ -10,6 +10,7 @@ Owns the Hell bonus presentation layer.
 - attack slash GIF playback (`attack.gif`, `attack2.gif`) via decoded frames, not native Phaser GIF animation
 - loot ground rendering and loot collect phase
 - Heaven/Hell kill meter and ability panel
+- ground-loot chest tracker on the bonus meter panel
 
 ## Main Entry Points
 
@@ -29,7 +30,19 @@ Owns the Hell bonus presentation layer.
 - `_mainGamePortalSprite` / `_mainGamePortalMaskSprite` (main-game portal GIF behind reels)
 - `_heavenHellMeterUi`
 - `_heavenHellMeterRuntime`
+- `_heavenHellGroundLootDisplayValue`
 - `_heavenHellActiveGameState`
+
+## Ground Loot Tracker
+
+The bonus meter panel is split into `Abilities | Ground Loot`.
+
+- `Abilities` owns the kill count, progress bar, and ability slots.
+- `Ground Loot` owns the chest icon and the displayed ground-loot total.
+
+- It does **not** include the Heaven/Hell multiplier.
+- It advances on the same presentation beat as loot landing labels.
+- It resets when ground loot is cleared at Collect Phase / bonus exit.
 
 ## Main-Game Portal Background
 

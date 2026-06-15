@@ -1453,6 +1453,8 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         });
     
         await this.waitForPresentation(140, { skippable: true });
+
+        this.startBonusTheme?.();
     
         await new Promise((resolve) => {
           this.tweens.add({
@@ -2043,6 +2045,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         this.heavenHellLootSprites = [];
         this.heavenHellRenderedLootKeys = new Set();
         this.heavenHellLootLayerLock = null;
+        this.setHeavenHellGroundLootDisplayTotal?.(0);
       },
 
     clearHeavenHellGroundChests() {
@@ -2370,6 +2373,54 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           x: target.x + offsetX,
           y: target.y + 14 + offsetY
         };
+      },
+
+    getHeavenHellGroundLootBaseValueTotal(drops = []) {
+        return (Array.isArray(drops) ? drops : []).reduce((sum, drop) => {
+          const baseValue = Math.max(0, Number(drop?.baseValue ?? drop?.value ?? 0));
+          return sum + baseValue;
+        }, 0);
+      },
+
+    syncHeavenHellGroundLootDisplayFromGameState(gameState = null, { preserveVisibleTotal = true } = {}) {
+        const resolvedGameState = gameState || this._heavenHellActiveGameState;
+        const drops = Array.isArray(resolvedGameState?.heavenHell?.bonus?.lootGround)
+          ? resolvedGameState.heavenHell.bonus.lootGround
+          : [];
+        const total = this.getHeavenHellGroundLootBaseValueTotal(drops);
+        const current = Math.max(0, Number(this._heavenHellGroundLootDisplayValue || 0));
+        if (preserveVisibleTotal && current > 0 && current >= total) {
+          this.syncHeavenHellGroundLootDisplayText?.();
+          return current;
+        }
+        this.setHeavenHellGroundLootDisplayTotal?.(total);
+        return total;
+      },
+
+    setHeavenHellGroundLootDisplayTotal(value = 0) {
+        this._heavenHellGroundLootDisplayValue = Math.max(0, Number(value) || 0);
+        this.syncHeavenHellGroundLootDisplayText?.();
+        return this._heavenHellGroundLootDisplayValue;
+      },
+
+    incrementHeavenHellGroundLootDisplayTotal(value = 0) {
+        const delta = Math.max(0, Number(value) || 0);
+        if (delta <= 0) {
+          return Math.max(0, Number(this._heavenHellGroundLootDisplayValue || 0));
+        }
+        this._heavenHellGroundLootDisplayValue = Math.max(
+          0,
+          Number(this._heavenHellGroundLootDisplayValue || 0) + delta
+        );
+        this.syncHeavenHellGroundLootDisplayText?.();
+        return this._heavenHellGroundLootDisplayValue;
+      },
+
+    syncHeavenHellGroundLootDisplayText() {
+        const ui = this._heavenHellMeterUi;
+        if (!ui?.lootChestValueText || ui.lootChestValueText.destroyed) return;
+        const value = Math.max(0, Number(this._heavenHellGroundLootDisplayValue || 0));
+        ui.lootChestValueText.setText(this.formatBonusEndBoardValue(value));
       },
 
     getHeavenHellLootDotColor(baseValue = 0) {
@@ -3965,6 +4016,9 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                         driftY: Phaser.Math.Between(-4, 4)
                       });
                       if (persistToGround) {
+                        this.incrementHeavenHellGroundLootDisplayTotal?.(landedValue);
+                      }
+                      if (persistToGround) {
                         token.setPosition(landX, landY);
                         const groundScale = this.getHeavenHellLootTokenScale(drop, { ground: true });
                         token.setScale(groundScale, groundScale);
@@ -4664,6 +4718,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                         driftX: Phaser.Math.Between(-8, 8),
                         driftY: Phaser.Math.Between(-4, 4)
                       });
+                      this.incrementHeavenHellGroundLootDisplayTotal?.(resolvedReward.baseValue);
                       this.tweens.add({
                         targets: token,
                         y: target.y - 9,
@@ -6376,9 +6431,10 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const ui = this._heavenHellMeterUi;
         if (ui?.container && !ui.container.destroyed) {
           const matrix = ui.container.getWorldTransformMatrix();
+          const meterCenterLocalX = Number(ui.meterX ?? 0) + (Number(ui.meterWidth ?? 320) * 0.5);
           const meterY = Number(ui.meterY ?? -2);
           return {
-            x: matrix.tx,
+            x: matrix.tx + meterCenterLocalX * matrix.scaleX,
             y: matrix.ty + meterY * matrix.scaleY
           };
         }
@@ -6419,7 +6475,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const ui = this._heavenHellMeterUi;
         if (!ui?.container || ui.container.destroyed) return;
 
-        const meterCenterX = ui.container.x;
+        const meterCenterX = ui.container.x + (Number(ui.meterX ?? 0) + Number(ui.meterWidth ?? 320) * 0.5);
         const meterCenterY = ui.container.y + (ui.meterY ?? -2);
         const meterWidth = ui.meterWidth ?? 320;
         const meterHeight = ui.meterHeight ?? 9;
@@ -6671,6 +6727,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         ui.container.setPosition(centerX, centerY);
         ui.container.setVisible(true);
         ui.killCountText.setText(`⚔ ${displayTextKills} / ${resolvedUnlock}`);
+        this.syncHeavenHellGroundLootDisplayText?.();
         this.redrawHeavenHellMeterFill(ui, progress);
         this.refreshHeavenHellAbilitySlots(ui, abilities);
     
@@ -6767,11 +6824,17 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           this.destroyHeavenHellAbilityPanel();
         }
     
-        const panelWidth = 380;
+        const panelWidth = 470;
         const panelHeight = HEAVEN_HELL_METER_PANEL_HEIGHT;
-        const meterWidth = 320;
+        const leftSectionWidth = 302;
+        const rightSectionWidth = 132;
+        const dividerX = 84;
+        const leftSectionLeft = -panelWidth / 2 + 10;
+        const leftSectionRight = dividerX - 12;
+        const rightSectionCenterX = dividerX + (rightSectionWidth / 2) + 10;
+        const meterWidth = 238;
         const meterHeight = 9;
-        const meterX = -meterWidth / 2;
+        const meterX = leftSectionLeft + 14;
         const meterY = -2;
         const { centerX, centerY } = this.getHeavenHellMeterPanelPosition();
         const children = [];
@@ -6780,13 +6843,32 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           .setBlendMode(Phaser.BlendModes.ADD);
         const panelBg = this.add.rectangle(0, 0, panelWidth, panelHeight, 0x14100C, 0.94);
         const innerShadow = this.add.rectangle(0, 1, panelWidth - 8, panelHeight - 8, 0x000000, 0.28);
+        const leftSectionBg = this.add.rectangle(
+          (leftSectionLeft + leftSectionRight) / 2,
+          1,
+          leftSectionRight - leftSectionLeft,
+          panelHeight - 16,
+          0x1A130D,
+          0.42
+        ).setStrokeStyle(1, 0x6C4C18, 0.22);
+        const rightSectionBg = this.add.rectangle(
+          rightSectionCenterX,
+          1,
+          rightSectionWidth,
+          panelHeight - 16,
+          0x17110A,
+          0.5
+        ).setStrokeStyle(1, 0x6C4C18, 0.26);
+        const dividerGlow = this.add.rectangle(dividerX, 1, 3, panelHeight - 18, 0xF3D37A, 0.12)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        const dividerLine = this.add.rectangle(dividerX, 1, 1, panelHeight - 18, 0x8A6A1E, 0.85);
         const goldBorder = this.add.rectangle(0, 0, panelWidth, panelHeight)
           .setStrokeStyle(2, 0xD4AF37, 0.95)
           .setFillStyle(0x000000, 0);
         const innerBorder = this.add.rectangle(0, 0, panelWidth - 6, panelHeight - 6)
           .setStrokeStyle(1, 0x8A6A1E, 0.55)
           .setFillStyle(0x000000, 0);
-        const titleText = this.add.text(-panelWidth / 2 + 18, -panelHeight / 2 + 12, "ABILITY CHARGE", {
+        const titleText = this.add.text(leftSectionLeft + 8, -panelHeight / 2 + 12, "ABILITIES", {
           fontFamily: '"Cinzel", "Trajan Pro", "Times New Roman", serif',
           fontSize: "10px",
           fontStyle: "bold",
@@ -6794,7 +6876,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           stroke: "#2A1A05",
           strokeThickness: 3
         }).setOrigin(0, 0.5);
-        const killCountText = this.add.text(panelWidth / 2 - 18, -panelHeight / 2 + 12, "⚔ 0 / 20", {
+        const killCountText = this.add.text(leftSectionRight - 8, -panelHeight / 2 + 12, "⚔ 0 / 20", {
           fontFamily: '"Cinzel", "Trajan Pro", "Times New Roman", serif',
           fontSize: "18px",
           fontStyle: "bold",
@@ -6812,11 +6894,38 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           .setOrigin(0, 0.5)
           .setBlendMode(Phaser.BlendModes.ADD)
           .setVisible(false);
+        const lootChestX = rightSectionCenterX;
+        const lootChestY = meterY + 2;
+        const lootChestLabel = this.add.text(lootChestX, -panelHeight / 2 + 12, "GROUND LOOT", {
+          fontFamily: '"Cinzel", "Trajan Pro", "Times New Roman", serif',
+          fontSize: "10px",
+          fontStyle: "bold",
+          color: "#F8E7B0",
+          stroke: "#2A1A05",
+          strokeThickness: 3
+        }).setOrigin(0.5, 0.5);
+        const lootChestGlow = this.add.circle(lootChestX, lootChestY + 4, 27, 0xFFD86A, 0.12)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        const lootChestIcon = this.textures?.exists?.("helldive_ui_chest")
+          ? this.add.image(lootChestX, lootChestY + 5, "helldive_ui_chest").setScale(0.16).setAlpha(0.98)
+          : this.add.circle(lootChestX, lootChestY + 5, 18, 0x8A5A12, 0.95).setStrokeStyle(2, 0xF0C96B, 0.9);
+        const lootChestValueText = this.add.text(lootChestX, lootChestY - 4, "0", {
+          fontFamily: '"Cinzel", "Trajan Pro", "Times New Roman", serif',
+          fontSize: "18px",
+          fontStyle: "bold",
+          color: "#FFF7D5",
+          stroke: "#2A1400",
+          strokeThickness: 5
+        }).setOrigin(0.5, 0.5);
     
         children.push(
           outerGlow,
           panelBg,
           innerShadow,
+          leftSectionBg,
+          rightSectionBg,
+          dividerGlow,
+          dividerLine,
           goldBorder,
           innerBorder,
           titleText,
@@ -6824,7 +6933,11 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           trackBg,
           trackInner,
           fillGfx,
-          shimmer
+          shimmer,
+          lootChestGlow,
+          lootChestIcon,
+          lootChestValueText,
+          lootChestLabel
         );
     
         const abilityRows = [];
@@ -6834,7 +6947,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           { key: "divineCharge", label: "Charge", maxSlots: 2 }
         ];
         const abilityRowY = panelHeight / 2 - 14;
-        let abilityCursorX = -panelWidth / 2 + 16;
+        let abilityCursorX = leftSectionLeft + 12;
         abilityDefs.forEach((def) => {
           const label = this.add.text(abilityCursorX, abilityRowY, def.label, {
             fontFamily: '"Cinzel", "Times New Roman", serif',
@@ -6870,6 +6983,10 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           trackBg,
           fillGfx,
           shimmer,
+          lootChestLabel,
+          lootChestGlow,
+          lootChestIcon,
+          lootChestValueText,
           abilityRows,
           panelWidth,
           panelHeight,
@@ -6884,6 +7001,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         };
         this._heavenHellMeterUi = ui;
         this.heavenHellAbilityPanel = container;
+        this.syncHeavenHellGroundLootDisplayText?.();
     
         return ui;
       },
@@ -7027,6 +7145,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           this._heavenHellActiveGameState = null;
           this._heavenHellMeterRuntime = null;
           this._heavenHellPendingMeterSoulTrails = 0;
+          this._heavenHellGroundLootDisplayValue = 0;
           this.clearHeavenHellGroundChests();
           this.hideHeavenHellAbilityPanel();
           return;
@@ -7037,6 +7156,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         }
     
         const bonus = heavenHell?.bonus || {};
+        this.syncHeavenHellGroundLootDisplayFromGameState?.(gameState, { preserveVisibleTotal: true });
         const killsTotal = Math.max(0, Number(bonus?.killsTotal || 0));
         const killsTowardsUnlock = Math.max(0, Number(bonus?.killsTowardsUnlock ?? 0));
         const nextUnlock = Math.max(1, Number(bonus?.nextAbilityKillThreshold || 20));

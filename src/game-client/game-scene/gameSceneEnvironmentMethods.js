@@ -1221,6 +1221,7 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         this.load.image('helldive_loot_emerald', 'assets/helldive/loot/emerald.png');
         this.load.image('helldive_loot_diamond', 'assets/helldive/loot/diamond.png');
         this.load.image('helldive_loot_amethyst', 'assets/helldive/loot/amethyst.png');
+        this.load.image('helldive_ui_chest', 'assets/helldive/ui/chest.png');
         this.load.image('bonus_silhouette', 'assets/bonus.png'); // BONUS text for storm silhouette
         this.load.image('bonus_chest', 'assets/chest.png'); // Golden chest for bonus
         this.load.image('helldive_chest_wooden', 'assets/chest_wooden.png');
@@ -1303,8 +1304,8 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         this.load.audio('land5', 'assets/sounds/land5.opus');
         
         // Music tracks
-        this.load.audio('theme_main', 'assets/sounds/Thunderkong/main.mp3');
-        this.load.audio('theme_bonus', 'assets/sounds/Thunderkong/bonus.mp3');
+        this.load.audio('theme_main', 'assets/sounds/helldive/maingame.mp3');
+        this.load.audio('theme_bonus', 'assets/sounds/helldive/bonusgame.mp3');
         this.load.audio('merge_gun_laser_loop', 'assets/sounds/Thunderkong/laser-loop.mp3');
         
         // Wheel diamond sounds

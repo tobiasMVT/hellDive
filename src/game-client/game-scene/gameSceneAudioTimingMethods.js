@@ -1133,13 +1133,13 @@ export function createGameSceneAudioTimingMethods(deps = {}) {
           this.mainMusicFadeTween = null;
         }
         
-        // Fade out main theme
+        // Crossfade out of main theme when bonus starts so the Helldive handoff feels smoother.
         if (this.mainThemeMusic && this.mainThemeMusic.isPlaying) {
           const mainMusic = this.mainThemeMusic;
           this.mainMusicFadeTween = this.tweens.add({
             targets: mainMusic,
             volume: 0,
-            duration: 1000,
+            duration: 900,
             ease: 'Linear',
             onUpdate: (tween) => {
               if (!mainMusic || mainMusic.destroyed) {
