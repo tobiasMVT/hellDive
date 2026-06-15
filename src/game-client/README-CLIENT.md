@@ -48,6 +48,8 @@ In practice these are related, but not identical:
 
 Phaser scene that renders the game: backgrounds, symbol grid, animations, particles, sound, and scene-level presentation helpers. It also implements `getLayoutContentBounds()`, which tells the framework what area must stay visible on screen.
 
+Dev-only overlays that are strictly local to the game scene can also live here when they do not belong in the shared framework UI. One example is the forced-outcome picker, which lets HellDive request an exact ticket from the game server without editing the shared dev toolbar.
+
 ### `Client.js`
 
 Bridge between server responses and `GameScene`. Receives server/game states, chooses the correct presentation flow, runs migrated actions through `SegmentFlowRunner`, and emits round lifecycle events used by the framework.

@@ -1279,8 +1279,14 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         this.load.audio('coin4', 'assets/sounds/coins/coin4.mp3');
         this.load.audio('coin5', 'assets/sounds/coins/coin5.mp3');
         this.load.audio('coin6', 'assets/sounds/coins/coin6.mp3');
+        this.load.audio('divine_charge_impact', 'assets/sounds/helldive/chargingStrikeImpact.mp3');
+        this.load.audio('divine_charge_windup', 'assets/sounds/helldive/divineChargingUp.mp3');
+        this.load.audio('divine_strike_impact', 'assets/sounds/helldive/divineStrikeImpact.mp3');
+        this.load.audio('divine_x_impact', 'assets/sounds/helldive/divineXimpact.mp3');
         this.load.audio('gold_drop', 'assets/sounds/gold_drop.mp3');
         this.load.audio('symbolWave', 'assets/sounds/helldive/symbolWave.mp3');
+        this.load.audio('swing_1', 'assets/sounds/helldive/swing1.mp3');
+        this.load.audio('swing_2', 'assets/sounds/helldive/swing2.mp3');
         
         // Action sounds
         this.load.audio('action_spin_click', 'assets/sounds/action_spin_click.opus');
@@ -1382,6 +1388,7 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
       window.addEventListener('blur', onBlur);
       window.addEventListener('focus', onFocus);
       this.initializeSoundVolumeTool();
+      this.initializeForcedOutcomeTool();
       this._onSceneResizeLayout = () => this.emitLayoutContentBounds();
       this.scale?.on("resize", this._onSceneResizeLayout);
     
@@ -1414,6 +1421,7 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
           this._symbolBackdropSyncHandler = null;
         }
         this.destroySoundVolumeTool();
+        this.destroyForcedOutcomeTool();
         this.uninstallHeroPreviewConsoleCommands();
         this.cleanupSymbolBackdrops();
         this.destroyMainGamePortalBackground?.();

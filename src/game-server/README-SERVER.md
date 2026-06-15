@@ -177,11 +177,24 @@ So the same round-generation model can run in two ways:
 - `GET /health`
 - `GET /api/session`
 - `GET /api/ticket-strategies`
+- `GET /api/dev/forced-ticket`
+- `POST /api/dev/forced-ticket`
 - `POST /api/round-states`
 
 Important rule:
 - `httpServer.js` is a transport wrapper
 - `Gameserver.js` is the actual game logic
+
+### Forced outcome dev override
+
+There is also a dev-only forced-outcome layer now:
+
+- the client tool can store `{ strategy, ticket }` as a forced selection
+- local in-process mode shares that selection through a browser/global store
+- HTTP mode mirrors the same selection through `/api/dev/forced-ticket`
+- when present, round generation uses that exact ticket instead of drawing a weighted ticket
+
+This is intentionally a dev convenience, not player-facing math behavior.
 
 ## Simulations
 

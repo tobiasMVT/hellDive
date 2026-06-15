@@ -2,6 +2,12 @@ import http from "node:http";
 
 import serverConfig from "./server_config.json" with { type: "json" };
 import { GameServer } from "./Gameserver.js";
+import {
+  clearForcedOutcomeSelection,
+  getForcedOutcomeSelection,
+  listForcedOutcomeOptions,
+  setForcedOutcomeSelection
+} from "./lib/devForcedOutcomeStore.js";
 
 const DEFAULT_PORT = 8787;
 const portFromEnv = Number(process.env.PORT);
@@ -50,6 +56,14 @@ const buildSessionPayload = () => {
     }
   };
 };
+
+const buildForcedOutcomePayload = () => ({
+  forcedOutcomeSelection: getForcedOutcomeSelection(),
+  options: listForcedOutcomeOptions(
+    serverConfig,
+    resolveTicketStrategies().map((entry) => entry.id)
+  )
+});
 
 const sendJson = (res, statusCode, payload) => {
   res.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
@@ -115,6 +129,29 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 200, {
       ticketStrategies: resolveTicketStrategies()
     });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/dev/forced-ticket") {
+    sendJson(res, 200, buildForcedOutcomePayload());
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/dev/forced-ticket") {
+    try {
+      const body = await parseJsonBody(req);
+      const selection = body?.forcedOutcomeSelection ?? body;
+
+      if (selection) {
+        setForcedOutcomeSelection(selection);
+      } else {
+        clearForcedOutcomeSelection();
+      }
+
+      sendJson(res, 200, buildForcedOutcomePayload());
+    } catch (err) {
+      sendJson(res, 400, { error: err.message || "Bad Request" });
+    }
     return;
   }
 

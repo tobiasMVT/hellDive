@@ -1472,6 +1472,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
               {
                 stepQuickStop: false,
                 durationMs: DIVINE_STRIKE_SLOWMO_REAL_MS,
+                impactLeadMs: DIVINE_STRIKE_SLOWMO_REAL_MS,
                 slowMoFactor: DIVINE_STRIKE_SLOWMO_FACTOR
               }
             );
@@ -1502,6 +1503,7 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
             {
               stepQuickStop: false,
               durationMs: DIVINE_STRIKE_SLOWMO_REAL_MS,
+              impactLeadMs: DIVINE_STRIKE_SLOWMO_REAL_MS + plan.releaseDuration,
               slowMoFactor: DIVINE_STRIKE_SLOWMO_FACTOR
             }
           );

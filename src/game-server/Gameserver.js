@@ -3,6 +3,11 @@ import { createGameServerMainActionMethods } from "./game-server/gameServerMainA
 import { createGameServerBonusActionMethods } from "./game-server/gameServerBonusActionMethods.js";
 import { createGameServerFlowMethods } from "./game-server/gameServerFlowMethods.js";
 import { generateChest, resolveChestSequence } from "./lib/chestSystem.js";
+import {
+  getForcedOutcomeSelection,
+  normalizeForcedOutcomeSelection,
+  parseForcedOutcomeOptionId
+} from "./lib/devForcedOutcomeStore.js";
 
 const originalConfig = JSON.parse(JSON.stringify(serverConfig))
 const MAX_ACTIONS_PER_ROUND = 10000;
@@ -11162,17 +11167,33 @@ export class GameServer {
     const drops = Array.isArray(bonusState?.lootGround) ? bonusState.lootGround : [];
     const baseLoot = drops.reduce((sum, drop) => sum + Number(drop?.baseValue ?? drop?.value ?? 0), 0);
     const globalMultiplier = Math.max(1, Math.floor(Number(bonusState?.globalMultiplier || 1)));
+    const winCapTbm = Number(serverConfig?.wincap);
+    const hasWinCap = Number.isFinite(winCapTbm) && winCapTbm > 0;
+    const currentRoundTbm = Math.max(0, Number(gameState.tbm || 0));
+    let remainingCapTbm = hasWinCap
+      ? Math.max(0, Number((winCapTbm - currentRoundTbm).toFixed(4)))
+      : Number.POSITIVE_INFINITY;
     const settledDrops = drops.map((drop) => {
       const baseValue = Number(drop?.baseValue ?? drop?.value ?? 0);
+      const uncappedSettledValue = baseValue * globalMultiplier;
+      const settledValue = hasWinCap
+        ? Math.max(0, Math.min(uncappedSettledValue, remainingCapTbm))
+        : uncappedSettledValue;
+      if (hasWinCap) {
+        remainingCapTbm = Math.max(0, Number((remainingCapTbm - settledValue).toFixed(4)));
+      }
       return {
         ...drop,
         baseValue,
         value: baseValue,
         collectMultiplier: globalMultiplier,
-        settledValue: baseValue * globalMultiplier
+        settledValue
       };
     });
-    const totalTbm = baseLoot * globalMultiplier;
+    const uncappedTotalTbm = baseLoot * globalMultiplier;
+    const totalTbm = hasWinCap
+      ? Math.max(0, Math.min(uncappedTotalTbm, Math.max(0, winCapTbm - currentRoundTbm)))
+      : uncappedTotalTbm;
     const totalTwa = totalTbm * Number(betSize || 0);
     this.allocateHeavenHellCollectRtpBySource(gameState, totalTbm, drops);
     gameState.tbm = Number(gameState.tbm || 0) + totalTbm;
@@ -11185,6 +11206,38 @@ export class GameServer {
     gameState.multiplier = globalMultiplier;
     this.syncHeavenHellChestCounters(gameState);
     return totalTbm;
+  }
+
+  getHeavenHellProjectedCollectTbm(gameState) {
+    if (!gameState || !this.isHeavenHellEnabled()) return 0;
+    const bonusState = this.ensureHeavenHellState(gameState)?.bonus;
+    const drops = Array.isArray(bonusState?.lootGround) ? bonusState.lootGround : [];
+    if (drops.length === 0) return 0;
+    const baseLoot = drops.reduce((sum, drop) => sum + Number(drop?.baseValue ?? drop?.value ?? 0), 0);
+    const globalMultiplier = Math.max(1, Math.floor(Number(bonusState?.globalMultiplier || 1)));
+    return baseLoot * globalMultiplier;
+  }
+
+  forceHeavenHellProjectedWinCapSettlement(gameState) {
+    if (!gameState || gameState.isBonus !== true || !this.isHeavenHellEnabled()) return false;
+    const winCapTbm = Number(serverConfig?.wincap);
+    if (!Number.isFinite(winCapTbm) || winCapTbm <= 0) return false;
+
+    const currentTbm = Math.max(0, Number(gameState.tbm || 0));
+    const projectedCollectTbm = this.getHeavenHellProjectedCollectTbm(gameState);
+    if ((currentTbm + projectedCollectTbm) < winCapTbm - 0.0001) {
+      return false;
+    }
+
+    const heavenHell = this.ensureHeavenHellState(gameState);
+    this.settleHeavenHellBonus(gameState, gameState.betSize);
+    if (heavenHell?.bonus) {
+      heavenHell.bonus.freerespinChain = 0;
+      heavenHell.bonus.winCapForcedEndThisAction = true;
+    }
+    gameState.isBonus = false;
+    gameState.nextAction = "spin";
+    return true;
   }
 
   executeHeavenHellBonusSpawnAction(gameState, betSize = 0) {
@@ -11327,6 +11380,27 @@ resolveTicketStrategy(strategyName) {
     return serverConfig.mathStyle;
   }
   return available[0] || "normal";
+}
+
+resolveForcedOutcomeSelection(strategyName) {
+  const explicitSelection = parseForcedOutcomeOptionId(strategyName);
+  const storedSelection = getForcedOutcomeSelection();
+  const forcedSelection = normalizeForcedOutcomeSelection(explicitSelection || storedSelection);
+
+  if (!forcedSelection) {
+    return null;
+  }
+
+  const bucket = serverConfig?.[forcedSelection.strategy];
+  if (!isPlainObject(bucket)) {
+    return null;
+  }
+
+  if (!isPositiveNumber(bucket?.[forcedSelection.ticket])) {
+    return null;
+  }
+
+  return forcedSelection;
 }
 
 drawWeightedTicket(strategyName) {

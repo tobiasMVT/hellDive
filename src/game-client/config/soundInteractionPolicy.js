@@ -15,6 +15,18 @@ const soundInteractionPolicy = {
   lightning_hammer: {
     allowDuringFastForward: false
   },
+  divine_charge_windup: {
+    allowDuringFastForward: false
+  },
+  divine_charge_impact: {
+    allowDuringFastForward: false
+  },
+  divine_strike_impact: {
+    allowDuringFastForward: false
+  },
+  divine_x_impact: {
+    allowDuringFastForward: false
+  },
   land1: {
     allowDuringFastForward: false
   },

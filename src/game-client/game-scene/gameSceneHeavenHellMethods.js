@@ -3308,6 +3308,17 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         return sparkles;
       },
 
+    getHeavenHellRandomAbilitySwingSfxKey() {
+        return Math.random() < 0.5 ? "swing_1" : "swing_2";
+      },
+
+    playHeavenHellDivineXImpactSound({ impactLeadMs = 0, volume = 0.6 } = {}) {
+        const impactOffsetSeconds = 1.5;
+        const leadMs = Math.max(0, Number(impactLeadMs) || 0);
+        const seek = Math.max(0, impactOffsetSeconds - (leadMs / 1000));
+        this.playSfx?.("divine_x_impact", { volume, seek }, { allowDuringFastForward: false });
+      },
+
     async playHeavenHellDivineChargeWindup(step = {}, { stepQuickStop = false } = {}) {
         if (stepQuickStop || step?.divineChargeProc !== true) return false;
         if (!this.heroSprite || this.heroSprite.destroyed) return false;
@@ -3326,7 +3337,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         }).setOrigin(0.5).setDepth(DEPTH_HERO + 42).setAlpha(0);
         this.tweens.add({ targets: chargeText, alpha: 1, y: heroY - 96, duration: 220, ease: "Sine.easeOut" });
 
-        const chargeDurationMs = 1180;
+        const chargeDurationMs = 2000;
         const chargeObjects = [];
         const chargeGlow = this.add.circle(heroX, heroY, 20, 0xF4E6A4, 0.24)
           .setDepth(DEPTH_HERO + 31)
@@ -3418,7 +3429,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           });
         }
 
-        this.playSfx?.("lightning_thor", { volume: 0.18, rate: 0.92 });
+        this.playSfx?.("divine_charge_windup", { volume: 0.56 }, { allowDuringFastForward: false });
         this.time.delayedCall(520, () => {
           if (stepQuickStop) return;
           this.playSfx?.("freespin_orb_appear", { volume: 0.16, rate: 0.86 });
@@ -3435,7 +3446,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           this.heroSprite.setScale(heroBaseScaleX, heroBaseScaleY);
         }
 
-        this.playSfx?.("attack_swing", { volume: 0.48 });
+        this.playSfx?.(this.getHeavenHellRandomAbilitySwingSfxKey?.() || "attack_swing", { volume: 0.48 });
         const launchBurst = this.add.circle(heroX, heroY, 18, 0xDDF7FF, 0.72)
           .setDepth(DEPTH_HERO + 44)
           .setBlendMode(Phaser.BlendModes.ADD);
@@ -3602,7 +3613,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const heroX = Number(this.heroSprite?.x || target.x);
         const heroY = Number(this.heroSprite?.y || target.y);
     
-        this.playSfx?.("lightning_thor_impact", { volume: 0.78 });
+        this.playSfx?.("divine_charge_impact", { volume: 0.72 }, { allowDuringFastForward: false });
         this.playSfx?.("finisher_sword", { volume: 0.46 });
         this.playHeavenHellAngelStrikeSlash?.({ x: heroX, y: heroY }, target, {
           scale: 1.22,
@@ -5336,6 +5347,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         {
           stepQuickStop = false,
           durationMs = 850,
+          impactLeadMs = null,
           slowMoFactor = 0.18,
           showTitle = true
         } = {}
@@ -5398,6 +5410,17 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
             repeat: 2,
             ease: "Sine.easeInOut"
           });
+        }
+
+        if (step?.divineXProc === true) {
+          const leadMs = Math.max(
+            0,
+            Number.isFinite(Number(impactLeadMs))
+              ? Number(impactLeadMs)
+              : safeDuration
+          );
+          this.playHeavenHellDivineXImpactSound?.({ impactLeadMs: leadMs, volume: 0.58 });
+          step._clientDivineXImpactSoundPrimed = true;
         }
 
         this.endSlowMo?.();
@@ -5934,6 +5957,8 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const strikeTargets = Array.isArray(step?.divineStrikeTargets) ? step.divineStrikeTargets : [];
         if (strikeTargets.length === 0) return;
 
+        this.playSfx?.("divine_strike_impact", { volume: 0.58 }, { allowDuringFastForward: false });
+
         this.clearHeavenHellDivineGroundFx?.({ fade: true });
 
         const heroX = Number(this.heroSprite?.x || (origin?.x ?? (GRID_OFFSET_X + (clientConfig.area.width * 70) * 0.5)));
@@ -6000,7 +6025,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           }
           this.heavenHellDivineGroundFx.push(strikeImpact);
           this.tweens.add({ targets: strikeImpact, scale: 3.6, alpha: 0, duration: 220, ease: "Cubic.easeOut" });
-          this.playSfx?.("attack_swing", { volume: 0.24, rate: 0.98 + wave * 0.04 });
+          this.playSfx?.(this.getHeavenHellRandomAbilitySwingSfxKey?.() || "attack_swing", { volume: 0.24, rate: 0.98 + wave * 0.04 });
           this.playSfx?.("lightning_thor", { volume: 0.18, rate: 0.96 + wave * 0.04 });
           this.playHeavenHellAngelStrikeSlash?.(originPoint, center, {
             scale: target?.center === true ? 0.96 : 0.88 + wave * 0.05
@@ -6101,6 +6126,12 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const xTargets = Array.isArray(step?.divineXTargets) ? step.divineXTargets : [];
         if (xTargets.length === 0) return;
 
+        const divineXSoundWasPrimed = step?._clientDivineXImpactSoundPrimed === true;
+        step._clientDivineXImpactSoundPrimed = false;
+        if (!divineXSoundWasPrimed) {
+          this.playHeavenHellDivineXImpactSound?.({ impactLeadMs: 0, volume: 0.6 });
+        }
+
         this.clearHeavenHellDivineGroundFx?.({ fade: true });
 
         const heroX = Number(this.heroSprite?.x || (origin?.x ?? (GRID_OFFSET_X + (clientConfig.area.width * 70) * 0.5)));
@@ -6180,7 +6211,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           this.createHeavenHellDivineXWaveMarker?.(center, { wave });
 
           if (strikeAtTargets) {
-            this.playSfx?.("attack_swing", { volume: 0.22, rate: 1.02 + wave * 0.03 });
+            this.playSfx?.(this.getHeavenHellRandomAbilitySwingSfxKey?.() || "attack_swing", { volume: 0.22, rate: 1.02 + wave * 0.03 });
             this.playHeavenHellAngelStrikeSlash?.(originPoint, center, {
               scale: 0.82 + wave * 0.06,
               palette: "divineX",

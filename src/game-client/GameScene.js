@@ -17,6 +17,7 @@ import { createGameSceneHeroCombatMethods } from "./game-scene/gameSceneHeroComb
 import { createGameSceneBonusPresentationMethods } from "./game-scene/gameSceneBonusPresentationMethods";
 import { createGameSceneBoardFlowMethods } from "./game-scene/gameSceneBoardFlowMethods";
 import { createGameSceneSymbolMaskMethods } from "./game-scene/gameSceneSymbolMaskMethods";
+import { createGameSceneForcedOutcomeMethods } from "./game-scene/gameSceneForcedOutcomeMethods";
 import {
   createGameSceneMainPortalMethods,
   MAIN_GAME_PORTAL_CANVAS_KEY as MAIN_GAME_PORTAL_CANVAS_TEXTURE_KEY,
@@ -115,7 +116,7 @@ const TROLL_SYMBOL_ID = resolveSymbolId(clientConfig.symbolsMapping?.banana3, 13
 const BONUS_IMMEDIATE_LOW_SYMBOL_IDS = new Set([7, 6, 5, 4]);
 const MONKEY_PICTURE_LEVEL_UP_THRESHOLDS = [5, 20, 25, 30];
 const MAIN_THEME_VOLUME = 0.735;
-const BONUS_THEME_VOLUME = 0.375;
+const BONUS_THEME_VOLUME = 0.300;
 const BONUS_THEME_SEEK_SECONDS = 5;
 const BONUS_THEME_FADE_IN_MS = 2000;
 const BONUS_WON_CELEBRATION_HOLD_MS = 1600;
@@ -145,6 +146,10 @@ const SOUND_VOLUME_TOOL_SOUNDS = [
   { key: "coin4", path: "assets/sounds/coins/coin4.mp3", group: "Coins" },
   { key: "coin5", path: "assets/sounds/coins/coin5.mp3", group: "Coins" },
   { key: "coin6", path: "assets/sounds/coins/coin6.mp3", group: "Coins" },
+  { key: "divine_charge_impact", path: "assets/sounds/helldive/chargingStrikeImpact.mp3", group: "Combat" },
+  { key: "divine_charge_windup", path: "assets/sounds/helldive/divineChargingUp.mp3", group: "Combat" },
+  { key: "divine_strike_impact", path: "assets/sounds/helldive/divineStrikeImpact.mp3", group: "Combat" },
+  { key: "divine_x_impact", path: "assets/sounds/helldive/divineXimpact.mp3", group: "Combat" },
   { key: "finisher_axe", path: "assets/sounds/finisher_axe.mp3", group: "Combat" },
   { key: "finisher_staff", path: "assets/sounds/finisher_staff.mp3", group: "Combat" },
   { key: "finisher_sword", path: "assets/sounds/finisher_sword.mp3", group: "Combat" },
@@ -179,6 +184,8 @@ const SOUND_VOLUME_TOOL_SOUNDS = [
   { key: "mystery_reveal_succession", path: "assets/sounds/mystery_reveal_succession.opus", group: "Mystery" },
   { key: "orb_collect", path: "assets/sounds/orb_collect.opus", group: "Feature" },
   { key: "symbol_clear_addition", path: "assets/sounds/Thunderkong/symbol_clear_addition.mp3", group: "Feature" },
+  { key: "swing_1", path: "assets/sounds/helldive/swing1.mp3", group: "Combat" },
+  { key: "swing_2", path: "assets/sounds/helldive/swing2.mp3", group: "Combat" },
   { key: "theme_bonus", path: "assets/sounds/helldive/bonusgame.mp3", group: "Music", defaultBaseVolume: BONUS_THEME_VOLUME },
   { key: "theme_main", path: "assets/sounds/helldive/maingame.mp3", group: "Music", defaultBaseVolume: MAIN_THEME_VOLUME },
   { key: "troll_before_entrance", path: "assets/sounds/troll_before_entrance.mp3", group: "Troll" },
@@ -649,6 +656,8 @@ export class GameScene extends Phaser.Scene {
     this._soundVolumeToolHoverTimer = null;
     this._soundVolumeToolPreview = null;
     this._soundVolumeTrackedInstances = new Set();
+    this._forcedOutcomeToolElements = null;
+    this._forcedOutcomeToolChangeHandler = null;
     this.heavenHellLootSprites = [];
     this.heavenHellRenderedLootKeys = new Set();
     this.heavenHellPortalAura = null;
@@ -1193,6 +1202,7 @@ Object.assign(GameScene.prototype, createGameSceneHeroEffectsMethods(gameSceneEx
 Object.assign(GameScene.prototype, createGameSceneHeroCombatMethods(gameSceneExtractedDeps));
 Object.assign(GameScene.prototype, createGameSceneBonusPresentationMethods(gameSceneExtractedDeps));
 Object.assign(GameScene.prototype, createGameSceneBoardFlowMethods(gameSceneExtractedDeps));
+Object.assign(GameScene.prototype, createGameSceneForcedOutcomeMethods(gameSceneExtractedDeps));
 Object.assign(GameScene.prototype, createGameSceneSymbolMaskMethods({
   ...gameSceneExtractedDeps,
   getReelSymbolRenderable

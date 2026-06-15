@@ -74,7 +74,11 @@ export function createGameServerFlowMethods(deps = {}) {
     },
 
     async generateRoundStates({ betSize = 1, ticketStrategy, fakeNoWins = false } = {}) {
-      const strategy = this.resolveTicketStrategy(ticketStrategy);
+      const forcedOutcomeSelection =
+        typeof this.resolveForcedOutcomeSelection === "function"
+          ? this.resolveForcedOutcomeSelection(ticketStrategy)
+          : null;
+      const strategy = this.resolveTicketStrategy(forcedOutcomeSelection?.strategy || ticketStrategy);
       const bucket = serverConfig?.[strategy];
       const ticketModeEnabled =
         isPlainObject(bucket) && Object.values(bucket).some((weight) => isPositiveNumber(weight));
@@ -83,11 +87,12 @@ export function createGameServerFlowMethods(deps = {}) {
         return this.generateSingleRound({ betSize, logRoundStart: true, ticketStrategy: strategy });
       }
 
-      const ticket = this.drawWeightedTicket(strategy);
+      const ticket = forcedOutcomeSelection?.ticket || this.drawWeightedTicket(strategy);
       const { baseStrategy } = parseTicketConstraints(ticket);
 
       if (!serverConfig.playBackEnd) {
-        console.log(`[DEV Tickets] Strategy "${strategy}" -> ticket "${ticket}"`);
+        const logPrefix = forcedOutcomeSelection ? "[DEV Tickets] Forced" : "[DEV Tickets] Strategy";
+        console.log(`${logPrefix} "${strategy}" -> ticket "${ticket}"`);
       }
 
       if (fakeNoWins && baseStrategy === "noWin") {
@@ -241,14 +246,18 @@ export function createGameServerFlowMethods(deps = {}) {
     },
 
     finalizeResponseState(gameState) {
+      this.forceHeavenHellProjectedWinCapSettlement(gameState);
+
       if (gameState.tbm >= serverConfig.wincap) {
+        const tbmBeforeClamp = Math.max(0, Number(gameState.tbm || 0));
+        const overflowTbm = Math.max(0, tbmBeforeClamp - Number(serverConfig.wincap || 0));
         const pendingChests = Array.isArray(gameState?.heavenHell?.bonus?.pendingChests)
           ? gameState.heavenHell.bonus.pendingChests
           : [];
         const pendingChestCount = pendingChests.length;
         const bonusState = pendingChestCount > 0 ? this.ensureHeavenHellState(gameState)?.bonus : null;
         const nextActionBeforeWinCap = gameState.nextAction;
-        gameState.winAmount = serverConfig.wincap;
+        gameState.winAmount = Math.max(0, Number(gameState.winAmount || 0) - overflowTbm);
         gameState.twa = serverConfig.wincap * gameState.betSize;
         gameState.tbm = serverConfig.wincap;
         if (gameState.isBonus === true && pendingChestCount > 0) {
@@ -394,9 +403,7 @@ export function createGameServerFlowMethods(deps = {}) {
     getResponse(gameState, betSize) {
       const context = this.prepareResponseState(gameState);
       const returnedEarly = this.runExecutedAction(gameState, betSize, context);
-      if (returnedEarly) {
-        return gameState;
-      }
+      if (returnedEarly) return this.finalizeResponseState(gameState);
       return this.finalizeResponseState(gameState);
     }
   };

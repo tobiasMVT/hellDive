@@ -27,27 +27,15 @@
         "magicBookInSightMoreThan0Less500": 50
     },
     "normal": {
-        "noStrategy": 0,
-        "noStrategy_max0": 0,
-        "noStrategy_min_1_max10": 0,
-        "noStrategy_min_1_max200": 0,
-        "noStrategy_min_1_max500": 0,
-        "noStrategy_min_1_max750": 0,
-
-        "noStrategy_min_5_max10": 0,
-        "noStrategy_min_10_max200": 0,
-        "noStrategy_min_20_max500": 0,
-        "noStrategy_min_20_max750": 0,
         "noWin": 850,
-
-        "winMainGame_min0.1_max10": 334,
-        "winMainGame_min10_max300": 10,
-        "winMainGame_min10": 0,
-
+        "winMainGame_min0.1_max10": 300,
+        "winMainGame_min5_max10": 34,
+        "winMainGame_min5_max100": 9,
+        "winMainGame_min10_max300": 1,
         "bonus_min0.1_max50": 2,
         "bonus_min5_max50": 10,
         "bonus_min50_max200": 2,
-        "bonus_min_100_max1000": 11111
+        "bonus_min_100_max1000": 1
     },
     "bonus": {
         "bonus": 1,
@@ -56,31 +44,6 @@
         "bonus_min0_max250": 8,
         "bonus_min0_max35": 5,
         "bonus_min4999": 1
-    },
-    "trollBonus": {
-        "trollBonus": 0
-    },
-    "trollMain": {
-        "trollMain": 0
-    },
-    "trollTease": {
-        "trollTease": 0
-    },
-    "axe": {
-        "axe": 1
-    },
-    "mysteryWild": {
-        "mysteryWild": 1
-    },
-    "mystery": {
-        "mystery": 1,
-        "mysteryRunBonus": 9999
-    },
-    "necromancer2": {
-        "necromancer2": 1
-    },
-    "max": {
-        "max": 1
     },
     "area": {
         "width": 8,
