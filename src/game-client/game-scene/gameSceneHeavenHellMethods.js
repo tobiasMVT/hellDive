@@ -3373,14 +3373,38 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
 
         const chargeDurationMs = 2000;
         const chargeObjects = [];
+        const createChargeGradientOrb = (x, y, radius, {
+          outerColor = 0x7FDBFF,
+          midColor = 0xBFE9FF,
+          innerColor = 0xF2FBFF,
+          outerAlpha = 0.34,
+          midAlpha = 0.6,
+          innerAlpha = 0.92,
+          depth = DEPTH_HERO + 33
+        } = {}) => {
+          const orb = this.add.container(x, y).setDepth(depth);
+          const outer = this.add.circle(0, 0, radius * 1.8, outerColor, outerAlpha)
+            .setBlendMode(Phaser.BlendModes.ADD);
+          const mid = this.add.circle(0, 0, radius * 1.2, midColor, midAlpha)
+            .setBlendMode(Phaser.BlendModes.ADD);
+          const inner = this.add.circle(0, 0, radius * 0.68, innerColor, innerAlpha)
+            .setBlendMode(Phaser.BlendModes.ADD);
+          orb.add([outer, mid, inner]);
+          return orb;
+        };
         const chargeGlow = this.add.circle(heroX, heroY, 20, 0xF4E6A4, 0.24)
           .setDepth(DEPTH_HERO + 31)
           .setBlendMode(Phaser.BlendModes.ADD)
           .setScale(0.75);
-        const chargeCore = this.add.circle(heroX, heroY, 11, 0xFFF8D8, 0.95)
-          .setDepth(DEPTH_HERO + 34)
-          .setBlendMode(Phaser.BlendModes.ADD)
-          .setScale(0.48);
+        const chargeCore = createChargeGradientOrb(heroX, heroY, 11, {
+          outerColor: 0x8BDEFF,
+          midColor: 0xD5F3FF,
+          innerColor: 0xFFFFFF,
+          outerAlpha: 0.3,
+          midAlpha: 0.72,
+          innerAlpha: 0.88,
+          depth: DEPTH_HERO + 34
+        }).setScale(0.48);
         const chargeHalo = this.add.circle(heroX, heroY, 30, 0xBFE9FF, 0.18)
           .setDepth(DEPTH_HERO + 30)
           .setStrokeStyle(3, 0xFFF1B8, 0.5)
@@ -3441,15 +3465,30 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         for (let i = 0; i < 12; i++) {
           const angle = (Math.PI * 2 * i) / 12;
           const startRadius = 16 + (i % 3) * 6;
-          const spark = this.add.circle(
-            heroX + Math.cos(angle) * startRadius,
-            heroY + Math.sin(angle) * startRadius * 0.82,
-            Phaser.Math.FloatBetween(2.6, 4.2),
-            i % 2 === 0 ? 0xFFF0A8 : 0xBFE9FF,
-            0.82
-          )
-            .setDepth(DEPTH_HERO + 33)
-            .setBlendMode(Phaser.BlendModes.ADD);
+          const sparkRadius = Phaser.Math.FloatBetween(2.6, 4.2);
+          const spark = i % 3 === 1
+            ? createChargeGradientOrb(
+              heroX + Math.cos(angle) * startRadius,
+              heroY + Math.sin(angle) * startRadius * 0.82,
+              sparkRadius,
+              {
+                outerColor: 0x59CFFF,
+                midColor: 0xB9EEFF,
+                innerColor: 0xF7FDFF,
+                outerAlpha: 0.28,
+                midAlpha: 0.56,
+                innerAlpha: 0.82
+              }
+            )
+            : this.add.circle(
+              heroX + Math.cos(angle) * startRadius,
+              heroY + Math.sin(angle) * startRadius * 0.82,
+              sparkRadius,
+              i % 2 === 0 ? 0xFFF0A8 : 0xBFE9FF,
+              0.82
+            )
+              .setDepth(DEPTH_HERO + 33)
+              .setBlendMode(Phaser.BlendModes.ADD);
           chargeObjects.push(spark);
           this.tweens.add({
             targets: spark,
@@ -4586,7 +4625,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           callback: () => {
             if (!panel || panel.destroyed) return;
             applyTickLabel();
-            this.playSfx?.(tickIndex % 2 === 0 ? "coin3" : "coin4", { volume: 0.035 });
+            this.playSfx?.(tickIndex % 2 === 0 ? "coin3" : "coin4", { volume: 0.07 });
           }
         });
       },

@@ -313,12 +313,12 @@ export function createGameSceneFreespinUiMethods(deps = {}) {
           if (!display?.container || display.container.destroyed) return;
           if (playAppearSound === true) {
             this.playSfx?.("freespin_orb_appear", {
-              volume: 0.42,
+              volume: 0.7,
               rate: Phaser.Math.FloatBetween(0.96, 1.06)
             });
           }
           if (essenceSoundKey) {
-            this.playSfx?.(essenceSoundKey, { volume: 0.34 });
+            this.playSfx?.(essenceSoundKey, { volume: 0.68 });
           }
           this.tweens.killTweensOf([display.container, display.glow, display.orb, ...(display.sparkles || [])]);
           this.setBonusFreespinRingLit(display, true);
@@ -505,7 +505,7 @@ export function createGameSceneFreespinUiMethods(deps = {}) {
           const firstRippleIndex = displayCount > existingCount ? existingCount : 0;
           const newPowercircleCount = Math.max(0, displayCount - existingCount);
           if (newPowercircleCount > 0) {
-            this.playSfx?.("freespin_orb_start", { volume: 0.38 });
+            this.playSfx?.("freespin_orb_start", { volume: 0.7 });
           }
           displays.forEach((display, index) => {
             if (index < firstRippleIndex) return;
