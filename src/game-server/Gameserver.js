@@ -11210,7 +11210,7 @@ export class GameServer {
 
   getHeavenHellProjectedCollectTbm(gameState) {
     if (!gameState || !this.isHeavenHellEnabled()) return 0;
-    const bonusState = this.ensureHeavenHellState(gameState)?.bonus;
+    const bonusState = gameState?.heavenHell?.bonus;
     const drops = Array.isArray(bonusState?.lootGround) ? bonusState.lootGround : [];
     if (drops.length === 0) return 0;
     const baseLoot = drops.reduce((sum, drop) => sum + Number(drop?.baseValue ?? drop?.value ?? 0), 0);
@@ -11229,12 +11229,18 @@ export class GameServer {
       return false;
     }
 
-    const heavenHell = this.ensureHeavenHellState(gameState);
-    this.settleHeavenHellBonus(gameState, gameState.betSize);
-    if (heavenHell?.bonus) {
-      heavenHell.bonus.freerespinChain = 0;
-      heavenHell.bonus.winCapForcedEndThisAction = true;
+    const bonusState = gameState?.heavenHell?.bonus;
+
+    if (bonusState) {
+      bonusState.freerespinChain = 0;
+      bonusState.winCapForcedEndThisAction = true;
     }
+
+    if (gameState.bonusState && typeof gameState.bonusState === "object") {
+      gameState.bonusState.finalFreespins = 0;
+    }
+
+    this.settleHeavenHellBonus(gameState, gameState.betSize);
     gameState.isBonus = false;
     gameState.nextAction = "spin";
     return true;

@@ -2022,7 +2022,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         return trackedPromise;
       },
 
-    async waitForHeavenHellPendingGroundPresentation({ loot = true, chests = true } = {}) {
+    async waitForHeavenHellPendingGroundPresentation({ loot = true, chests = true, timeoutMs = 3000 } = {}) {
         const waits = [];
         if (loot && this._heavenHellPendingLootGroundPromises instanceof Set) {
           waits.push(...this._heavenHellPendingLootGroundPromises);
@@ -2033,7 +2033,25 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         if (waits.length === 0) {
           return;
         }
-        await Promise.allSettled(waits);
+        let timedOut = false;
+        await Promise.race([
+          Promise.allSettled(waits),
+          this.waitForPresentation(Math.max(250, Math.floor(Number(timeoutMs) || 3000)), { skippable: true })
+            .then(() => {
+              timedOut = true;
+            })
+        ]);
+
+        if (!timedOut) {
+          return;
+        }
+
+        if (loot && this._heavenHellPendingLootGroundPromises instanceof Set) {
+          this._heavenHellPendingLootGroundPromises.clear();
+        }
+        if (chests && this._heavenHellPendingChestGroundPromises instanceof Set) {
+          this._heavenHellPendingChestGroundPromises.clear();
+        }
       },
 
     clearHeavenHellLootGround() {
@@ -2249,6 +2267,22 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
 
     async ensureHeavenHellQueuedChestDrops(gameState = {}, { animateMissing = false } = {}) {
         const queued = this.getHeavenHellQueuedChestEvents(gameState);
+        const queuedKeys = new Set(
+          queued.map((chest, index) => this.getHeavenHellChestRenderKey(chest, index))
+        );
+
+        this.heavenHellGroundChestSprites = (Array.isArray(this.heavenHellGroundChestSprites)
+          ? this.heavenHellGroundChestSprites
+          : []
+        ).filter((sprite) => {
+          if (!sprite || sprite.destroyed) return false;
+          if (queuedKeys.has(sprite.heavenHellChestKey)) return true;
+          this.tweens.killTweensOf(sprite);
+          this.heavenHellRenderedChestKeys?.delete?.(sprite.heavenHellChestKey);
+          sprite.destroy();
+          return false;
+        });
+
         for (let index = 0; index < queued.length; index++) {
           const chest = queued[index];
           if (this.isHeavenHellChestRendered(chest, index)) continue;
@@ -4849,6 +4883,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           ? gameState.heavenHell.bonus.chestEventsThisAction
           : [];
         if (chestEvents.length === 0) {
+          this.clearHeavenHellGroundChests();
           this.updateFreespinCounter?.(gameState?.bonusState?.finalFreespins || 0, { deferRingConsume: true });
           return false;
         }

@@ -284,6 +284,27 @@ export function createGameSceneForcedOutcomeMethods() {
       }
 
       this.updateForcedOutcomeToolStatus(selection);
+      this.blurForcedOutcomeToolFocus();
+      this.setForcedOutcomeToolCollapsed(true);
+    },
+
+    blurForcedOutcomeToolFocus() {
+      const tool = this._forcedOutcomeToolElements;
+      if (!tool) {
+        return;
+      }
+
+      if (typeof tool.select?.blur === "function") {
+        tool.select.blur();
+      }
+      if (typeof tool.toggle?.blur === "function") {
+        tool.toggle.blur();
+      }
+
+      const activeElement = document?.activeElement;
+      if (activeElement instanceof HTMLElement && tool.root?.contains(activeElement)) {
+        activeElement.blur();
+      }
     },
 
     destroyForcedOutcomeTool() {

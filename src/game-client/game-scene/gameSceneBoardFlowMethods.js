@@ -1262,6 +1262,7 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
 
     async explodeSymbols(clusters) {
         const cellSize = 70;
+        const popScaleMultiplier = 1.08;
         const promises = [];
         const boardDimOverlay = this._winHighlightBoardDimOverlay && !this._winHighlightBoardDimOverlay.destroyed
           ? this._winHighlightBoardDimOverlay
@@ -1286,13 +1287,69 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
         uniquePositions.forEach(pos => {
           const sprite = this.reelSprites[pos.reel]?.[pos.row];
           if (!sprite) return;
-    
+          const source = getReelSymbolRenderable(sprite) || sprite;
+
           const x = pos.reel * cellSize + cellSize / 2 + GRID_OFFSET_X;
           const y = (clientConfig.area.height - 1 - pos.row) * cellSize + cellSize / 2 + GRID_OFFSET_Y;
-    
+          const sourceDepth = Number(source?.depth) || Number(sprite?.depth) || DEPTH_SYMBOLS;
+          const intenseTextureKey = this.getWinHighlightIntensityTextureKey(
+            this.getDisplayObjectSymbolId?.(source) ?? pos?.symbol
+          );
+          let intenseOverlay = null;
+
+          if (intenseTextureKey && this.textures?.exists?.(intenseTextureKey)) {
+            const worldMatrix = typeof source?.getWorldTransformMatrix === "function"
+              ? source.getWorldTransformMatrix()
+              : null;
+            const overlayX = worldMatrix && Number.isFinite(Number(worldMatrix.tx))
+              ? Number(worldMatrix.tx)
+              : x;
+            const overlayY = worldMatrix && Number.isFinite(Number(worldMatrix.ty))
+              ? Number(worldMatrix.ty)
+              : y;
+            const sourceDisplayWidth = Number(source?.displayWidth);
+            const sourceDisplayHeight = Number(source?.displayHeight);
+            const baseScaleX = Number.isFinite(Number(source?.scaleX)) ? Number(source.scaleX) : 1;
+            const baseScaleY = Number.isFinite(Number(source?.scaleY)) ? Number(source.scaleY) : 1;
+
+            intenseOverlay = this.add.image(overlayX, overlayY, intenseTextureKey)
+              .setOrigin(source?.originX ?? 0.5, source?.originY ?? 0.5)
+              .setRotation(Number(source?.rotation) || 0)
+              .setDepth(sourceDepth + 0.7)
+              .setAlpha(0.96);
+
+            const overlayScaleX = Number.isFinite(sourceDisplayWidth) && sourceDisplayWidth > 0 && intenseOverlay.width > 0
+              ? sourceDisplayWidth / intenseOverlay.width
+              : baseScaleX;
+            const overlayScaleY = Number.isFinite(sourceDisplayHeight) && sourceDisplayHeight > 0 && intenseOverlay.height > 0
+              ? sourceDisplayHeight / intenseOverlay.height
+              : baseScaleY;
+            intenseOverlay.setScale(overlayScaleX, overlayScaleY);
+            if (typeof intenseOverlay.setFlipX === "function") {
+              intenseOverlay.setFlipX(Boolean(source?.flipX));
+            }
+            if (typeof intenseOverlay.setFlipY === "function") {
+              intenseOverlay.setFlipY(Boolean(source?.flipY));
+            }
+
+            this.tweens.add({
+              targets: intenseOverlay,
+              alpha: 0,
+              scaleX: overlayScaleX * popScaleMultiplier,
+              scaleY: overlayScaleY * popScaleMultiplier,
+              duration: 200,
+              ease: "Power2",
+              onComplete: () => {
+                if (intenseOverlay && !intenseOverlay.destroyed) {
+                  intenseOverlay.destroy();
+                }
+              }
+            });
+          }
+
           // Brief white flash on the symbol itself
           const flash = this.add.circle(x, y, 35, 0xFFFFFF)
-            .setDepth(sprite.depth + 1)
+            .setDepth(sourceDepth + 1)
             .setAlpha(0.8)
             .setBlendMode(Phaser.BlendModes.ADD);
           
@@ -1305,26 +1362,32 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
             onComplete: () => flash.destroy()
           });
           this.playMonkeySymbolClearLightningBurst(x, y, {
-            depth: sprite.depth + 3,
+            depth: sourceDepth + 3,
             radius: 38,
             boltCount: 4,
             color: 0xFFE778,
             intensityScale: 0.74
           });
           this.playSymbolPopParticleBurst(x, y, {
-            depth: sprite.depth + 2.6,
+            depth: sourceDepth + 2.6,
             intensity: 1.15
           });
-    
-          // Symbol fade and scale
+
+          // Keep the intense version visible through the pop, then fade the underlying board symbol.
           this.tweens.add({
             targets: sprite,
             alpha: 0,
-            scale: 1.3,
             duration: 200,
             ease: 'Power2'
           });
-    
+          this.tweens.add({
+            targets: source,
+            scaleX: (Number(source?.scaleX) || 1) * popScaleMultiplier,
+            scaleY: (Number(source?.scaleY) || 1) * popScaleMultiplier,
+            duration: 200,
+            ease: 'Power2'
+          });
+
           // Gold particle burst (simple and balanced)
           const particleCount = 8;
           const colors = [0xFFD700, 0xFFAA00, 0xFFE55C, 0xFFC125];
@@ -1335,7 +1398,7 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
             const size = 2 + Math.random() * 3;
             
             const particle = this.add.circle(x, y, size, colors[Math.floor(Math.random() * colors.length)])
-              .setDepth(sprite.depth + 2)
+              .setDepth(sourceDepth + 2)
               .setAlpha(0.9)
               .setBlendMode(Phaser.BlendModes.ADD);
             
@@ -1360,7 +1423,7 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
               1 + Math.random() * 2,
               0xFFFFAA
             )
-              .setDepth(sprite.depth + 2)
+              .setDepth(sourceDepth + 2)
               .setAlpha(0.8)
               .setBlendMode(Phaser.BlendModes.ADD);
             
@@ -1381,6 +1444,9 @@ export function createGameSceneBoardFlowMethods(deps = {}) {
             new Promise(resolve => {
               setTimeout(() => {
                 this.destroyBananaBackplate(sprite); // Clean up backplate if banana
+                if (intenseOverlay && !intenseOverlay.destroyed) {
+                  intenseOverlay.destroy();
+                }
                 sprite.destroy();
                 this.reelSprites[pos.reel][pos.row] = null;
                 resolve();

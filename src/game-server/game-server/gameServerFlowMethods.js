@@ -246,33 +246,6 @@ export function createGameServerFlowMethods(deps = {}) {
     },
 
     finalizeResponseState(gameState) {
-      this.forceHeavenHellProjectedWinCapSettlement(gameState);
-
-      if (gameState.tbm >= serverConfig.wincap) {
-        const tbmBeforeClamp = Math.max(0, Number(gameState.tbm || 0));
-        const overflowTbm = Math.max(0, tbmBeforeClamp - Number(serverConfig.wincap || 0));
-        const pendingChests = Array.isArray(gameState?.heavenHell?.bonus?.pendingChests)
-          ? gameState.heavenHell.bonus.pendingChests
-          : [];
-        const pendingChestCount = pendingChests.length;
-        const bonusState = pendingChestCount > 0 ? this.ensureHeavenHellState(gameState)?.bonus : null;
-        const nextActionBeforeWinCap = gameState.nextAction;
-        gameState.winAmount = Math.max(0, Number(gameState.winAmount || 0) - overflowTbm);
-        gameState.twa = serverConfig.wincap * gameState.betSize;
-        gameState.tbm = serverConfig.wincap;
-        if (gameState.isBonus === true && pendingChestCount > 0) {
-          if (bonusState && typeof bonusState.chestRewardResumeAction !== "string") {
-            bonusState.chestRewardResumeAction =
-              nextActionBeforeWinCap === "freerespin" || Number(gameState.bonusState?.finalFreespins || 0) > 0
-                ? "freerespin"
-                : "spin";
-          }
-          gameState.nextAction = "chestreward";
-        } else {
-          gameState.nextAction = "spin";
-        }
-      }
-
       if (
         TROLL_FEATURE_ENABLED &&
         (gameState.nextAction === "spin" || gameState.nextAction === "freespin") &&
@@ -304,6 +277,17 @@ export function createGameServerFlowMethods(deps = {}) {
             action: gameState.executedAction
           });
         });
+      }
+
+      this.forceHeavenHellProjectedWinCapSettlement(gameState);
+
+      if (gameState.tbm >= serverConfig.wincap) {
+        const tbmBeforeClamp = Math.max(0, Number(gameState.tbm || 0));
+        const overflowTbm = Math.max(0, tbmBeforeClamp - Number(serverConfig.wincap || 0));
+        gameState.winAmount = Math.max(0, Number(gameState.winAmount || 0) - overflowTbm);
+        gameState.twa = serverConfig.wincap * gameState.betSize;
+        gameState.tbm = serverConfig.wincap;
+        gameState.nextAction = "spin";
       }
 
       if (gameState.nextAction === "spin") {
