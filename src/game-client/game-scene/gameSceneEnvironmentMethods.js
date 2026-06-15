@@ -68,8 +68,15 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         followSprite,
         {
           tint = 0xFFD85C,
+          alternateTint = null,
+          alternateChance = 0.45,
+          darkTint = null,
+          darkChance = 0.5,
           intervalMs = 18,
           burstScale = 1,
+          fadeDurationMs = null,
+          driftScale = 1,
+          blendMode = Phaser.BlendModes.ADD,
           depth = DEPTH_HERO - 2,
           stateKey = "followSpriteLightEmitter",
           stopMethod = "stopFollowSpriteLightEmitter"
@@ -82,6 +89,14 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
         }
         if (!followSprite || followSprite.destroyed) return null;
 
+        const fadeMin = Array.isArray(fadeDurationMs)
+          ? Math.max(40, Math.floor(Number(fadeDurationMs[0]) || 110))
+          : 110;
+        const fadeMax = Array.isArray(fadeDurationMs)
+          ? Math.max(fadeMin, Math.floor(Number(fadeDurationMs[1]) || 190))
+          : 190;
+        const resolvedDriftScale = Math.max(0.4, Number(driftScale) || 1);
+
         const spawnParticle = () => {
           if (!followSprite || followSprite.destroyed) {
             if (typeof this[stopMethod] === "function") {
@@ -92,23 +107,35 @@ export function createGameSceneEnvironmentMethods(deps = {}) {
             return;
           }
 
+          const useDark = darkTint !== null && Math.random() < darkChance;
+          let particleTint = tint;
+          if (useDark) {
+            particleTint = darkTint;
+          } else if (alternateTint !== null && Math.random() < alternateChance) {
+            particleTint = alternateTint;
+          }
+          const particleBlend = useDark ? Phaser.BlendModes.NORMAL : blendMode;
+          const particleAlpha = useDark
+            ? Phaser.Math.FloatBetween(0.72, 0.96)
+            : Phaser.Math.FloatBetween(0.45, 0.9);
+          const particleRadius = (useDark ? Phaser.Math.FloatBetween(2.4, 5.6) : Phaser.Math.FloatBetween(1.8, 4.2)) * burstScale;
           const particle = this.add.circle(
             Number(followSprite.x) + Phaser.Math.FloatBetween(-10, 10),
             Number(followSprite.y) + Phaser.Math.FloatBetween(-10, 10),
-            Phaser.Math.FloatBetween(1.8, 4.2) * burstScale,
-            tint,
-            Phaser.Math.FloatBetween(0.45, 0.9)
+            particleRadius,
+            particleTint,
+            particleAlpha
           )
             .setDepth(depth)
-            .setBlendMode(Phaser.BlendModes.ADD);
+            .setBlendMode(particleBlend);
 
           this.tweens.add({
             targets: particle,
-            x: particle.x + Phaser.Math.FloatBetween(-22, 22),
-            y: particle.y + Phaser.Math.FloatBetween(-14, 14),
+            x: particle.x + Phaser.Math.FloatBetween(-22, 22) * resolvedDriftScale,
+            y: particle.y + Phaser.Math.FloatBetween(-14, 14) * resolvedDriftScale,
             scale: Phaser.Math.FloatBetween(0.3, 0.75),
             alpha: 0,
-            duration: Phaser.Math.Between(110, 190),
+            duration: Phaser.Math.Between(fadeMin, fadeMax),
             ease: "Sine.easeOut",
             onComplete: () => particle.destroy()
           });

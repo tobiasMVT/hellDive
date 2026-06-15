@@ -656,6 +656,7 @@ export class GameScene extends Phaser.Scene {
     this._heavenHellMeterUi = null;
     this._heavenHellMeterDisplayKills = null;
     this._heavenHellMeterRuntime = null;
+    this._heavenHellPendingMeterSoulTrails = 0;
     this._heavenHellActiveGameState = null;
     this.heavenHellLastRewardFxKey = null;
     this.heavenHellMeterBlinkTween = null;
@@ -1218,15 +1219,13 @@ const SOUL_PORTAL_KILLS_FOR_MAX_SIZE = 75;
 const SOUL_PORTAL_MAX_SCALE = 4;
 
 Object.assign(GameScene.prototype, {
-  shouldPlayHeavenHellSoulCollectionFx(gameState = null) {
+  shouldPlayHeavenHellSoulCollectionFx(_gameState = null) {
     if (this.isInBonusMode === true) return false;
 
     // Main-game demon hunts use currentAction "bananaHunt".
     // Bonus demon hunts use "freespinbananaHunt" and must not trigger soul FX.
     if (String(this.currentAction || "") !== "bananaHunt") return false;
 
-    if (gameState?.isBonus === true) return false;
-    if (gameState?.heavenHell?.bonus) return false;
     return true;
   },
 
@@ -1339,6 +1338,39 @@ Object.assign(GameScene.prototype, {
     });
   },
 
+  shouldPlayHeavenHellBonusSoulCollectionFx(_gameState = null) {
+    if (this.isInBonusMode !== true) return false;
+    if (String(this.currentAction || "") !== "freespinbananaHunt") return false;
+    return true;
+  },
+
+  createHeavenHellBonusSoulCollectionFx({
+    reel,
+    row,
+    center = null,
+    intensity = 1,
+    divineXDoubleKill = false,
+    gameState = null,
+    killWeight = null
+  } = {}) {
+    if (!this.shouldPlayHeavenHellBonusSoulCollectionFx?.()) return;
+    if (!this.add || !this.tweens || !this.time) return;
+
+    const source = center || this.getGridCellCenter(reel, row);
+    if (!source) return;
+
+    this.playHeavenHellSoulDiveIntoMeter?.({
+      startX: Number(source.x),
+      startY: Number(source.y),
+      intensity,
+      divineXDoubleKill,
+      reel,
+      row,
+      gameState,
+      killWeight
+    });
+  },
+
   createHeavenHellSoulCollectionFx({
     reel,
     row,
@@ -1347,7 +1379,7 @@ Object.assign(GameScene.prototype, {
     divineXDoubleKill = false,
     gameState = null
   } = {}) {
-    if (!this.shouldPlayHeavenHellSoulCollectionFx?.(gameState)) return;
+    if (!this.shouldPlayHeavenHellSoulCollectionFx?.()) return;
     if (!this.add || !this.tweens || !this.time) return;
 
     const source = center || this.getGridCellCenter(reel, row);

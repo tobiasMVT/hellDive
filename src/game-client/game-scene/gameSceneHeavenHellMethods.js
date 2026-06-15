@@ -18,6 +18,9 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
   const SOUL_COLLECT_TRAIL_DEPTH = DEPTH_HOUSE + 1;
   const SOUL_COLLECT_ORB_DEPTH = DEPTH_HOUSE + 2;
   const SOUL_COLLECT_INTAKE_DEPTH = DEPTH_HOUSE + 3;
+  const BONUS_SOUL_COLLECT_TRAIL_DEPTH = DEPTH_HERO + 36;
+  const BONUS_SOUL_COLLECT_ORB_DEPTH = DEPTH_HERO + 37;
+  const BONUS_SOUL_COLLECT_INTAKE_DEPTH = DEPTH_HERO + 38;
   const HEAVEN_HELL_ATTACK_GIF_DEFS = {
     attack: {
       path: "assets/helldive/effects/attack.gif",
@@ -1520,6 +1523,44 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         return Math.round(flightMs * globalTweenScale);
       },
 
+    getHeavenHellSoulCollectVisualPreset(divineXDoubleKill = false, visualPreset = "main") {
+        const isBonus = visualPreset === "bonus";
+        if (isBonus) {
+          return {
+            ghostTint: divineXDoubleKill ? 0xFF55EE : 0xFF3311,
+            trailTint: divineXDoubleKill ? 0xFF7CF4 : 0xFF5A2A,
+            particleTint: divineXDoubleKill ? 0xFF55EE : 0xFF3616,
+            alternateTint: divineXDoubleKill ? 0xFFAAFF : 0xFF7799,
+            darkTint: divineXDoubleKill ? 0x880066 : 0x660011,
+            darkChance: 0.3,
+            lingerDotTints: divineXDoubleKill
+              ? [0xFF88FF, 0xFF55EE, 0xFF66CC, 0xCC2288]
+              : [0xFF6688, 0xFF4466, 0xFF3355, 0xCC1133],
+            soulBlendMode: Phaser.BlendModes.ADD,
+            ghostBlendMode: Phaser.BlendModes.ADD,
+            trailBlendMode: Phaser.BlendModes.ADD,
+            lingerDotBlendMode: Phaser.BlendModes.ADD,
+            particleBlendMode: Phaser.BlendModes.ADD
+          };
+        }
+        return {
+          ghostTint: divineXDoubleKill ? 0xCC44AA : 0xAA1122,
+          trailTint: divineXDoubleKill ? 0xDD66CC : 0xCC2244,
+          particleTint: divineXDoubleKill ? 0xCC4488 : 0xAA1122,
+          alternateTint: divineXDoubleKill ? 0xDD66BB : 0xCC3355,
+          darkTint: divineXDoubleKill ? 0x440033 : 0x4A0010,
+          darkChance: 0.64,
+          lingerDotTints: divineXDoubleKill
+            ? [0x660044, 0x880066, 0xAA2288, 0x550033]
+            : [0x660011, 0x880018, 0xAA1122, 0x771122],
+          soulBlendMode: Phaser.BlendModes.NORMAL,
+          ghostBlendMode: Phaser.BlendModes.NORMAL,
+          trailBlendMode: Phaser.BlendModes.NORMAL,
+          lingerDotBlendMode: Phaser.BlendModes.NORMAL,
+          particleBlendMode: Phaser.BlendModes.NORMAL
+        };
+      },
+
     playHeavenHellSoulDiveIntoPortal({
         startX,
         startY,
@@ -1536,6 +1577,30 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         });
       },
 
+    playHeavenHellSoulDiveIntoMeter({
+        startX,
+        startY,
+        intensity = 1,
+        divineXDoubleKill = false,
+        reel = null,
+        row = null,
+        gameState = null,
+        killWeight = null,
+        onComplete = null
+      } = {}) {
+        void this._playHeavenHellSoulDiveIntoMeter({
+          startX,
+          startY,
+          intensity,
+          divineXDoubleKill,
+          reel,
+          row,
+          gameState,
+          killWeight,
+          onComplete
+        });
+      },
+
     async _playHeavenHellSoulDiveIntoPortal({
         startX,
         startY,
@@ -1543,47 +1608,147 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         divineXDoubleKill = false,
         onComplete = null
       } = {}) {
-        if (!this.add || !this.tweens || !this.time) return;
-
         const portalTarget = this.getHeavenHellBonusEntryPortalPosition?.();
         if (!portalTarget) return;
 
+        await this._playHeavenHellSoulCollectFlight({
+          startX,
+          startY,
+          targetX: portalTarget.x,
+          targetY: portalTarget.y,
+          intensity,
+          divineXDoubleKill,
+          visualPreset: "main",
+          intakePreset: "portal",
+          onComplete
+        });
+      },
+
+    async _playHeavenHellSoulDiveIntoMeter({
+        startX,
+        startY,
+        intensity = 1,
+        divineXDoubleKill = false,
+        reel = null,
+        row = null,
+        gameState = null,
+        killWeight = null,
+        onComplete = null
+      } = {}) {
+        this.incrementHeavenHellPendingMeterSoulTrails?.();
+        try {
+          const meterTarget = this.getHeavenHellMeterSoulIntakePosition?.();
+          const resolvedGameState = gameState || this._heavenHellActiveGameState;
+          const resolvedReel = Math.floor(Number(reel));
+          const resolvedRow = Math.floor(Number(row));
+
+          if (!meterTarget) {
+            if (Number.isFinite(resolvedReel) && Number.isFinite(resolvedRow)) {
+              this.tickHeavenHellKillMeterOnKill(resolvedReel, resolvedRow, resolvedGameState, { killWeight });
+            }
+            onComplete?.();
+            return;
+          }
+
+          await this._playHeavenHellSoulCollectFlight({
+            startX,
+            startY,
+            targetX: meterTarget.x,
+            targetY: meterTarget.y,
+            intensity,
+            divineXDoubleKill,
+            visualPreset: "bonus",
+            intakePreset: "meter",
+            resolveTargetAtImpact: true,
+            onComplete: () => {
+              if (Number.isFinite(resolvedReel) && Number.isFinite(resolvedRow)) {
+                this.tickHeavenHellKillMeterOnKill(resolvedReel, resolvedRow, resolvedGameState, { killWeight });
+              }
+              onComplete?.();
+            }
+          });
+        } finally {
+          this.decrementHeavenHellPendingMeterSoulTrails?.();
+        }
+      },
+
+    async _playHeavenHellSoulCollectFlight({
+        startX,
+        startY,
+        targetX,
+        targetY,
+        intensity = 1,
+        divineXDoubleKill = false,
+        visualPreset = "main",
+        intakePreset = "portal",
+        resolveTargetAtImpact = false,
+        onComplete = null
+      } = {}) {
+        if (!this.add || !this.tweens || !this.time) return;
+
+        const isBonusVisual = visualPreset === "bonus";
+        const trailDepth = isBonusVisual ? BONUS_SOUL_COLLECT_TRAIL_DEPTH : SOUL_COLLECT_TRAIL_DEPTH;
+        const orbDepth = isBonusVisual ? BONUS_SOUL_COLLECT_ORB_DEPTH : SOUL_COLLECT_ORB_DEPTH;
+        const intakeDepth = isBonusVisual ? BONUS_SOUL_COLLECT_INTAKE_DEPTH : SOUL_COLLECT_INTAKE_DEPTH;
         const heroTexture = this.getHeavenHellHeroTextureKey?.(HERO_STAGE_TEXTURE_KEYS.rush) || HERO_STAGE_TEXTURE_KEYS.base;
         const power = Phaser.Math.Clamp(Number(intensity) || 1, 0.7, 2.2);
         const soulScale = 0.14 + power * 0.03;
-        const ghostTint = divineXDoubleKill ? 0xFF55EE : 0xFF3311;
-        const trailTint = divineXDoubleKill ? 0xFF7CF4 : 0xFF5A2A;
-        const particleTint = divineXDoubleKill ? 0xFF55EE : 0xFF3616;
+        const preset = this.getHeavenHellSoulCollectVisualPreset(divineXDoubleKill, visualPreset);
         const fromX = Number(startX);
         const fromY = Number(startY);
-        const flightMs = this.getHeavenHellSoulFlightDurationMs(fromX, fromY, portalTarget.x, portalTarget.y);
+        let endX = Number(targetX);
+        let endY = Number(targetY);
+        const flightMs = this.getHeavenHellSoulFlightDurationMs(fromX, fromY, endX, endY);
         const tweenDurationMs = this.getHeavenHellSoulDiveTweenDurationMs(flightMs);
         const emitterStateKey = `_heavenHellSoulLightEmitter_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
         const soulSprite = this.add.image(fromX, fromY, heroTexture)
           .setOrigin(0.5)
           .setScale(soulScale)
-          .setTint(ghostTint)
-          .setDepth(SOUL_COLLECT_ORB_DEPTH)
+          .setTint(preset.ghostTint)
+          .setDepth(orbDepth)
           .setAlpha(0.95)
-          .setBlendMode(Phaser.BlendModes.ADD);
+          .setBlendMode(preset.soulBlendMode);
 
-        this.spawnHeavenHellChargeLaunchTrails(fromX, fromY, portalTarget.x, portalTarget.y, {
+        this.spawnHeavenHellChargeLaunchTrails(fromX, fromY, endX, endY, {
           heroScale: soulScale,
-          ghostTint,
-          trailTint,
+          ghostTint: preset.ghostTint,
+          trailTint: preset.trailTint,
           trailDurationMs: tweenDurationMs,
-          depthBase: SOUL_COLLECT_TRAIL_DEPTH,
-          useSoulOrbGhost: false
+          fadeDurationMs: 520,
+          trailCountScale: 1.55,
+          spawnLingerDots: true,
+          lingerDotTints: preset.lingerDotTints,
+          lingerDotBlendMode: preset.lingerDotBlendMode,
+          lingerDotFadeMs: 820,
+          ghostBlendMode: preset.ghostBlendMode,
+          trailBlendMode: preset.trailBlendMode,
+          depthBase: trailDepth,
+          useSoulOrbGhost: true
         });
 
         await this.waitForPresentation?.(55, { skippable: true });
 
+        if (intakePreset === "meter") {
+          const liveTarget = this.getHeavenHellMeterSoulIntakePosition?.();
+          if (liveTarget) {
+            endX = Number(liveTarget.x);
+            endY = Number(liveTarget.y);
+          }
+        }
+
         this.startFollowSpriteLightEmitter?.(soulSprite, {
-          tint: particleTint,
-          intervalMs: 18,
-          burstScale: 0.62,
-          depth: SOUL_COLLECT_TRAIL_DEPTH,
+          tint: preset.particleTint,
+          alternateTint: preset.alternateTint,
+          alternateChance: visualPreset === "bonus" ? 0.48 : 0.34,
+          darkTint: preset.darkTint,
+          darkChance: preset.darkChance,
+          intervalMs: 10,
+          burstScale: visualPreset === "bonus" ? 0.92 : 1.05,
+          fadeDurationMs: [340, 560],
+          driftScale: 0.48,
+          blendMode: preset.particleBlendMode,
+          depth: trailDepth,
           stateKey: emitterStateKey,
           stopMethod: "stopFollowSpriteLightEmitter"
         });
@@ -1591,8 +1756,8 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         await new Promise((resolve) => {
           this.tweens.add({
             targets: soulSprite,
-            x: portalTarget.x,
-            y: portalTarget.y,
+            x: endX,
+            y: endY,
             scale: Math.max(0.04, soulScale * 0.18),
             alpha: 0.18,
             angle: 18,
@@ -1608,34 +1773,72 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           soulSprite.destroy();
         }
 
-        const intakeFlash = this.add.circle(portalTarget.x, portalTarget.y, 10, 0xFF4422, 0.88)
-          .setDepth(SOUL_COLLECT_INTAKE_DEPTH)
-          .setBlendMode(Phaser.BlendModes.ADD);
-        const intakeShock = this.add.circle(portalTarget.x, portalTarget.y, 16, 0xCC1100, 0.42)
-          .setDepth(SOUL_COLLECT_INTAKE_DEPTH - 0.01)
-          .setBlendMode(Phaser.BlendModes.ADD);
-        this.tweens.add({
-          targets: intakeFlash,
-          scale: 2.2,
-          alpha: 0,
-          duration: 180,
-          ease: "Cubic.easeOut",
-          onComplete: () => intakeFlash.destroy()
-        });
-        this.tweens.add({
-          targets: intakeShock,
-          scale: 1.8,
-          alpha: 0,
-          duration: 260,
-          ease: "Cubic.easeOut",
-          onComplete: () => intakeShock.destroy()
-        });
+        if (resolveTargetAtImpact && intakePreset === "meter") {
+          const liveTarget = this.getHeavenHellMeterSoulIntakePosition?.();
+          if (liveTarget) {
+            endX = Number(liveTarget.x);
+            endY = Number(liveTarget.y);
+          }
+        }
+
+        if (intakePreset === "meter") {
+          const intakeFlash = this.add.circle(endX, endY, 10, 0xFF6688, 0.95)
+            .setDepth(intakeDepth)
+            .setBlendMode(Phaser.BlendModes.ADD);
+          const intakeShock = this.add.circle(endX, endY, 18, 0xFF2244, 0.55)
+            .setDepth(intakeDepth - 0.01)
+            .setBlendMode(Phaser.BlendModes.ADD);
+          this.tweens.add({
+            targets: intakeFlash,
+            scale: 2.6,
+            alpha: 0,
+            duration: 220,
+            ease: "Cubic.easeOut",
+            onComplete: () => intakeFlash.destroy()
+          });
+          this.tweens.add({
+            targets: intakeShock,
+            scale: 2.2,
+            alpha: 0,
+            duration: 300,
+            ease: "Cubic.easeOut",
+            onComplete: () => intakeShock.destroy()
+          });
+        } else {
+          const intakeFlash = this.add.circle(endX, endY, 10, 0xFF4422, 0.88)
+            .setDepth(intakeDepth)
+            .setBlendMode(Phaser.BlendModes.ADD);
+          const intakeShock = this.add.circle(endX, endY, 16, 0xCC1100, 0.42)
+            .setDepth(intakeDepth - 0.01)
+            .setBlendMode(Phaser.BlendModes.ADD);
+          this.tweens.add({
+            targets: intakeFlash,
+            scale: 2.2,
+            alpha: 0,
+            duration: 180,
+            ease: "Cubic.easeOut",
+            onComplete: () => intakeFlash.destroy()
+          });
+          this.tweens.add({
+            targets: intakeShock,
+            scale: 1.8,
+            alpha: 0,
+            duration: 260,
+            ease: "Cubic.easeOut",
+            onComplete: () => intakeShock.destroy()
+          });
+        }
 
         this.playSfx?.("orb_collect", {
           volume: divineXDoubleKill ? 0.38 : 0.3,
           rate: divineXDoubleKill ? 1.12 : 1.02
         });
-        onComplete?.();
+        if (intakePreset === "meter") {
+          onComplete?.();
+          this.pulseHeavenHellMeterOnSoulIntake?.();
+        } else {
+          onComplete?.();
+        }
       },
 
     playHeavenHellBonusAngelArrival() {
@@ -2445,9 +2648,6 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           resolvedGameState?.heavenHell?.bonus &&
           resolvedGameState?.isBonus === true &&
           (isMultiplierDemon === true || (Number.isFinite(symbolId) && symbolId === multiplierDemonId));
-        if (resolvedGameState?.heavenHell?.bonus && resolvedGameState?.isBonus === true) {
-          this.tickHeavenHellKillMeterOnKill(reel, row, resolvedGameState, { killWeight });
-        }
         if (isMultiplierDemonKill && this.shouldConsumeHeavenHellMultiplierOrbAt(reel, row, {
           gameState: resolvedGameState,
           isMultiplierDemon
@@ -2633,14 +2833,29 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           });
         }
 
-        this.createHeavenHellSoulCollectionFx?.({
-          reel,
-          row,
-          center,
-          intensity,
-          divineXDoubleKill,
-          gameState: resolvedGameState
-        });
+        const isBonusKill = resolvedGameState?.heavenHell?.bonus && resolvedGameState?.isBonus === true;
+        if (isBonusKill && this.shouldPlayHeavenHellBonusSoulCollectionFx?.()) {
+          this.createHeavenHellBonusSoulCollectionFx?.({
+            reel,
+            row,
+            center,
+            intensity,
+            divineXDoubleKill,
+            gameState: resolvedGameState,
+            killWeight
+          });
+        } else if (isBonusKill) {
+          this.tickHeavenHellKillMeterOnKill(reel, row, resolvedGameState, { killWeight });
+        } else {
+          this.createHeavenHellSoulCollectionFx?.({
+            reel,
+            row,
+            center,
+            intensity,
+            divineXDoubleKill,
+            gameState: resolvedGameState
+          });
+        }
       },
 
     async playHeavenHellQueuedGargoyleEscapes(escapeEntries = [], gameState = null, { stepQuickStop = false } = {}) {
@@ -3146,14 +3361,27 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         trailTint = 0xFFFFFF,
         curvePointAt = null,
         trailDurationMs = null,
+        fadeDurationMs = 220,
+        trailCountScale = 1,
+        spawnLingerDots = false,
+        lingerDotTints = [0xFF5588, 0xFF2244],
+        lingerDotBlendMode = Phaser.BlendModes.ADD,
+        lingerDotFadeMs = 560,
+        ghostBlendMode = Phaser.BlendModes.ADD,
+        trailBlendMode = Phaser.BlendModes.ADD,
         depthBase = DEPTH_HERO + 39,
         useSoulOrbGhost = false
       } = {}) {
         const dx = toX - fromX;
         const dy = toY - fromY;
         const distance = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-        const trailCount = Math.min(14, Math.max(5, Math.floor(distance / 38)));
+        const trailCount = Math.min(
+          22,
+          Math.max(5, Math.floor((distance / 38) * Math.max(0.5, Number(trailCountScale) || 1)))
+        );
         const angelTextureKey = this.getHeavenHellHeroTextureKey?.(HERO_STAGE_TEXTURE_KEYS.rush) || HERO_STAGE_TEXTURE_KEYS.base;
+        const resolvedFadeMs = Math.max(120, Math.floor(Number(fadeDurationMs) || 220));
+        const resolvedLingerFadeMs = Math.max(resolvedFadeMs, Math.floor(Number(lingerDotFadeMs) || 560));
         const staggerMs = trailDurationMs
           ? Math.max(10, Math.floor(trailDurationMs / (trailCount + 2)))
           : 12;
@@ -3185,24 +3413,24 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                   .setScale(0.56 + t * 0.34)
                   .setAlpha(0.5 * (1 - t * 0.3))
                   .setTint(trailTint)
-                  .setBlendMode(Phaser.BlendModes.ADD)
+                  .setBlendMode(trailBlendMode)
               : null;
             if (trail) trail.setRotation(point.angle);
             const ghost = useSoulOrbGhost
               ? this.add.circle(point.x, point.y, Phaser.Math.FloatBetween(6, 9) + t * 4, ghostTint, 0.82)
                   .setDepth(depthBase + 1)
-                  .setBlendMode(Phaser.BlendModes.ADD)
+                  .setBlendMode(ghostBlendMode)
               : this.add.image(point.x, point.y, angelTextureKey)
                   .setDepth(depthBase + 1)
                   .setScale(heroScale * (1.06 - t * 0.3))
                   .setAlpha(0.48 * (1 - t * 0.42))
                   .setTint(ghostTint)
-                  .setBlendMode(Phaser.BlendModes.ADD);
+                  .setBlendMode(ghostBlendMode);
             this.tweens.add({
               targets: ghost,
               alpha: 0,
               scale: (ghost.scaleX || 1) * 1.32,
-              duration: 220,
+              duration: resolvedFadeMs,
               ease: "Sine.easeOut",
               onComplete: () => ghost.destroy()
             });
@@ -3211,10 +3439,52 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                 targets: trail,
                 alpha: 0,
                 scale: trail.scaleX * 1.4,
-                duration: 220,
+                duration: resolvedFadeMs,
                 ease: "Sine.easeOut",
                 onComplete: () => trail.destroy()
               });
+            }
+            if (spawnLingerDots) {
+              const dotTint = lingerDotTints[i % lingerDotTints.length] ?? 0xFF5588;
+              const dotX = point.x + Phaser.Math.FloatBetween(-6, 6);
+              const dotY = point.y + Phaser.Math.FloatBetween(-6, 6);
+              const dotRadius = Phaser.Math.FloatBetween(3.6, 7.2);
+              const lingerDot = this.add.circle(
+                dotX,
+                dotY,
+                dotRadius,
+                dotTint,
+                Phaser.Math.FloatBetween(0.78, 0.96)
+              )
+                .setDepth(depthBase - 0.02)
+                .setBlendMode(lingerDotBlendMode);
+              this.tweens.add({
+                targets: lingerDot,
+                scale: Phaser.Math.FloatBetween(0.35, 0.62),
+                alpha: 0,
+                duration: resolvedLingerFadeMs + Phaser.Math.Between(0, 180),
+                ease: "Sine.easeOut",
+                onComplete: () => lingerDot.destroy()
+              });
+              if (lingerDotBlendMode === Phaser.BlendModes.NORMAL) {
+                const accentDot = this.add.circle(
+                  dotX,
+                  dotY,
+                  dotRadius * 0.55,
+                  0xFF6688,
+                  Phaser.Math.FloatBetween(0.35, 0.55)
+                )
+                  .setDepth(depthBase + 0.01)
+                  .setBlendMode(Phaser.BlendModes.ADD);
+                this.tweens.add({
+                  targets: accentDot,
+                  scale: 0.2,
+                  alpha: 0,
+                  duration: resolvedLingerFadeMs * 0.72,
+                  ease: "Sine.easeOut",
+                  onComplete: () => accentDot.destroy()
+                });
+              }
             }
           });
         }
@@ -5991,6 +6261,149 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         };
       },
 
+    getHeavenHellMeterSoulIntakePosition() {
+        const ui = this._heavenHellMeterUi;
+        if (ui?.container && !ui.container.destroyed) {
+          const matrix = ui.container.getWorldTransformMatrix();
+          const meterY = Number(ui.meterY ?? -2);
+          return {
+            x: matrix.tx,
+            y: matrix.ty + meterY * matrix.scaleY
+          };
+        }
+
+        const { centerX, centerY } = this.getHeavenHellMeterPanelPosition();
+        return {
+          x: centerX,
+          y: centerY - 2
+        };
+      },
+
+    incrementHeavenHellPendingMeterSoulTrails() {
+        this._heavenHellPendingMeterSoulTrails = Math.max(
+          0,
+          Math.floor(Number(this._heavenHellPendingMeterSoulTrails) || 0)
+        ) + 1;
+      },
+
+    decrementHeavenHellPendingMeterSoulTrails() {
+        this._heavenHellPendingMeterSoulTrails = Math.max(
+          0,
+          Math.floor(Number(this._heavenHellPendingMeterSoulTrails) || 0) - 1
+        );
+      },
+
+    hasPendingHeavenHellMeterSoulTrails() {
+        return Math.max(0, Math.floor(Number(this._heavenHellPendingMeterSoulTrails) || 0)) > 0;
+      },
+
+    async waitForHeavenHellPendingMeterSoulTrails(timeoutMs = 5000) {
+        const deadline = Date.now() + Math.max(500, Math.floor(Number(timeoutMs) || 5000));
+        while (this.hasPendingHeavenHellMeterSoulTrails() && Date.now() < deadline) {
+          await this.waitForPresentation?.(40, { skippable: true });
+        }
+      },
+
+    pulseHeavenHellMeterOnSoulIntake() {
+        const ui = this._heavenHellMeterUi;
+        if (!ui?.container || ui.container.destroyed) return;
+
+        const meterCenterX = ui.container.x;
+        const meterCenterY = ui.container.y + (ui.meterY ?? -2);
+        const meterWidth = ui.meterWidth ?? 320;
+        const meterHeight = ui.meterHeight ?? 9;
+
+        const barFlash = this.add.rectangle(
+          meterCenterX,
+          meterCenterY,
+          meterWidth + 8,
+          meterHeight + 10,
+          0xFF3355,
+          0.82
+        )
+          .setDepth(BONUS_SOUL_COLLECT_INTAKE_DEPTH + 1)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        const barGlow = this.add.rectangle(
+          meterCenterX,
+          meterCenterY,
+          meterWidth + 20,
+          meterHeight + 18,
+          0xFF6688,
+          0.34
+        )
+          .setDepth(BONUS_SOUL_COLLECT_INTAKE_DEPTH)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        this.tweens.add({
+          targets: [barFlash, barGlow],
+          alpha: 0,
+          scaleX: 1.12,
+          scaleY: 1.35,
+          duration: 320,
+          ease: "Cubic.easeOut",
+          onComplete: () => {
+            if (barFlash && !barFlash.destroyed) barFlash.destroy();
+            if (barGlow && !barGlow.destroyed) barGlow.destroy();
+          }
+        });
+
+        if (ui.trackBg && !ui.trackBg.destroyed) {
+          this.tweens.killTweensOf(ui.trackBg);
+          ui.trackBg.setFillStyle(0xAA1122, 0.98);
+          this.tweens.add({
+            targets: ui.trackBg,
+            alpha: { from: 1, to: 0.55 },
+            duration: 90,
+            yoyo: true,
+            repeat: 2,
+            ease: "Sine.easeInOut",
+            onComplete: () => {
+              if (ui.trackBg && !ui.trackBg.destroyed) {
+                ui.trackBg.setFillStyle(0x090706, 0.95);
+                ui.trackBg.setAlpha(1);
+              }
+            }
+          });
+        }
+
+        if (ui.killCountText && !ui.killCountText.destroyed) {
+          const defaultColor = "#FFF4C8";
+          ui.killCountText.setColor("#FF88AA");
+          this.time.delayedCall(260, () => {
+            if (ui.killCountText && !ui.killCountText.destroyed) {
+              ui.killCountText.setColor(defaultColor);
+            }
+          });
+        }
+
+        this.tweens.add({
+          targets: ui.container,
+          scaleX: 1.05,
+          scaleY: 1.05,
+          duration: 120,
+          yoyo: true,
+          ease: "Back.easeOut"
+        });
+        if (ui.shimmer) {
+          ui.shimmer.setVisible(true);
+          this.tweens.add({
+            targets: ui.shimmer,
+            alpha: { from: 0.42, to: 0.95 },
+            duration: 100,
+            yoyo: true,
+            ease: "Sine.easeOut"
+          });
+        }
+        if (ui.outerGlow) {
+          this.tweens.add({
+            targets: ui.outerGlow,
+            alpha: 0.34,
+            duration: 140,
+            yoyo: true,
+            ease: "Sine.easeOut"
+          });
+        }
+      },
+
     getHeavenHellBossKillWeight() {
         return 9;
       },
@@ -6058,6 +6471,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         if (!plan) return;
     
         this._heavenHellActiveGameState = gameState;
+        this._heavenHellPendingMeterSoulTrails = 0;
         this._heavenHellMeterRuntime = {
           nextUnlock: plan.nextUnlock,
           endKills: plan.endKills,
@@ -6087,7 +6501,15 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           this.prepareHeavenHellKillMeterForAction(gameState);
         }
         const runtime = this._heavenHellMeterRuntime;
-        if (!runtime || runtime.killBudgetRemaining <= 0) return;
+        if (!runtime) return;
+        const persistedDisplayKills = Number.isFinite(Number(this._heavenHellMeterDisplayKills))
+          ? Math.max(0, Math.floor(Number(this._heavenHellMeterDisplayKills)))
+          : null;
+        if (persistedDisplayKills !== null && persistedDisplayKills > runtime.displayKills) {
+          runtime.displayKills = persistedDisplayKills;
+          runtime.killBudgetRemaining = Math.max(0, runtime.endKills - runtime.displayKills);
+        }
+        if (runtime.killBudgetRemaining <= 0) return;
         const presentationAbilities = this.getHeavenHellActionPresentationAbilities(gameState);
     
         const ui = this._heavenHellMeterUi;
@@ -6493,8 +6915,13 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         if (!heavenHell || !isBonus) {
           this._heavenHellActiveGameState = null;
           this._heavenHellMeterRuntime = null;
+          this._heavenHellPendingMeterSoulTrails = 0;
           this.clearHeavenHellGroundChests();
           this.hideHeavenHellAbilityPanel();
+          return;
+        }
+
+        if (this.hasPendingHeavenHellMeterSoulTrails?.()) {
           return;
         }
     

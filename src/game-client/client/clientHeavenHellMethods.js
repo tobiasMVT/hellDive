@@ -121,6 +121,8 @@ export function createClientHeavenHellMethods() {
         return false;
       }
 
+      await this.scene.waitForHeavenHellPendingMeterSoulTrails?.();
+
       const playedUnlockSequence = await this.scene.playHeavenHellAbilityUnlockSequence?.(gameState, {
         allowRewardFx
       });

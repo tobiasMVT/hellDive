@@ -84,7 +84,7 @@ If demons remain after a hunt, meter accumulates (`29 → 30`) but **no settleme
 |-------|------|-------|
 | Kill accumulation | `Gameserver.js` hunt handlers | `demonsKilled += demonsKilledThisAction` |
 | Deferred settlement | `Gameserver.js` → `settleHeavenHellKillMeterUnlocks` | Called when board clear after bonus hunt |
-| Meter animation | `GameScene.js` → `getHeavenHellMeterActionPlan`, `tickHeavenHellKillMeterOnKill` | Overflow during hunt; no mid-animation subtract |
+| Meter animation | `GameScene.js` → `getHeavenHellMeterActionPlan`, `tickHeavenHellKillMeterOnKill` | Overflow during hunt; no mid-animation subtract. Bonus kills defer `tickHeavenHellKillMeterOnKill` until the soul trail reaches the ability charge meter (`createHeavenHellBonusSoulCollectionFx`). |
 | End-of-action sync | `GameScene.js` → `updateHeavenHellAbilityText` | Settled `killsTowardsUnlock` + reward FX |
 | Client flow | `Client.js` | Passes `demonsKilledThisAction` for meter start offset |
 
