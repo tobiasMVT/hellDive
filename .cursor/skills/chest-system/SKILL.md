@@ -116,7 +116,16 @@ Legacy mirror counters also stay synced on `gameState.bonusState`:
 ## Current Presentation Rules
 
 - Chest drops should appear as soon as the demon dies, using the kill cell.
+- `trackHeavenHellKillGroundDrops` runs immediately after demon death FX; loot and chest land asynchronously (tracked via `trackHeavenHellPendingGroundPresentation`, not awaited) so combat keeps pace.
+- End-of-battle retrigger / ability unlock sequences stay unchanged and run after the hunt completes.
 - Chests stay closed on the battlefield until all demons are dead and `chestreward` runs.
+- Ground chest sprites render at `DEPTH_HERO + 3` so they stay visible above the angel and ground loot.
+- Ground chest sync uses `heavenHell.bonus.pendingChests` (full battlefield queue), not `chestEventsThisAction` alone — that array only lists drops from the current action and must not drive prune/recreate logic.
+- `chestEventsThisAction` is still used for per-step drop animation timing (`dropQueued`) and chestreward resolved payloads when `pendingChests` is already cleared.
+- Do not call `ensureHeavenHellQueuedChestDrops` again at chestreward action start — `playHeavenHellChestRewardSequence` owns that sync.
+- Ground chest sprites match by stable chest id; reward presentation promotes the existing sprite before camera focus.
+- During multi-chest reward, `syncHeavenHellRewardGroundChests` keeps unopened chests on the battlefield between opens.
+- Interrupted drop tweens are finalized so chests never remain at alpha 0.
 - Reel/tick reveal UI should be framed over the chest itself, with camera reframing if needed.
 - Loot rewards from chest reveals should pop out of the chest and land on the ground near it.
 - Loot from chest reveals should never fly directly to the hero mid-bonus.

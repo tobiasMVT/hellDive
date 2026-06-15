@@ -1924,18 +1924,12 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
                 startBananaOrbsDropped = true;
               }
               if (isHeavenHellBonusHunt) {
-                const startChestDrops = Array.isArray(startStep?.chestDrops) ? startStep.chestDrops : [];
-                if (startChestDrops.length > 0) {
-                  this.trackHeavenHellPendingGroundPresentation?.(
-                    this.playHeavenHellQueuedChestDrops?.(startChestDrops),
-                    { kind: "chest" }
-                  );
-                } else {
-                  this.trackHeavenHellPendingGroundPresentation?.(
-                    this.playHeavenHellQueuedChestDropsForCells?.([{ reel: startPos.reel, row: startPos.row }], heavenHellGameState),
-                    { kind: "chest" }
-                  );
-                }
+                this.trackHeavenHellKillGroundDrops?.(
+                  startStep,
+                  [{ reel: startPos.reel, row: startPos.row }],
+                  heavenHellGameState,
+                  { stepQuickStop: false }
+                );
               }
             }
           }
@@ -2784,7 +2778,16 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
                 }
               }
             });
-    
+
+            if (isHeavenHellBonusHunt && isBananaStep) {
+              this.trackHeavenHellKillGroundDrops?.(
+                step,
+                bananaTargets,
+                heavenHellGameState,
+                { stepQuickStop }
+              );
+            }
+
             if (isHeavenHellBonusHunt && stepChargeLaunch) {
               await this.playHeavenHellDivineChargeImpact(
                 step,
@@ -2838,21 +2841,6 @@ export function createGameSceneHeroCombatMethods(deps = {}) {
                 );
               }
             });
-
-            if (isHeavenHellBonusHunt) {
-              const stepChestDrops = Array.isArray(step?.chestDrops) ? step.chestDrops : [];
-              if (stepChestDrops.length > 0) {
-                this.trackHeavenHellPendingGroundPresentation?.(
-                  this.playHeavenHellQueuedChestDrops?.(stepChestDrops),
-                  { kind: "chest" }
-                );
-              } else {
-                this.trackHeavenHellPendingGroundPresentation?.(
-                  this.playHeavenHellQueuedChestDropsForCells?.(bananaTargets, heavenHellGameState),
-                  { kind: "chest" }
-                );
-              }
-            }
 
             if (step.goldpile && step.goldpile.value > 0 && !is3x3Troll) {
               this.dropGoldPile(targetX, targetY, step.goldpile.value, step.goldpile.tier);

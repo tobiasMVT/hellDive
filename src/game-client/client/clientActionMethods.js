@@ -512,7 +512,6 @@ export function createClientActionMethods(deps = {}) {
 
       this.scene.setCurrentAction?.("chestreward");
       this.scene.startBonusTheme?.();
-      await this.scene.ensureHeavenHellQueuedChestDrops?.(gameState, { animateMissing: false });
 
       await this.scene.playHeavenHellChestRewardSequence?.(gameState);
 
