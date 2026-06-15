@@ -563,7 +563,8 @@ export function createClientActionMethods(deps = {}) {
         return;
       }
 
-      this.renderHeavenHellBonusLootGround?.(gameState);
+      this.scene.setHeavenHellLootLayerLock?.(null);
+      this.renderHeavenHellBonusLootGround?.(gameState, { layer: "behindDemons" });
     }
   };
 }

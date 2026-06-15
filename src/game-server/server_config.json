@@ -47,7 +47,7 @@
         "bonus_min0.1_max50": 2,
         "bonus_min5_max50": 10,
         "bonus_min50_max200": 2,
-        "bonus_min_100_max1000": 1
+        "bonus_min_100_max1000": 11111
     },
     "bonus": {
         "bonus": 1,

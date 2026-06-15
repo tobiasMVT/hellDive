@@ -1946,7 +1946,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         return true;
       },
 
-    getHeavenHellLootDropKey(drop = {}, index = 0) {
+    getHeavenHellLootDropSignature(drop = {}) {
         const reel = Math.floor(Number(drop?.reel));
         const row = Math.floor(Number(drop?.row));
         const offsetX = Number.isFinite(Number(drop?.offsetX)) ? Number(drop.offsetX) : 0;
@@ -1954,7 +1954,11 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         const baseValue = Number(drop?.baseValue ?? drop?.value ?? 0);
         const lootType = String(drop?.lootType || drop?.lootKind || "").toLowerCase();
         const source = String(drop?.source || "");
-        return `${reel},${row},${offsetX},${offsetY},${baseValue},${lootType},${source},${Math.max(0, Math.floor(Number(index) || 0))}`;
+        return `${reel},${row},${offsetX},${offsetY},${baseValue},${lootType},${source}`;
+      },
+
+    getHeavenHellLootDropKey(drop = {}, index = 0) {
+        return `${this.getHeavenHellLootDropSignature(drop)},${Math.max(0, Math.floor(Number(index) || 0))}`;
       },
 
     isHeavenHellLootDropRendered(drop = {}, index = 0) {
@@ -1980,6 +1984,22 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         this.heavenHellRenderedLootKeys.add(key);
         this.heavenHellLootSprites.push(token);
         return token;
+      },
+
+    findHeavenHellLootGroundIndex(drop = {}, gameState = null) {
+        const resolvedGameState = gameState || this._heavenHellActiveGameState;
+        const lootGround = Array.isArray(resolvedGameState?.heavenHell?.bonus?.lootGround)
+          ? resolvedGameState.heavenHell.bonus.lootGround
+          : [];
+        if (lootGround.length === 0) return -1;
+        const signature = this.getHeavenHellLootDropSignature(drop);
+        for (let index = 0; index < lootGround.length; index++) {
+          const candidate = lootGround[index];
+          if (this.getHeavenHellLootDropSignature(candidate) !== signature) continue;
+          if (this.isHeavenHellLootDropRendered(candidate, index)) continue;
+          return index;
+        }
+        return -1;
       },
 
     trackHeavenHellPendingGroundPresentation(promise, { kind = "loot" } = {}) {
@@ -2022,6 +2042,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         });
         this.heavenHellLootSprites = [];
         this.heavenHellRenderedLootKeys = new Set();
+        this.heavenHellLootLayerLock = null;
       },
 
     clearHeavenHellGroundChests() {
@@ -2257,6 +2278,29 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         }
       },
 
+    normalizeHeavenHellLootLayer(layer = null) {
+        if (typeof layer === "boolean") {
+          return layer ? "frontOfHero" : "behindHero";
+        }
+        if (layer === "frontOfHero" || layer === "behindHero" || layer === "behindDemons") {
+          return layer;
+        }
+        return null;
+      },
+
+    setHeavenHellLootLayerLock(layer = null) {
+        this.heavenHellLootLayerLock = this.normalizeHeavenHellLootLayer(layer);
+        return this.heavenHellLootLayerLock;
+      },
+
+    getHeavenHellResolvedLootLayer(layer = null) {
+        const explicitLayer = this.normalizeHeavenHellLootLayer(layer);
+        if (explicitLayer) {
+          return explicitLayer;
+        }
+        return this.normalizeHeavenHellLootLayer(this.heavenHellLootLayerLock) || "behindDemons";
+      },
+
     getHeavenHellLootDepth(layer = "behindHero") {
         if (layer === "frontOfHero") {
           return DEPTH_HERO + 1;
@@ -2265,6 +2309,14 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           return DEPTH_BANANAS - 1;
         }
         return DEPTH_HERO - 1;
+      },
+
+    getHeavenHellLootTokenScale(drop = {}, { ground = true } = {}) {
+        const baseScale = ground ? 0.34 : 0.42;
+        if (drop?.isBoss === true) {
+          return Math.max(baseScale, ground ? 0.5 : 0.5);
+        }
+        return baseScale;
       },
 
     syncHeavenHellLootGround(drops = [], { layer = "behindHero" } = {}) {
@@ -2276,6 +2328,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         }
         const list = Array.isArray(drops) ? drops : [];
         const maxRender = Math.min(64, list.length);
+        const resolvedLayer = this.getHeavenHellResolvedLootLayer(layer);
         for (let i = 0; i < maxRender; i++) {
           const drop = list[i];
           if (this.isHeavenHellLootDropRendered(drop, i)) continue;
@@ -2283,22 +2336,21 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           const row = Math.floor(Number(drop?.row));
           if (!Number.isFinite(reel) || !Number.isFinite(row)) continue;
           const position = this.getHeavenHellLootGroundPosition(drop, i);
-          const token = this.createHeavenHellLootToken(position.x, position.y, drop, i, { scale: 0.34 });
-          token.setDepth(this.getHeavenHellLootDepth(layer));
+          const token = this.createHeavenHellLootToken(position.x, position.y, drop, i, {
+            scale: this.getHeavenHellLootTokenScale(drop, { ground: true })
+          });
+          token.setDepth(this.getHeavenHellLootDepth(resolvedLayer));
           this.registerHeavenHellLootSprite(token, drop, i);
         }
       },
 
     renderHeavenHellLootGround(drops = [], options = {}) {
         this.syncHeavenHellLootGround(drops, options);
-        this.syncHeavenHellLootSpriteDepths(options?.layer || "behindHero");
+        this.syncHeavenHellLootSpriteDepths(options?.layer);
       },
 
     syncHeavenHellLootSpriteDepths(layer = "behindHero") {
-        const legacyLayer = typeof layer === "boolean"
-          ? (layer ? "frontOfHero" : "behindHero")
-          : layer;
-        const lootDepth = this.getHeavenHellLootDepth(legacyLayer);
+        const lootDepth = this.getHeavenHellLootDepth(this.getHeavenHellResolvedLootLayer(layer));
         if (!Array.isArray(this.heavenHellLootSprites)) return;
         this.heavenHellLootSprites.forEach((entry) => {
           if (!entry || entry.destroyed || typeof entry.setDepth !== "function") return;
@@ -3553,12 +3605,13 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
       },
 
     createHeavenHellLootValueLabel(x, y, value, {
-        prefix = "+",
+        prefix = "",
         depth = DEPTH_HERO + 56,
         fontSize = "20px",
         scale = 0.76,
         rise = 44,
-        duration = 1100,
+        duration = 1600,
+        fadeDelay = 320,
         alpha = 1,
         driftX = 0,
         driftY = 0
@@ -3586,9 +3639,16 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
           scaleX: Math.max(1.16, scale * 1.5),
           scaleY: Math.max(1.16, scale * 1.5),
           y: label.y - rise,
-          alpha: 0,
           duration,
           ease: "Cubic.easeOut",
+        });
+
+        this.tweens.add({
+          targets: label,
+          alpha: 0,
+          delay: Math.max(0, Math.min(duration - 80, Number(fadeDelay) || 0)),
+          duration: Math.max(120, duration - Math.max(0, Math.min(duration - 80, Number(fadeDelay) || 0))),
+          ease: "Sine.easeOut",
           onComplete: () => label.destroy()
         });
     
@@ -3803,7 +3863,9 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
             : { x: fallbackStartX, y: fallbackStartY };
           const startX = Number(launchPoint?.x || fallbackStartX);
           const startY = Number(launchPoint?.y || fallbackStartY);
-          const token = this.createHeavenHellLootToken(startX, startY, drop, dropIndex, { scale: 0.42 });
+          const token = this.createHeavenHellLootToken(startX, startY, drop, dropIndex, {
+            scale: this.getHeavenHellLootTokenScale(drop, { ground: false })
+          });
           token.setDepth(DEPTH_HERO + 55);
           token.setAlpha(0);
           token.setAngle(Phaser.Math.Between(-18, 18));
@@ -3897,14 +3959,15 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                     onComplete: () => {
                       this.createHeavenHellLootValueLabel(landX, landY - 18, landedValue, {
                         depth: DEPTH_HERO + 58,
-                        duration: 1320,
+                        duration: 1820,
                         rise: 62,
                         driftX: Phaser.Math.Between(-6, 6),
                         driftY: Phaser.Math.Between(-4, 4)
                       });
                       if (persistToGround) {
                         token.setPosition(landX, landY);
-                        token.setScale(0.34, 0.34);
+                        const groundScale = this.getHeavenHellLootTokenScale(drop, { ground: true });
+                        token.setScale(groundScale, groundScale);
                         token.setAlpha(0.96);
                         token.setDepth(DEPTH_HERO + 1);
                         resolve();
@@ -3947,6 +4010,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
 
         cleanupTargets.forEach((entry) => {
           if (!entry || entry.destroyed) return;
+          if (entry.heavenHellPersistOnChestCleanup === true) return;
           if (entry.chestTickerEvent) {
             entry.chestTickerEvent.remove(false);
             entry.chestTickerEvent = null;
@@ -4509,7 +4573,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
         return target;
       },
 
-    async animateHeavenHellChestRewardBursts(chestCenter, spin = {}, uiState = null) {
+    async animateHeavenHellChestRewardBursts(chestCenter, spin = {}, uiState = null, gameState = null) {
         const reveals = Array.isArray(spin?.reveals) ? spin.reveals : [];
         const rewardAnimations = reveals
           .filter((reveal) => reveal?.resolvedReward?.kind && reveal.resolvedReward.kind !== "none")
@@ -4521,21 +4585,40 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
 
             if (resolvedReward.kind === "loot" && resolvedReward.lootDrop) {
               const drop = resolvedReward.lootDrop;
-              const target = this.getHeavenHellLootGroundPosition(drop, revealIndex);
-              const token = this.createHeavenHellLootToken(chestCenter.x, chestCenter.y - 22, drop, revealIndex, { scale: 0.3 })
+              const groundIndex = this.findHeavenHellLootGroundIndex(drop, gameState);
+              const dropIndex = groundIndex >= 0 ? groundIndex : revealIndex;
+              const target = this.getHeavenHellLootGroundPosition(drop, dropIndex);
+              const finalScale = this.getHeavenHellLootTokenScale(drop, { ground: true });
+              const token = this.createHeavenHellLootToken(chestCenter.x, chestCenter.y - 22, drop, dropIndex, { scale: finalScale })
                 .setDepth(DEPTH_HERO + 40)
                 .setAlpha(0)
-                .setScale(0.1);
-              this.heavenHellChestRewardSprites.push(token);
+                .setScale(finalScale * 0.96);
+              const shadow = this.add.ellipse(target.x, target.y + 16, 22, 8, 0x000000, 0)
+                .setDepth(DEPTH_HERO + 37)
+                .setScale(0.7, 0.78);
+              const landingRing = this.add.circle(target.x, target.y + 4, 16, 0xFFE6A0, 0)
+                .setDepth(DEPTH_HERO + 38)
+                .setStrokeStyle(3, 0xFFF3CC, 0.92)
+                .setBlendMode(Phaser.BlendModes.ADD)
+                .setScale(0.4);
+              this.heavenHellChestRewardSprites.push(token, shadow, landingRing);
               this.playHeavenHellLootLaunchSfx?.(revealIndex);
+              this.tweens.add({
+                targets: shadow,
+                alpha: 0.18,
+                scaleX: 1,
+                scaleY: 1,
+                duration: 360,
+                ease: "Sine.easeIn"
+              });
               this.tweens.add({
                 targets: token,
                 alpha: 1,
-                scaleX: 0.54,
-                scaleY: 0.54,
+                scaleX: finalScale,
+                scaleY: finalScale,
                 y: chestCenter.y - 82,
                 duration: 180,
-                ease: "Back.easeOut",
+                ease: "Sine.easeOut",
                 onComplete: () => {
                   this.tweens.add({
                     targets: token,
@@ -4545,6 +4628,8 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                     ease: "Cubic.easeIn",
                     onComplete: () => {
                       this.playHeavenHellLootLandSfx?.(revealIndex, { drop });
+                      this.setHeavenHellLootLayerLock?.("frontOfHero");
+                      const pulseScale = finalScale * 1.06;
                       const glow = this.add.circle(target.x, target.y, 12, 0xFFF2B2, 0.26)
                         .setDepth(DEPTH_HERO + 38)
                         .setBlendMode(Phaser.BlendModes.ADD);
@@ -4556,20 +4641,46 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                         ease: "Cubic.easeOut",
                         onComplete: () => glow.destroy()
                       });
+                      this.tweens.add({
+                        targets: landingRing,
+                        alpha: 0.48,
+                        scale: 1.8,
+                        duration: 260,
+                        ease: "Cubic.easeOut",
+                        onComplete: () => landingRing.destroy()
+                      });
+                      this.tweens.add({
+                        targets: shadow,
+                        alpha: 0,
+                        scaleX: 1.5,
+                        duration: 240,
+                        ease: "Sine.easeOut",
+                        onComplete: () => shadow.destroy()
+                      });
                       this.createHeavenHellLootValueLabel(target.x, target.y - 18, resolvedReward.baseValue, {
                         depth: DEPTH_HERO + 58,
-                        duration: 1180,
+                        duration: 1680,
                         rise: 54,
                         driftX: Phaser.Math.Between(-8, 8),
                         driftY: Phaser.Math.Between(-4, 4)
                       });
                       this.tweens.add({
                         targets: token,
-                        alpha: 0,
-                        duration: 140,
-                        delay: 180,
+                        y: target.y - 9,
+                        scaleX: pulseScale,
+                        scaleY: finalScale * 0.94,
+                        duration: 96,
+                        yoyo: true,
+                        ease: "Sine.easeOut",
                         onComplete: () => {
-                          token.destroy();
+                          token.setPosition(target.x, target.y);
+                          token.setScale(finalScale, finalScale);
+                          token.setAlpha(0.96);
+                          token.setDepth(this.getHeavenHellLootDepth("frontOfHero"));
+                          token.heavenHellPersistOnChestCleanup = true;
+                          if (groundIndex >= 0) {
+                            this.registerHeavenHellLootSprite(token, drop, groundIndex);
+                          }
                           resolve();
                         }
                       });
@@ -4882,7 +4993,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
               await this.tickHeavenHellChestReel(panel, reveal, tickLabels);
             }
 
-            await this.animateHeavenHellChestRewardBursts(chestSpinStageCenter, spin, uiState);
+            await this.animateHeavenHellChestRewardBursts(chestSpinStageCenter, spin, uiState, gameState);
             await this.waitForPresentation(spinIndex < spins.length - 1 ? 220 : 140, { skippable: true });
           }
 
@@ -5120,7 +5231,7 @@ export function createGameSceneHeavenHellMethods(deps = {}) {
                 if (payoutTwa > 0) {
                   this.createHeavenHellLootValueLabel(targetX, targetY - 56, payoutTwa, {
                     depth: DEPTH_HERO + 58,
-                    duration: 1480,
+                    duration: 1980,
                     rise: 70,
                     driftX: Phaser.Math.Between(-10, 10),
                     driftY: Phaser.Math.Between(-12, 2)

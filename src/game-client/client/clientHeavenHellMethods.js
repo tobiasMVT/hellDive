@@ -105,7 +105,7 @@ export function createClientHeavenHellMethods() {
       this.scene.syncHeavenHellPentagram?.(stateForScene);
     },
 
-    renderHeavenHellBonusLootGround(gameState = {}, { layer = "behindDemons" } = {}) {
+    renderHeavenHellBonusLootGround(gameState = {}, { layer = null } = {}) {
       if (!this.isHeavenHellEnabled(gameState) || gameState?.isBonus !== true) {
         return;
       }
